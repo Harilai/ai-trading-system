@@ -45,7 +45,17 @@ def indicators(symbol: str, timeframe: str="1h", limit: int=Query(100,ge=50,le=5
     except (MarketDataError,ValueError) as exc: raise HTTPException(502,str(exc)) from exc
 
 @app.get("/api/portfolio")
-def get_portfolio(): return portfolio.snapshot()
+def get_portfolio():
+    base = portfolio.snapshot()
+    prices = {}
+    for position in base["positions"]:
+        try:
+            quote = market.ticker(position["symbol"])
+            if quote["last"] is not None and not market.is_stale(quote, settings.max_data_age_seconds):
+                prices[position["symbol"]] = float(quote["last"])
+        except MarketDataError:
+            continue
+    return portfolio.snapshot(prices)
 
 @app.get("/api/trades")
 def trades(limit: int=Query(50,ge=1,le=200)): return portfolio.history(limit)
