@@ -162,7 +162,7 @@ def test_chief_does_not_confuse_same_symbol_across_providers():
         "instrument_id": "ccxt:coinbase:spot:BTC/EUR",
         "quantity": 0.25,
     }
-    decision = ChiefAgent().decide(scan, portfolio(positions=[other_position]))
+    decision = ChiefAgent().decide(scan, {**portfolio(positions=[other_position]), "valuation_complete": True})
     assert decision.action == "buy"
     assert decision.proposal.provider_id == "ccxt:kraken"
     assert decision.proposal.instrument_id == "ccxt:kraken:spot:BTC/EUR"
