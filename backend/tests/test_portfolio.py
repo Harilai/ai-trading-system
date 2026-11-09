@@ -276,3 +276,10 @@ def test_legacy_position_migrates_to_default_ccxt_provider(tmp_path):
     assert position["instrument_id"] == "ccxt:kraken:spot:BTC/EUR"
     assert position["symbol"] == "BTC/EUR"
     assert portfolio.snapshot()["cash"] == pytest.approx(10)
+
+
+
+@pytest.mark.parametrize("amount", [0, -1, float("inf"), "not-a-number"])
+def test_withdrawal_rejects_invalid_amounts(portfolio, amount):
+    with pytest.raises(PortfolioError, match="positive finite"):
+        portfolio.request_withdrawal(amount)
