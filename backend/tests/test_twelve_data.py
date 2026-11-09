@@ -10,8 +10,9 @@ from app.providers.twelve_data import TwelveDataProvider
 
 
 class FakeTwelveDataTransport:
-    def __init__(self, responses):
+    def __init__(self, responses, api_key="test-key"):
         self.responses = responses
+        self.api_key = api_key
         self.calls = []
 
     def __call__(self, url, timeout=15):
@@ -19,7 +20,7 @@ class FakeTwelveDataTransport:
         params = parse_qs(parsed.query)
         endpoint = parsed.path.rsplit("/", 1)[-1]
         self.calls.append((endpoint, params, timeout))
-        if params.get("apikey") != ["test-key"]:
+        if params.get("apikey") != [self.api_key]:
             raise AssertionError("API key was not passed through the request")
         payload = self.responses.get(endpoint)
         if isinstance(payload, Exception):
@@ -135,7 +136,7 @@ def test_ohlcv_converts_exchange_local_timestamps_to_utc_epoch():
 def test_provider_errors_are_reported_without_exposing_api_key():
     transport = FakeTwelveDataTransport({
         "quote": {"status": "error", "message": "Invalid API key"},
-    })
+    }, api_key="secret-value")
     provider = TwelveDataProvider("secret-value", opener=transport)
     with pytest.raises(MarketDataError, match="Invalid API key") as error:
         provider.ticker("AAPL")
