@@ -20,7 +20,7 @@ def _integrity_check(path: Path) -> None:
     if not path.is_file():
         raise BackupError(f"SQLite database does not exist: {path}")
     try:
-        with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as db:
+        with sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True) as db:
             result = db.execute("PRAGMA integrity_check").fetchone()
     except sqlite3.Error as exc:
         raise BackupError(f"Unable to validate SQLite database {path}: {exc}") from exc
@@ -39,7 +39,7 @@ def _copy_database(source: Path, destination: Path) -> None:
     temporary = Path(handle.name)
     handle.close()
     try:
-        with sqlite3.connect(f"file:{source}?mode=ro", uri=True) as source_db:
+        with sqlite3.connect(f"{source.as_uri()}?mode=ro", uri=True) as source_db:
             with sqlite3.connect(temporary) as target_db:
                 source_db.backup(target_db)
         _integrity_check(temporary)
