@@ -7,7 +7,9 @@ Plataforma modular de trading algorítmico autónomo, construida por fases con p
 La rama integrada contiene actualmente:
 
 - Backend FastAPI y cartera simulada persistida en SQLite.
-- Datos públicos de criptomonedas mediante CCXT (Kraken por defecto).
+- Capa de integración universal: contratos normalizados de proveedor, instrumentos, clases de activo, tipos de mercado y registro/capability matrix.
+- Adaptador inicial de datos públicos CEX crypto spot mediante CCXT (Kraken por defecto; lista configurable de proveedores CCXT).
+- Descubrimiento y enrutamiento de datos por proveedor; endpoints `/api/providers`, `/api/markets` y `/api/risk-profiles`.
 - Indicadores EMA, SMA, RSI, MACD, Bollinger Bands y ATR.
 - Simulación de compras y ventas con comisiones y slippage configurables.
 - Rechazo de pares no admitidos y datos de mercado obsoletos.
@@ -17,11 +19,11 @@ La rama integrada contiene actualmente:
 - Charts Agent determinista.
 - Strategy Research Agent con tres estrategias candidatas long-only (EMA 12/26, RSI(14) y Bollinger(20,2)), backtesting cronológico 70/30, ejecución simulada en la apertura de la vela siguiente y costes configurables.
 
-**Límite funcional actual:** el `decision_cycle` ya puede ejecutar compras/ventas paper solo cuando el Risk Manager aprueba la propuesta. Las posiciones conservan estrategia, stop-loss y take-profit; el worker vuelve a incluir posiciones abiertas para comprobar salidas y utiliza un identificador idempotente para evitar órdenes duplicadas tras reinicios. El ciclo todavía se encola bajo demanda: no hay programación periódica, dashboard, acciones/ETF ni trading real. No hay trading real, acciones/ETF, dashboard ni despliegue 24/7.
+**Límite funcional actual:** el `decision_cycle` puede ejecutar compras/ventas paper solo cuando el Risk Manager aprueba la propuesta. La capa universal es una arquitectura extensible, no soporte universal ya operativo: actualmente solo está implementado el adaptador de datos públicos crypto spot vía CCXT. No hay adaptadores de ejecución para brokers, DEX, wallets, forex, acciones, ETF, índices, materias primas, futuros, opciones ni DeFi. El portfolio paper todavía usa el símbolo como clave y no admite carteras multi-proveedor con el mismo símbolo. No hay trading real ni permisos privados de proveedor.
 
 ## Capital y divisa
 
-El backend actual usa una cartera simulada de **20 EUR**, no 20 USD. Solo admite pares cotizados en EUR. La conversión de divisas y los instrumentos de bolsa requieren una implementación y validación separadas.
+El backend actual usa una cartera simulada de **20 EUR**, no 20 USD. La primera integración solo analiza pares crypto spot cotizados en EUR. La arquitectura de proveedores no implica acceso a todos los mercados. Forex, acciones, ETF, índices, commodities, derivados, DEX, wallets y DeFi siguen sin adaptadores operativos.
 
 ## Arquitectura objetivo
 
@@ -70,6 +72,9 @@ docker compose logs -f api
 
 ## Endpoints principales
 
+- `GET /api/providers` — proveedores configurados y capability matrix.
+- `GET /api/markets` — instrumentos detectados y restricciones conocidas.
+- `GET /api/risk-profiles` — perfiles de riesgo y estado habilitado/deshabilitado.
 - `GET /api/health`
 - `GET /api/market/{symbol}/ticker`
 - `GET /api/market/{symbol}/ohlcv`
@@ -91,6 +96,9 @@ El worker se inicia pausado. Al reanudarlo explícitamente, programa un `decisio
 
 - Paper trading es el único modo de ejecución disponible.
 - No se almacenan claves privadas de exchanges ni se solicitan permisos de retirada.
+- El adaptador CCXT inicial es exclusivamente de datos públicos; no autentica cuentas ni envía órdenes.
+- Los perfiles de margin, futures, options, forex y DeFi están deshabilitados. El Risk Manager solo permite crypto spot.
+- No se solicita ni registra ninguna seed phrase o clave privada de wallet. No existe aún infraestructura de firma.
 - El worker depende de que el proceso de la aplicación esté desplegado y activo; una conversación de ChatGPT no mantiene el proceso en ejecución.
 - Los backtests son evidencia histórica, no una garantía de rentabilidad.
 - Los datos gratuitos pueden tener límites, retrasos o restricciones.
