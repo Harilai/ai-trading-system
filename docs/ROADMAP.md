@@ -24,15 +24,17 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Charts Agent | Implementado |
 | Strategy Research: EMA, RSI, Bollinger, split 70/30 y costes | Implementado como investigación, no aprobación de trading |
 | Chief: selección de oportunidad y propuesta buy/sell/hold | Implementado con Risk Manager obligatorio |
-| Chief Agent y coordinación de decisiones | Implementado inicialmente; ciclo aún proposal-only |
-| Risk Manager conectado obligatoriamente a órdenes | Pendiente |
+| Chief Agent y coordinación de decisiones | Implementado; ciclo ejecuta paper bajo gate de riesgo |
+| Risk Manager conectado obligatoriamente a órdenes paper | Implementado; solo crypto spot EUR |
 | Sniper y generación de propuestas | Pendiente |
-| Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada; ciclo bajo demanda, no programado |
+| Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada; ciclo periódico cada 5 min al reanudar worker |
 | Acciones/ETF y FX | Pendiente; requiere broker/data adapters y validación |
 | DEX, wallets, blockchain y DeFi | Pendiente; no hay integración ni firma |
 | Futuros, opciones, margin y derivados | Deshabilitados; perfiles y límites específicos pendientes |
 | News/Sentiment con fuentes auditables | Pendiente |
-| Gestor 50/50 de beneficios y retiradas manuales | Pendiente |
+| Valoración a mercado, P/L realizado/no realizado | Implementado en cartera paper; depende de cotización fresca |
+| Reserva 50/50 de beneficio neto realizado | Implementada como cálculo de reserva; política provisional configurable pendiente |
+| Solicitud/aprobación/cancelación manual de retiradas paper | Implementada; limitada a reserva de beneficio realizado |
 | Dashboard | Pendiente |
 | Infraestructura gratuita/Oracle Always Free y despliegue 24/7 | Pendiente |
 | Live trading | No implementado; deshabilitado |
@@ -49,20 +51,21 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 
 ## Prioridad 2 — orquestación segura
 
-- [x] Implementar Chief con contratos tipados y decisiones auditables (sin ejecución automática).
+- [x] Implementar Chief con contratos tipados y decisiones auditables.
+- [x] Programar ciclos periódicos cada 5 minutos cuando el worker está habilitado.
 - [x] Integrar Scout, Charts y Strategy Research en una tarea de decisión bajo demanda; programación recurrente pendiente.
 - [ ] Implementar Sniper para generar propuestas con entrada, stop-loss, take-profit y tamaño.
-- [x] Conectar Risk Manager como puerta obligatoria para propuestas del Chief; la conexión con el motor paper queda pendiente.
+- [x] Conectar Risk Manager como puerta obligatoria para propuestas del Chief y órdenes paper.
 - [x] Añadir idempotencia de órdenes paper mediante `client_order_id` vinculado a la tarea.
 - [ ] Completar estados legales de órdenes, conciliación y recuperación frente a fallos en cada frontera de persistencia.
-- [ ] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
+- [x] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
 - [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
 
 ## Prioridad 3 — contabilidad y control del capital
 
-- [ ] Añadir valoración a mercado y separar coste base, valor actual, P/L realizado y no realizado.
-- [ ] Implementar reserva del 50% de beneficios netos realizados y reinversión del 50%.
-- [ ] Implementar solicitudes manuales de retirada de cualquier importe disponible, con confirmación del propietario.
+- [x] Añadir valoración a mercado y separar coste base, valor actual, P/L realizado y no realizado.
+- [x] Calcular reserva del 50% de beneficios netos realizados y reinversión del 50% (valor por defecto provisional).
+- [x] Implementar solicitudes manuales de retirada limitadas a la reserva de beneficios, con aprobación explícita del propietario.
 - [ ] Calcular mínimos y costes de retirada según proveedor; nunca conceder permisos de retirada a claves de trading.
 - [ ] Recalcular riesgo y capital viable tras una retirada.
 
