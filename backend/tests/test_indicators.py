@@ -8,8 +8,8 @@ from app.indicators import atr, bollinger_bands, ema, macd, rsi, sma
 def test_sma_and_ema_match_reference_values():
     values = [1, 2, 3, 4, 5]
     assert sma(values, 3) == pytest.approx(4)
-    # EMA(3): SMA seed 2, then 3.5, then 4.25.
-    assert ema(values, 3) == pytest.approx(4.25)
+    # EMA(3): SMA seed 2, then 3, then 4.
+    assert ema(values, 3) == pytest.approx(4.0)
 
 
 def test_rsi_matches_uptrend_downtrend_and_flat_references():
