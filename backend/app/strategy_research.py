@@ -97,15 +97,19 @@ class StrategyResearchAgent:
             ("bollinger_20_reversion", "Bollinger(20,2) lower-band entry / mean exit", _bollinger_signal, 20),
         ]
 
-    def _backtest(self, candles, signal, warmup, start, end):
+    def _backtest(self, candles, signal, warmup, start, end, *, fee_rate=None, slippage_rate=None):
         cash = 1.0
         units = 0.0
         entry_equity = 0.0
         closed_returns = []
         equity_curve = [1.0]
-        fee_multiplier = 1.0 - self.fee_rate
-        buy_multiplier = fee_multiplier * (1.0 - self.slippage_rate)
-        sell_multiplier = fee_multiplier * (1.0 - self.slippage_rate)
+        effective_fee_rate = self.fee_rate if fee_rate is None else fee_rate
+        effective_slippage_rate = (
+            self.slippage_rate if slippage_rate is None else slippage_rate
+        )
+        fee_multiplier = 1.0 - effective_fee_rate
+        buy_multiplier = fee_multiplier * (1.0 - effective_slippage_rate)
+        sell_multiplier = fee_multiplier * (1.0 - effective_slippage_rate)
 
         for index in range(max(warmup, start), end - 1):
             closes = [float(candle["close"]) for candle in candles[: index + 1]]
@@ -197,6 +201,31 @@ class StrategyResearchAgent:
             len(normalized),
         )
         results = []
+        stress_multipliers = (1.5, 2.0)
+        benchmark_cost_sensitivity = {}
+        for multiplier in stress_multipliers:
+            stressed_fee = self.fee_rate * multiplier
+            stressed_slippage = self.slippage_rate * multiplier
+            if stressed_fee >= 1 or stressed_slippage >= 1:
+                benchmark_cost_sensitivity[str(multiplier)] = {
+                    "available": False,
+                    "reason": "stressed_cost_rate_out_of_range",
+                }
+                continue
+            benchmark_cost_sensitivity[str(multiplier)] = {
+                "available": True,
+                "fee_rate_per_side": stressed_fee,
+                "slippage_rate_per_side": stressed_slippage,
+                "out_of_sample": self._backtest(
+                    normalized,
+                    lambda closes, index, in_position: True,
+                    0,
+                    split,
+                    len(normalized),
+                    fee_rate=stressed_fee,
+                    slippage_rate=stressed_slippage,
+                ),
+            }
         walk_forward_boundaries = [
             (int(len(normalized) * 0.4), int(len(normalized) * 0.6)),
             (int(len(normalized) * 0.6), int(len(normalized) * 0.8)),
@@ -229,6 +258,38 @@ class StrategyResearchAgent:
                 ),
                 "windows": walk_forward_windows,
             }
+            cost_sensitivity = {}
+            for multiplier in stress_multipliers:
+                stressed_benchmark = benchmark_cost_sensitivity[str(multiplier)]
+                stressed_fee = self.fee_rate * multiplier
+                stressed_slippage = self.slippage_rate * multiplier
+                if not stressed_benchmark["available"] or stressed_fee >= 1 or stressed_slippage >= 1:
+                    cost_sensitivity[str(multiplier)] = {
+                        "available": False,
+                        "reason": "stressed_cost_rate_out_of_range",
+                    }
+                    continue
+                stressed_result = self._backtest(
+                    normalized,
+                    signal,
+                    warmup,
+                    split,
+                    len(normalized),
+                    fee_rate=stressed_fee,
+                    slippage_rate=stressed_slippage,
+                )
+                stressed_excess = (
+                    stressed_result["net_return"]
+                    - stressed_benchmark["out_of_sample"]["net_return"]
+                )
+                cost_sensitivity[str(multiplier)] = {
+                    "available": True,
+                    "fee_rate_per_side": stressed_fee,
+                    "slippage_rate_per_side": stressed_slippage,
+                    "out_of_sample": stressed_result,
+                    "benchmark_excess_return": stressed_excess,
+                    "beats_buy_and_hold": stressed_excess > 0,
+                }
             benchmark_excess_return = out_sample["net_return"] - benchmark["net_return"]
             validation_failures = []
             if out_sample["trades"] < self.minimum_oos_trades:
@@ -275,6 +336,7 @@ class StrategyResearchAgent:
                     "benchmark_excess_return": benchmark_excess_return,
                     "beats_buy_and_hold": benchmark_excess_return > 0,
                     "walk_forward": walk_forward,
+                    "cost_sensitivity": cost_sensitivity,
                     "eligible": eligible,
                     "validation_failures": validation_failures,
                     "score": score,
@@ -304,6 +366,7 @@ class StrategyResearchAgent:
                 "out_of_sample": benchmark,
                 "position_fraction": self.max_position_fraction,
             },
+            "benchmark_cost_sensitivity": benchmark_cost_sensitivity,
             "candidate_count": len(results),
             "eligible_count": len(eligible_results),
             "recommended_strategy": (
