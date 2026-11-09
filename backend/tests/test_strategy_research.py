@@ -169,3 +169,50 @@ def test_default_walk_forward_gate_is_compatible_with_250_candle_scans():
             for window in candidate["walk_forward"]["windows"]
         )
         assert "insufficient_walk_forward_history" not in candidate["validation_failures"]
+
+
+
+def test_cost_stress_gate_requires_positive_return_and_benchmark_outperformance():
+    passes = {
+        "1.5": {
+            "available": True,
+            "out_of_sample": {"net_return": 0.01},
+            "beats_buy_and_hold": True,
+        }
+    }
+    assert StrategyResearchAgent._passes_cost_stress(passes) is True
+
+    negative_return = {
+        "1.5": {
+            "available": True,
+            "out_of_sample": {"net_return": -0.001},
+            "beats_buy_and_hold": True,
+        }
+    }
+    assert StrategyResearchAgent._passes_cost_stress(negative_return) is False
+
+    underperforms = {
+        "1.5": {
+            "available": True,
+            "out_of_sample": {"net_return": 0.01},
+            "beats_buy_and_hold": False,
+        }
+    }
+    assert StrategyResearchAgent._passes_cost_stress(underperforms) is False
+    assert StrategyResearchAgent._passes_cost_stress({}) is False
+
+
+def test_cost_stress_is_declared_as_a_mandatory_promotion_gate():
+    closes = [100 + index * 0.03 + 2 * math.sin(index / 6) for index in range(300)]
+    result = StrategyResearchAgent(minimum_oos_trades=1).research(candles_from_closes(closes))
+
+    assert result["promotion_gates"][
+        "must_remain_profitable_and_beat_buy_and_hold_at_1_5x_costs"
+    ] is True
+    for candidate in result["candidates"]:
+        stress = candidate["cost_sensitivity"]["1.5"]
+        assert "fails_1_5x_cost_stress" in candidate["validation_failures"] or (
+            stress["available"]
+            and stress["out_of_sample"]["net_return"] > 0
+            and stress["beats_buy_and_hold"]
+        )
