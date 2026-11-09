@@ -4,6 +4,7 @@ from .config import settings
 from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
 from .market_data import MarketDataError
 from .providers.ccxt_spot import CcxtSpotProvider
+from .providers.twelve_data import TwelveDataProvider
 from .providers.registry import ProviderRegistry
 from .scout import ScoutAgent
 from .strategy_research import StrategyResearchAgent
@@ -16,6 +17,8 @@ for configured_provider in settings.market_data_provider_ids.split(','):
     provider_id = configured_provider.strip().lower()
     if provider_id:
         market.register(CcxtSpotProvider(provider_id))
+if settings.twelve_data_api_key:
+    market.register(TwelveDataProvider(settings.twelve_data_api_key))
 portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 
 class OrderRequest(BaseModel):
@@ -48,7 +51,6 @@ def markets():
             {
                 "instrument_id": item.instrument_id,
                 "provider_id": item.provider_id,
-                "instrument_id": item.instrument_id,
                 "symbol": item.symbol,
                 "asset_class": item.asset_class.value,
                 "market_type": item.market_type.value,
