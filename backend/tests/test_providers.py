@@ -115,3 +115,46 @@ def test_initial_ccxt_adapter_is_public_data_only():
     assert capabilities.balances is False
     assert capabilities.supports_withdrawals is False
     assert capabilities.connectivity_status == "not_checked"
+
+
+
+def test_ccxt_provider_discovery_skips_malformed_tickers():
+    from datetime import datetime, timezone
+    from app.providers.ccxt_spot import CcxtSpotProvider
+
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+    class FakeExchange:
+        has = {"fetchTickers": True}
+
+        def fetch_tickers(self, symbols):
+            return {
+                "BTC/EUR": {
+                    "timestamp": now_ms,
+                    "last": 100.0,
+                    "bid": 99.9,
+                    "ask": 100.1,
+                    "quoteVolume": 10000,
+                },
+                "ETH/EUR": {
+                    "timestamp": now_ms,
+                    "last": float("nan"),
+                    "bid": 99.9,
+                    "ask": 100.1,
+                    "quoteVolume": 10000,
+                },
+            }
+
+    provider = CcxtSpotProvider.__new__(CcxtSpotProvider)
+    provider.provider_id = "ccxt:fake"
+    provider._markets = {
+        "BTC/EUR": {"spot": True, "active": True, "quote": "EUR"},
+        "ETH/EUR": {"spot": True, "active": True, "quote": "EUR"},
+        "INACTIVE/EUR": {"spot": True, "active": False, "quote": "EUR"},
+    }
+    provider.exchange = FakeExchange()
+
+    results = provider.discover_spot_symbols()
+
+    assert [item["symbol"] for item in results] == ["BTC/EUR"]
+    assert results[0]["provider_id"] == "ccxt:fake"

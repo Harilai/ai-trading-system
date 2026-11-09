@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import ccxt
 
 from .base import AssetClass, MarketInstrument, MarketType, ProviderCapabilities, VenueType
-from ..market_data import MarketDataError
+from ..market_data import MarketDataError, _normalize_discovered_spot_ticker
 
 
 class CcxtSpotProvider:
@@ -130,28 +130,20 @@ class CcxtSpotProvider:
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         ranked = []
         for symbol in symbols:
-            ticker = tickers.get(symbol) or {}
-            timestamp = ticker.get("timestamp")
-            last, bid, ask = ticker.get("last"), ticker.get("bid"), ticker.get("ask")
-            if timestamp is None or last is None or bid is None or ask is None:
-                continue
-            if now_ms - int(timestamp) > 120_000 or int(timestamp) > now_ms + 30_000:
-                continue
-            if min(float(last), float(bid), float(ask)) <= 0 or ask < bid:
-                continue
-            midpoint = (float(bid) + float(ask)) / 2
-            spread = (float(ask) - float(bid)) / midpoint
-            volume = ticker.get("quoteVolume")
-            if volume is None and ticker.get("baseVolume") is not None:
-                volume = float(ticker["baseVolume"]) * float(last)
-            if volume is None or float(volume) < min_quote_volume or spread > max_spread_fraction:
-                continue
-            ranked.append({
-                "symbol": symbol, "instrument_id": f"{self.provider_id}:spot:{symbol}", "last": float(last), "bid": float(bid), "ask": float(ask),
-                "spread_fraction": spread, "quote_volume_24h": float(volume),
-                "ticker_timestamp_ms": int(timestamp), "provider_id": self.provider_id,
-                "asset_class": AssetClass.CRYPTO.value, "market_type": MarketType.SPOT.value,
-            })
+            row = _normalize_discovered_spot_ticker(
+                symbol,
+                tickers.get(symbol),
+                provider_id=self.provider_id,
+                now_ms=now_ms,
+                max_spread_fraction=max_spread_fraction,
+                min_quote_volume=min_quote_volume,
+            )
+            if row is not None:
+                row.update({
+                    "asset_class": AssetClass.CRYPTO.value,
+                    "market_type": MarketType.SPOT.value,
+                })
+                ranked.append(row)
         return sorted(ranked, key=lambda item: item["quote_volume_24h"], reverse=True)[:limit]
 
     def ohlcv(self, symbol: str, timeframe: str = "1h", limit: int = 100) -> list:
