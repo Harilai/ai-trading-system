@@ -167,9 +167,37 @@ class StrategyResearchAgent:
 
         split = int(len(normalized) * 0.7)
         results = []
+        walk_forward_boundaries = [
+            (int(len(normalized) * 0.4), int(len(normalized) * 0.6)),
+            (int(len(normalized) * 0.6), int(len(normalized) * 0.8)),
+            (int(len(normalized) * 0.8), len(normalized)),
+        ]
         for strategy_id, description, signal, warmup in self._specs():
             in_sample = self._backtest(normalized, signal, warmup, warmup, split)
             out_sample = self._backtest(normalized, signal, warmup, split, len(normalized))
+            walk_forward_windows = [
+                {
+                    "window": index + 1,
+                    "start_index": start,
+                    "end_index": end,
+                    **self._backtest(normalized, signal, warmup, start, end),
+                }
+                for index, (start, end) in enumerate(walk_forward_boundaries)
+                if end - max(warmup, start) >= 2
+            ]
+            wf_returns = [window["net_return"] for window in walk_forward_windows]
+            walk_forward = {
+                "method": "three_expanding-history_out_of_sample_windows",
+                "window_count": len(walk_forward_windows),
+                "positive_windows": sum(value > 0 for value in wf_returns),
+                "mean_net_return": sum(wf_returns) / len(wf_returns) if wf_returns else 0.0,
+                "worst_net_return": min(wf_returns) if wf_returns else 0.0,
+                "max_drawdown": max(
+                    (window["max_drawdown"] for window in walk_forward_windows),
+                    default=0.0,
+                ),
+                "windows": walk_forward_windows,
+            }
             eligible = (
                 out_sample["trades"] >= self.minimum_oos_trades
                 and out_sample["net_return"] > 0
@@ -187,6 +215,7 @@ class StrategyResearchAgent:
                     "description": description,
                     "in_sample": in_sample,
                     "out_of_sample": out_sample,
+                    "walk_forward": walk_forward,
                     "eligible": eligible,
                     "score": score,
                     "current_entry_signal": signal(current_closes, current_index, False),
@@ -196,7 +225,7 @@ class StrategyResearchAgent:
         eligible_results = [item for item in results if item["eligible"]]
         eligible_results.sort(key=lambda item: item["score"], reverse=True)
         return {
-            "method": "chronological_70_30_next_bar_open_fills",
+            "method": "chronological_70_30_plus_three_walk_forward_diagnostics_next_bar_open_fills",
             "cost_model": {
                 "fee_rate_per_side": self.fee_rate,
                 "slippage_rate_per_side": self.slippage_rate,
