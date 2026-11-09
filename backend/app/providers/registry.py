@@ -3,6 +3,8 @@ from __future__ import annotations
 from threading import RLock
 from typing import Iterable
 
+from datetime import datetime, timezone
+
 from .base import (
     AssetClass,
     MarketDataProvider,
@@ -63,6 +65,61 @@ class ProviderRegistry:
             except Exception as exc:
                 failures.append({"provider_id": provider.provider_id, "reason": str(exc)})
         return discovered, failures
+
+    def discover_spot_symbols(
+        self,
+        quote: str = "EUR",
+        limit: int = 5,
+        max_spread_fraction: float = 0.02,
+        min_quote_volume: float = 1000.0,
+    ) -> list[dict]:
+        if limit < 1:
+            raise ValueError("limit must be positive")
+        ranked = []
+        with self._lock:
+            providers = list(self._providers.values())
+        for provider in providers:
+            discover = getattr(provider, "discover_spot_symbols", None)
+            if discover is None:
+                continue
+            try:
+                ranked.extend(discover(quote, limit, max_spread_fraction, min_quote_volume))
+            except Exception:
+                # Provider-specific failures are reported by discover_markets and provider health.
+                continue
+        ranked.sort(key=lambda item: item.get("quote_volume_24h", 0), reverse=True)
+        return ranked[:limit]
+
+    def ticker(self, symbol: str, provider_id: str | None = None) -> dict:
+        if provider_id:
+            return self.get(provider_id).ticker(symbol)
+        with self._lock:
+            providers = list(self._providers.values())
+        failures = []
+        for provider in providers:
+            try:
+                return provider.ticker(symbol)
+            except Exception as exc:
+                failures.append(f"{provider.provider_id}: {exc}")
+        raise ProviderRegistryError(f"No configured provider supplied {symbol}: {'; '.join(failures)}")
+
+    def ohlcv(self, symbol: str, timeframe: str = "1h", limit: int = 100, provider_id: str | None = None) -> list:
+        if provider_id:
+            return self.get(provider_id).ohlcv(symbol, timeframe, limit)
+        with self._lock:
+            providers = list(self._providers.values())
+        failures = []
+        for provider in providers:
+            try:
+                return provider.ohlcv(symbol, timeframe, limit)
+            except Exception as exc:
+                failures.append(f"{provider.provider_id}: {exc}")
+        raise ProviderRegistryError(f"No configured provider supplied OHLCV for {symbol}: {'; '.join(failures)}")
+
+    @staticmethod
+    def is_stale(ticker: dict, max_age_seconds: int) -> bool:
+        age = datetime.now(timezone.utc).timestamp() * 1000 - ticker["timestamp"]
+        return age > max_age_seconds * 1000
 
     def describe(self) -> dict:
         return {
