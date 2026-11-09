@@ -19,7 +19,12 @@ for configured_provider in settings.market_data_provider_ids.split(','):
     if provider_id:
         market.register(CcxtSpotProvider(provider_id))
 if settings.twelve_data_api_key:
-    market.register(TwelveDataProvider(settings.twelve_data_api_key))
+    market.register(TwelveDataProvider(
+        settings.twelve_data_api_key,
+        state_path=settings.twelve_data_state_path,
+        daily_credit_budget=settings.twelve_data_daily_credit_budget,
+        min_request_interval_seconds=settings.twelve_data_min_request_interval_seconds,
+    ))
 portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 
 class OrderRequest(BaseModel):
