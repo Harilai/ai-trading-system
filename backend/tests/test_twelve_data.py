@@ -16,12 +16,17 @@ class FakeTwelveDataTransport:
         self.calls = []
 
     def __call__(self, url, timeout=15):
-        parsed = urlparse(url)
+        request_url = url.full_url if hasattr(url, "full_url") else url
+        request_headers = url.headers if hasattr(url, "headers") else {}
+        parsed = urlparse(request_url)
         params = parse_qs(parsed.query)
         endpoint = parsed.path.rsplit("/", 1)[-1]
         self.calls.append((endpoint, params, timeout))
-        if params.get("apikey") != [self.api_key]:
-            raise AssertionError("API key was not passed through the request")
+        authorization = request_headers.get("Authorization") or request_headers.get("Authorization".lower())
+        if authorization != f"apikey {self.api_key}":
+            raise AssertionError("API key was not passed through the Authorization header")
+        if "apikey" in params:
+            raise AssertionError("API key must not be placed in the URL query string")
         payload = self.responses.get(endpoint)
         if isinstance(payload, Exception):
             raise payload
@@ -54,7 +59,7 @@ def test_discovery_returns_us_equities_and_etfs_with_distinct_asset_classes(tmp_
         "stocks": {
             "data": [{
                 "symbol": "AAPL", "name": "Apple Inc", "currency": "USD",
-                "exchange": "NASDAQ", "country": "United States", "type": "Common Stock",
+                "exchange": "NASDAQ", "mic_code": "XNAS", "country": "United States", "type": "Common Stock",
             }],
             "status": "ok",
         },
@@ -62,7 +67,7 @@ def test_discovery_returns_us_equities_and_etfs_with_distinct_asset_classes(tmp_
             "result": {
                 "list": [{
                     "symbol": "SPY", "name": "SPDR S&P 500 ETF Trust",
-                    "country": "United States", "mic_code": "ARCX",
+                    "country": "United States", "exchange": "NYSE Arca", "mic_code": "ARCX",
                     "fund_family": "SPDR", "fund_type": "Large Blend",
                 }]
             },
@@ -77,7 +82,10 @@ def test_discovery_returns_us_equities_and_etfs_with_distinct_asset_classes(tmp_
     assert equity.asset_class is AssetClass.EQUITY
     assert equity.market_type is MarketType.CASH_EQUITY
     assert equity.quote == "USD"
+    assert equity.metadata["mic_code"] == "XNAS"
     assert etf.symbol == "SPY"
+    assert etf.metadata["exchange"] == "NYSE Arca"
+    assert etf.metadata["mic_code"] == "ARCX"
     assert etf.asset_class is AssetClass.ETF
     assert etf.metadata["fund_family"] == "SPDR"
     assert transport.calls[0][0] == "stocks"
@@ -196,3 +204,100 @@ def test_rate_limiter_waits_for_reserved_slot(tmp_path):
     provider.ticker("MSFT")
     assert len(delays) == 1
     assert delays[0] > 0
+
+
+def test_provider_credit_header_reconciles_daily_usage(tmp_path):
+    class Response(io.BytesIO):
+        headers = {"api-credits-used": "3"}
+
+    def opener(url, timeout=15):
+        return Response(json.dumps({
+            "symbol": "AAPL", "close": "212.50", "timestamp": 1_800_000_000,
+        }).encode("utf-8"))
+
+    state_path = str(tmp_path / "state.db")
+    provider = TwelveDataProvider(
+        "test-key", opener=opener, state_path=state_path,
+        daily_credit_budget=2, min_request_interval_seconds=0,
+    )
+    provider.ticker("AAPL")
+
+    # The provider reported three credits although the local estimate was one.
+    # The reconciled ledger must block another request against a two-credit budget.
+    other = TwelveDataProvider(
+        "test-key", opener=opener, state_path=state_path,
+        daily_credit_budget=2, min_request_interval_seconds=0,
+    )
+    with pytest.raises(MarketDataError, match="daily safety budget exhausted"):
+        other.ticker("MSFT")
+
+
+def test_market_state_returns_exchange_lookup_and_uses_cache(tmp_path):
+    transport = FakeTwelveDataTransport({
+        "market_state": [
+            {
+                "name": "NASDAQ", "code": "XNAS", "country": "United States",
+                "is_market_open": True, "time_to_open": "00:00:00",
+                "time_to_close": "03:12:00", "time_after_open": "03:48:00",
+            },
+            {
+                "name": "NYSE", "code": "XNYS", "country": "United States",
+                "is_market_open": False, "time_to_open": "12:00:00",
+                "time_to_close": "00:00:00", "time_after_open": "00:00:00",
+            },
+        ]
+    })
+    provider = TwelveDataProvider(
+        "test-key", opener=transport, state_path=str(tmp_path / "state.db"),
+        min_request_interval_seconds=0,
+    )
+    first = provider.market_state()
+    second = provider.market_state()
+    assert first["nasdaq"]["is_market_open"] is True
+    assert first["xnas"]["time_to_close"] == "03:12:00"
+    assert first["xnys"]["is_market_open"] is False
+    assert second == first
+    assert len(transport.calls) == 1
+    assert transport.calls[0][0] == "market_state"
+    assert transport.calls[0][1]["country"] == ["United States"]
+
+
+def test_market_state_rejects_unexpected_object_response(tmp_path):
+    transport = FakeTwelveDataTransport({
+        "market_state": {"status": "ok", "data": []},
+    })
+    provider = TwelveDataProvider(
+        "test-key", opener=transport, state_path=str(tmp_path / "state.db"),
+        min_request_interval_seconds=0,
+    )
+    with pytest.raises(MarketDataError, match="invalid response"):
+        provider.market_state()
+
+
+def test_rolling_minute_credit_budget_waits_before_ninth_credit(tmp_path):
+    delays = []
+    transport = FakeTwelveDataTransport({
+        "quote": {"symbol": "AAPL", "close": "212.50", "timestamp": 1_800_000_000},
+    })
+    provider = TwelveDataProvider(
+        "test-key", opener=transport, state_path=str(tmp_path / "state.db"),
+        daily_credit_budget=20, per_minute_credit_budget=8,
+        min_request_interval_seconds=0, sleeper=delays.append,
+    )
+    for index in range(8):
+        provider.ticker(f"STOCK{index}")
+    provider.ticker("NINTH")
+    assert len(transport.calls) == 9
+    assert len(delays) == 1
+    assert delays[0] >= 59
+
+
+def test_request_cost_above_minute_budget_is_rejected_before_transport(tmp_path):
+    transport = FakeTwelveDataTransport({})
+    provider = TwelveDataProvider(
+        "test-key", opener=transport, state_path=str(tmp_path / "state.db"),
+        per_minute_credit_budget=8, min_request_interval_seconds=0,
+    )
+    with pytest.raises(MarketDataError, match="exceeds the per-minute safety budget"):
+        provider._reserve_api_credit(9)
+    assert transport.calls == []

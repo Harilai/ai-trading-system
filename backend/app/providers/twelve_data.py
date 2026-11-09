@@ -10,7 +10,7 @@ from threading import RLock
 from typing import Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..market_data import MarketDataError
@@ -34,6 +34,7 @@ class TwelveDataProvider:
         timeout: int = 15,
         state_path: str = "data/twelve_data_state.sqlite3",
         daily_credit_budget: int = 750,
+        per_minute_credit_budget: int = 8,
         min_request_interval_seconds: float = 7.5,
         sleeper: Callable = time.sleep,
     ):
@@ -43,10 +44,11 @@ class TwelveDataProvider:
         self._api_key = api_key.strip()
         self._opener = opener
         self.timeout = timeout
-        if daily_credit_budget < 1 or min_request_interval_seconds < 0:
+        if daily_credit_budget < 1 or per_minute_credit_budget < 1 or min_request_interval_seconds < 0:
             raise ValueError("Invalid Twelve Data quota or rate-limit configuration")
         self.state_path = state_path
         self.daily_credit_budget = daily_credit_budget
+        self.per_minute_credit_budget = per_minute_credit_budget
         self.min_request_interval_seconds = min_request_interval_seconds
         self._sleep = sleeper
         self._quota_lock = RLock()
@@ -61,6 +63,14 @@ class TwelveDataProvider:
                     id INTEGER PRIMARY KEY CHECK(id=1),
                     next_request_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS api_minute_usage (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    reserved_at REAL NOT NULL,
+                    utc_day TEXT NOT NULL,
+                    credits INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_api_minute_usage_time
+                    ON api_minute_usage(reserved_at);
                 INSERT OR IGNORE INTO api_rate_state(id, next_request_at) VALUES(1, 0);
                 CREATE TABLE IF NOT EXISTS response_cache (
                     cache_key TEXT PRIMARY KEY,
@@ -74,6 +84,8 @@ class TwelveDataProvider:
 
     @staticmethod
     def _cache_ttl(endpoint: str, params: dict) -> int:
+        if endpoint == "market_state":
+            return 60
         if endpoint in {"stocks", "etfs/list"}:
             return 86400
         if endpoint == "quote":
@@ -83,7 +95,7 @@ class TwelveDataProvider:
             return 21600 if interval in {"1day", "1week", "1month"} else 300
         return 0
 
-    def _cached_response(self, cache_key: str) -> dict | None:
+    def _cached_response(self, cache_key: str) -> dict | list | None:
         now = time.time()
         with self._connect() as db:
             row = db.execute(
@@ -97,7 +109,7 @@ class TwelveDataProvider:
                 return None
             return json.loads(row[0])
 
-    def _store_response(self, cache_key: str, payload: dict, ttl: int) -> None:
+    def _store_response(self, cache_key: str, payload: dict | list, ttl: int) -> None:
         if ttl <= 0:
             return
         with self._connect() as db:
@@ -106,32 +118,87 @@ class TwelveDataProvider:
                 (cache_key, json.dumps(payload), time.time() + ttl),
             )
 
-    def _reserve_api_credit(self) -> None:
+    @staticmethod
+    def _estimated_credits(endpoint: str, params: dict) -> int:
+        # Current adapter requests one symbol per quote/time-series call.
+        # Catalog endpoints are charged as one request; unknown endpoints default to one.
+        symbols = params.get("symbol")
+        if endpoint in {"quote", "time_series"} and symbols:
+            return max(1, len([item for item in str(symbols).split(",") if item.strip()]))
+        return 1
+
+    def _reserve_api_credit(self, estimated_credits: int) -> tuple[int, str]:
+        """Reserve daily and rolling-60-second credits before making a request."""
+        if estimated_credits > self.per_minute_credit_budget:
+            raise MarketDataError(
+                f"Twelve Data request cost ({estimated_credits}) exceeds the "
+                f"per-minute safety budget ({self.per_minute_credit_budget} credits)"
+            )
         now = time.time()
         utc_day = datetime.now(timezone.utc).date().isoformat()
         with self._quota_lock, self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT credits FROM api_usage WHERE utc_day=?", (utc_day,)).fetchone()
             used = int(row[0]) if row else 0
-            if used >= self.daily_credit_budget:
+            if used + estimated_credits > self.daily_credit_budget:
                 raise MarketDataError(
                     f"Twelve Data daily safety budget exhausted ({used}/{self.daily_credit_budget} estimated credits); retry after UTC midnight"
                 )
-            db.execute(
-                "INSERT INTO api_usage(utc_day,credits) VALUES(?,1) "
-                "ON CONFLICT(utc_day) DO UPDATE SET credits=credits+1",
-                (utc_day,),
-            )
             row = db.execute("SELECT next_request_at FROM api_rate_state WHERE id=1").fetchone()
-            next_request_at = float(row[0]) if row else 0.0
-            slot = max(now, next_request_at)
+            slot = max(now, float(row[0]) if row else 0.0)
+            while True:
+                db.execute(
+                    "DELETE FROM api_minute_usage WHERE reserved_at <= ?",
+                    (slot - 60.0,),
+                )
+                recent = db.execute(
+                    "SELECT COALESCE(SUM(credits),0), MIN(reserved_at) "
+                    "FROM api_minute_usage WHERE reserved_at > ?",
+                    (slot - 60.0,),
+                ).fetchone()
+                minute_used = int(recent[0] or 0)
+                if minute_used + estimated_credits <= self.per_minute_credit_budget:
+                    break
+                oldest = recent[1]
+                if oldest is None:
+                    raise MarketDataError("Twelve Data minute quota state is inconsistent")
+                slot = max(slot, float(oldest) + 60.0)
+            db.execute(
+                "INSERT INTO api_usage(utc_day,credits) VALUES(?,?) "
+                "ON CONFLICT(utc_day) DO UPDATE SET credits=credits+excluded.credits",
+                (utc_day, estimated_credits),
+            )
+            cursor = db.execute(
+                "INSERT INTO api_minute_usage(reserved_at,utc_day,credits) VALUES(?,?,?)",
+                (slot, utc_day, estimated_credits),
+            )
             db.execute(
                 "UPDATE api_rate_state SET next_request_at=? WHERE id=1",
                 (slot + self.min_request_interval_seconds,),
             )
+            reservation_id = int(cursor.lastrowid)
         delay = slot - time.time()
         if delay > 0:
             self._sleep(delay)
+        return reservation_id, utc_day
+
+    def _reconcile_api_credits(
+        self, estimated: int, actual: int, reservation_id: int, utc_day: str
+    ) -> None:
+        """Replace provisional daily and rolling-minute estimates with provider usage."""
+        delta = actual - estimated
+        if delta == 0:
+            return
+        with self._quota_lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                "UPDATE api_usage SET credits=MAX(0, credits + ?) WHERE utc_day=?",
+                (delta, utc_day),
+            )
+            db.execute(
+                "UPDATE api_minute_usage SET credits=MAX(0, credits + ?) WHERE id=?",
+                (delta, reservation_id),
+            )
 
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
@@ -143,7 +210,7 @@ class TwelveDataProvider:
             requires_authentication_for_market_data=True,
             requires_authentication_for_trading=True,
             connectivity_status="not_checked",
-            rate_limit_ms=7500,
+            rate_limit_ms=int(self.min_request_interval_seconds * 1000),
             geographic_restrictions=("Initial adapter restricted to United States listings",),
             account_eligibility=("Twelve Data API key required; free Basic plan has usage quotas",),
             authenticated_account=False,
@@ -162,13 +229,13 @@ class TwelveDataProvider:
             restrictions=(
                 "Market data only; no brokerage account or order execution",
                 "Initial adapter restricted to United States equities and ETFs",
-                "Free Basic plan quota is 8 API credits per minute and 800 per day; endpoint weights apply",
+                "Free Basic plan quota is 8 API credits per minute and 800 per day; local rolling-minute and daily safety budgets account for estimated endpoint weights",
                 "International symbols are not included in this initial adapter",
                 "Quotes may not contain bid/ask; absence is preserved, never replaced with fabricated values",
             ),
         )
 
-    def _request(self, endpoint: str, params: dict | None = None) -> dict:
+    def _request(self, endpoint: str, params: dict | None = None) -> dict | list:
         query = dict(params or {})
         cache_material = json.dumps([endpoint, query], sort_keys=True, separators=(",", ":"))
         cache_key = hashlib.sha256(cache_material.encode("utf-8")).hexdigest()
@@ -176,19 +243,27 @@ class TwelveDataProvider:
         if cached is not None:
             return cached
 
-        self._reserve_api_credit()
-        request_query = dict(query)
-        request_query["apikey"] = self._api_key
-        url = f"{self.BASE_URL}/{endpoint.lstrip('/')}?{urlencode(request_query)}"
+        estimated_credits = self._estimated_credits(endpoint, query)
+        reservation_id, reservation_day = self._reserve_api_credit(estimated_credits)
+        url = f"{self.BASE_URL}/{endpoint.lstrip('/')}?{urlencode(query)}"
+        request = Request(url, headers={"Authorization": f"apikey {self._api_key}"})
         try:
-            response = self._opener(url, timeout=self.timeout)
+            response = self._opener(request, timeout=self.timeout)
             payload = response.read()
             data = json.loads(payload.decode("utf-8"))
+            headers = getattr(response, "headers", {})
+            actual_header = headers.get("api-credits-used") if hasattr(headers, "get") else None
+            if actual_header is not None:
+                try:
+                    actual_credits = max(0, int(actual_header))
+                except (TypeError, ValueError):
+                    actual_credits = estimated_credits
+                self._reconcile_api_credits(estimated_credits, actual_credits, reservation_id, reservation_day)
         except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
             raise MarketDataError(f"Twelve Data request failed for {endpoint}: {type(exc).__name__}") from exc
-        if not isinstance(data, dict):
+        if not isinstance(data, (dict, list)):
             raise MarketDataError(f"Twelve Data returned an invalid response for {endpoint}")
-        if data.get("status") == "error" or data.get("code") not in (None, 200):
+        if isinstance(data, dict) and (data.get("status") == "error" or data.get("code") not in (None, 200)):
             message = str(data.get("message") or data.get("status") or "provider error")
             raise MarketDataError(f"Twelve Data {endpoint} error: {message[:240]}")
         self._store_response(cache_key, data, self._cache_ttl(endpoint, query))
@@ -231,6 +306,7 @@ class TwelveDataProvider:
                     metadata={
                         "name": item.get("name"),
                         "exchange": item.get("exchange"),
+                        "mic_code": item.get("mic_code"),
                         "country": item.get("country"),
                         "instrument_type": item.get("type"),
                         "data_scope": "US",
@@ -253,7 +329,8 @@ class TwelveDataProvider:
                     active=True,
                     metadata={
                         "name": item.get("name"),
-                        "exchange": item.get("exchange") or item.get("mic_code"),
+                        "exchange": item.get("exchange"),
+                        "mic_code": item.get("mic_code"),
                         "country": item.get("country") or "United States",
                         "fund_family": item.get("fund_family"),
                         "fund_type": item.get("fund_type"),
@@ -261,6 +338,28 @@ class TwelveDataProvider:
                     },
                 ))
         return discovered
+
+    def market_state(self) -> dict[str, dict]:
+        data = self._request("market_state", {"country": "United States"})
+        if not isinstance(data, list):
+            raise MarketDataError("Twelve Data market_state returned an invalid response")
+        states: dict[str, dict] = {}
+        for item in data:
+            if not isinstance(item, dict) or not isinstance(item.get("is_market_open"), bool):
+                continue
+            state = {
+                "name": item.get("name"),
+                "code": item.get("code"),
+                "country": item.get("country"),
+                "is_market_open": item["is_market_open"],
+                "time_to_open": item.get("time_to_open"),
+                "time_to_close": item.get("time_to_close"),
+                "time_after_open": item.get("time_after_open"),
+            }
+            for key in (item.get("name"), item.get("code")):
+                if isinstance(key, str) and key.strip():
+                    states[key.strip().casefold()] = state
+        return states
 
     def ticker(self, symbol: str) -> dict:
         data = self._request("quote", {"symbol": symbol})
