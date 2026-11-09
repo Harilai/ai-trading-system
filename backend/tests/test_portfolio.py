@@ -170,6 +170,8 @@ def test_pending_withdrawals_reserve_available_cash(portfolio):
     assert portfolio.snapshot()["available_cash_for_manual_withdrawal"] == pytest.approx(8)
     with pytest.raises(PortfolioError, match="after pending requests"):
         portfolio.request_withdrawal(9)
+    with pytest.raises(PortfolioError, match="unreserved cash"):
+        portfolio.execute("BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1)
     portfolio.cancel_withdrawal(first["id"])
     assert portfolio.snapshot()["available_cash_for_manual_withdrawal"] == pytest.approx(20)
 
