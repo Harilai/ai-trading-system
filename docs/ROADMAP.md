@@ -8,6 +8,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 |---|---|
 | Backend FastAPI y paper portfolio SQLite | Implementado |
 | Datos públicos crypto spot vía CCXT | Implementado; solo datos públicos |
+| Datos públicos US equities/ETF vía Twelve Data Basic | Adaptador implementado y probado; API key gratuita opcional; solo datos, sin trading |
 | Contratos normalizados de proveedores e instrumentos | Implementado |
 | Identidad de posiciones por `provider_id + instrument_id` | Implementado; migración SQLite incluida |
 | Aislamiento de posiciones con mismo símbolo entre proveedores | Implementado y probado |
@@ -31,7 +32,8 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Risk Manager conectado obligatoriamente a órdenes paper | Implementado; solo crypto spot EUR |
 | Sniper y generación de propuestas | Pendiente |
 | Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada; ciclo periódico cada 5 min al reanudar worker |
-| Acciones/ETF y FX | Pendiente; requiere broker/data adapters y validación |
+| Datos de acciones/ETF estadounidenses | Adaptador Twelve Data Basic implementado; integración con Scout/estrategias pendiente |
+| Broker de acciones/ETF y ejecución | Pendiente; requiere broker adapter, elegibilidad y validación |
 | DEX, wallets, blockchain y DeFi | Pendiente; no hay integración ni firma |
 | Futuros, opciones, margin y derivados | Deshabilitados; perfiles y límites específicos pendientes |
 | News/Sentiment con fuentes auditables | Pendiente |
@@ -74,6 +76,8 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 
 ## Prioridad 4 — cobertura y producto
 
+- [x] Implementar adaptador de datos Twelve Data Basic para catálogo, cotizaciones y OHLCV de acciones/ETF estadounidenses (sin órdenes).
+- [ ] Integrar acciones/ETF en Scout y Strategy Research con validación de divisa, horario de mercado, frescura, liquidez y ausencia de bid/ask.
 - [ ] Implementar y validar un adaptador de broker de acciones/ETF, horarios, permisos, datos, mínimos y comisiones.
 - [x] Generalizar el portfolio a claves `provider_id + instrument_id`, con migración de datos legacy y aislamiento de símbolos duplicados.
 - [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución.
