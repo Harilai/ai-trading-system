@@ -1,46 +1,42 @@
 # AI Trading System
 
-Plataforma modular de trading algorítmico asistido por agentes de IA.
+Plataforma modular de trading algorítmico autónomo, construida por fases con prioridad en la validación, la trazabilidad y la protección del capital.
 
-## Estado actual
+## Estado real de implementación
 
-**Sprint 1: backend inicial de paper trading.** Utiliza datos públicos de mercado mediante CCXT y una cartera virtual persistida en SQLite. No envía órdenes reales.
+La rama integrada contiene actualmente:
+
+- Backend FastAPI y cartera simulada persistida en SQLite.
+- Datos públicos de criptomonedas mediante CCXT (Kraken por defecto).
+- Indicadores EMA, SMA, RSI, MACD, Bollinger Bands y ATR.
+- Simulación de compras y ventas con comisiones y slippage configurables.
+- Rechazo de pares no admitidos y datos de mercado obsoletos.
+- Worker asíncrono persistente con cola durable, leases, reintentos y recuperación de tareas expiradas.
+- API de supervisión autenticada: estado, pausa, reanudación, parada de emergencia y encolado de tareas.
+- Scout que descubre mercados spot cotizados en EUR, filtra por liquidez, spread y frescura de ticker.
+- Charts Agent determinista.
+- Strategy Research Agent con tres estrategias candidatas long-only (EMA 12/26, RSI(14) y Bollinger(20,2)), backtesting cronológico 70/30, ejecución simulada en la apertura de la vela siguiente y costes configurables.
+
+**Límite funcional actual:** el sistema descubre y analiza mercados y compara estrategias. Todavía no genera órdenes automáticas ni gestiona posiciones automáticamente. El Risk Manager existe como componente determinista, pero aún debe conectarse como puerta obligatoria del flujo de decisiones y ejecución. No hay trading real, acciones/ETF, dashboard ni despliegue 24/7.
+
+## Capital y divisa
+
+El backend actual usa una cartera simulada de **20 EUR**, no 20 USD. Solo admite pares cotizados en EUR. La conversión de divisas y los instrumentos de bolsa requieren una implementación y validación separadas.
 
 ## Arquitectura objetivo
 
-- **Chief:** coordina informes y resuelve señales.
-- **Scout:** explora mercados y prioriza oportunidades.
-- **News / Sentiment:** analizan noticias y sentimiento.
+- **Chief:** coordina informes, oportunidades y decisiones.
+- **Scout:** explora mercados y prioriza activos.
+- **News / Sentiment:** analizan noticias y sentimiento con atribución y frescura de fuentes.
 - **Charts:** calcula indicadores y analiza tendencias.
+- **Strategy Research:** descubre, compara y valida estrategias.
 - **Sniper:** propone entrada, salida, stop-loss y tamaño.
-- **Risk Manager:** valida propuestas con reglas deterministas.
-- **Trading engine:** gestiona órdenes y posiciones.
+- **Portfolio Manager:** gestiona exposición, posiciones y asignación de beneficios.
+- **Risk Manager:** valida propuestas con reglas deterministas y no eludibles.
+- **Trading Engine:** gestiona órdenes y posiciones paper/live separadas.
 - **Dashboard:** presenta cartera, actividad de agentes y rendimiento.
 
-Los agentes se incorporarán por fases. Los mensajes entre agentes usarán esquemas tipados; un LLM nunca podrá saltarse el motor de riesgo. Ya existen componentes iniciales independientes para Charts y Risk Manager, todavía no conectados al worker ni al motor de órdenes.
-
-## Sprint 1 incluye
-
-- API REST con FastAPI.
-- Datos públicos de criptomonedas mediante CCXT (Kraken por defecto).
-- Indicadores EMA, SMA, RSI, MACD, Bollinger Bands y ATR.
-- Cartera paper persistida en SQLite.
-- Simulación de compras y ventas con comisión y slippage configurables; las comisiones de entrada se incluyen en el coste medio y el P/L realizado es neto de ambas patas.
-- Rechazo de datos ausentes o desactualizados.
-- Restricción inicial a pares cotizados en EUR para evitar conversiones FX incorrectas.
-- Docker Compose y pruebas automatizadas.
-
-Capital virtual inicial: **20 EUR**, según la decisión acordada para el proyecto. El documento de requisitos menciona 20 USD; esta configuración mantiene el saldo en euros.
-
-## Límites actuales
-
-- No hay ejecución real ni integración de órdenes privadas.
-- Acciones y ETF pendientes de un proveedor independiente y conversión de divisa validada.
-- El fill paper se calcula con ticker público, comisión y slippage configurados.
-- Cartera de una sola cuenta.
-- Agentes LLM, dashboard y backtesting quedan para siguientes sprints.
-- El coste de posición incluye las comisiones de entrada; el P/L realizado descuenta tanto las comisiones de entrada como las de salida.
-- El campo `invested_value` representa coste de adquisición, no valor de mercado; el marcado a mercado y el P/L no realizado siguen pendientes.
+Los mensajes entre agentes usan esquemas tipados. Un LLM no puede ejecutar operaciones ni saltarse el Risk Manager. El funcionamiento esencial debe poder continuar sin un LLM.
 
 ## Ejecución local
 
@@ -49,7 +45,7 @@ Requiere Python 3.12+.
 ```bash
 cd backend
 python -m venv .venv
-# Windows: .venv\Scripts\activate
+# Windows: .venv\\Scripts\\activate
 # Linux/macOS: source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
@@ -58,9 +54,11 @@ uvicorn app.main:app --reload
 API: http://localhost:8000  
 Swagger: http://localhost:8000/docs
 
-Tests desde backend/: `pytest`.
+Tests desde `backend/`:
 
-GitHub Actions ejecuta la suite del backend en los pushes y pull requests cubiertos por `.github/workflows/backend-ci.yml`.
+```bash
+pytest -q
+```
 
 ## Docker
 
@@ -70,7 +68,7 @@ docker compose up --build -d
 docker compose logs -f api
 ```
 
-## Endpoints
+## Endpoints principales
 
 - `GET /api/health`
 - `GET /api/market/{symbol}/ticker`
@@ -78,40 +76,22 @@ docker compose logs -f api
 - `GET /api/market/{symbol}/indicators`
 - `GET /api/portfolio`
 - `GET /api/trades`
-- `POST /api/orders` (solo paper)
+- `POST /api/orders` — solo paper.
+- `GET /api/agent/status` — requiere `X-Agent-Token`.
+- `POST /api/agent/resume`, `/pause`, `/emergency-stop`, `/reset-emergency-stop`.
+- `POST /api/agent/tasks` — actualmente acepta `health_check` y `market_scan`.
 
-Ejemplo de orden simulada: `{"symbol":"BTC/EUR","side":"buy","quantity":0.00005}`.
+## Supervisión del worker
 
-## Seguridad
+Configura un secreto largo y aleatorio en `.env` como `AGENT_CONTROL_TOKEN`. Los endpoints de control requieren ese valor en la cabecera `X-Agent-Token`. Si no está configurado, los controles devuelven 503.
 
-- Paper trading es el único modo disponible.
-- No se almacenan claves API ni se solicitan permisos de retirada.
-- Live trading requerirá una implementación separada, activación explícita, límites independientes y pruebas específicas.
+El worker se inicia pausado y no realiza operaciones financieras. Para ejecutar un análisis, se debe reanudar explícitamente y encolar una tarea `market_scan`. No expongas la API a Internet sin HTTPS, autenticación, restricciones de red, rate limiting y gestión segura de secretos.
 
+## Seguridad y límites
 
-## Persistent autonomous agent (foundation)
-
-The persistent-agent foundation adds:
-
-- A SQLite-backed operational state that survives restarts.
-- A durable task queue with leases, retries and recovery of expired running tasks.
-- Separate persistent memory records, validated-knowledge flag and audit events.
-- A continuously running asyncio worker, started with the API process; it remains paused by default.
-- Authenticated supervision endpoints for status, pause, resume, emergency stop, reset and task enqueue.
-- An interchangeable LLM provider protocol and an opt-in OpenAI-compatible adapter. No LLM calls occur by default.
-
-### Configure supervision
-
-Set a long random `AGENT_CONTROL_TOKEN` in the root `.env` file. Agent control endpoints require it in the `X-Agent-Token` header. If the token is unset, these endpoints return 503 and cannot be used. Do not expose the API publicly until HTTPS, authentication, network restrictions and production secret management are configured.
-
-Endpoints:
-- `GET /api/agent/status`
-- `POST /api/agent/resume`
-- `POST /api/agent/pause`
-- `POST /api/agent/emergency-stop`
-- `POST /api/agent/reset-emergency-stop`
-- `POST /api/agent/tasks` (currently only `health_check` tasks are accepted)
-
-The worker starts paused and will not initiate trades. In this phase it only executes a deterministic health-check task. Separate deterministic Charts and Risk Manager components now exist as a first agent layer, but they are not yet orchestrated by the worker or connected to order execution. Market scanning, agent delegation, LLM reasoning triggers and automated trading are not yet implemented. Emergency stop disables the worker; it does not need to cancel broker orders because live execution does not exist.
-
-The persistent memory tables currently store operational observations and audit events. Historical market analysis, strategy knowledge, objectives, outcomes and retrieval policies will be added in later phases. Risk controls remain code/configuration controlled; agents cannot change them.
+- Paper trading es el único modo de ejecución disponible.
+- No se almacenan claves privadas de exchanges ni se solicitan permisos de retirada.
+- El worker depende de que el proceso de la aplicación esté desplegado y activo; una conversación de ChatGPT no mantiene el proceso en ejecución.
+- Los backtests son evidencia histórica, no una garantía de rentabilidad.
+- Los datos gratuitos pueden tener límites, retrasos o restricciones.
+- Live trading requiere un módulo separado, autorización explícita, límites independientes, reconciliación con el proveedor y pruebas específicas.
