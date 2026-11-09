@@ -10,7 +10,7 @@ from threading import RLock
 from typing import Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..market_data import MarketDataError
@@ -201,11 +201,10 @@ class TwelveDataProvider:
 
         estimated_credits = self._estimated_credits(endpoint, query)
         self._reserve_api_credit(estimated_credits)
-        request_query = dict(query)
-        request_query["apikey"] = self._api_key
-        url = f"{self.BASE_URL}/{endpoint.lstrip('/')}?{urlencode(request_query)}"
+        url = f"{self.BASE_URL}/{endpoint.lstrip('/')}?{urlencode(query)}"
+        request = Request(url, headers={"Authorization": f"apikey {self._api_key}"})
         try:
-            response = self._opener(url, timeout=self.timeout)
+            response = self._opener(request, timeout=self.timeout)
             payload = response.read()
             data = json.loads(payload.decode("utf-8"))
             headers = getattr(response, "headers", {})
