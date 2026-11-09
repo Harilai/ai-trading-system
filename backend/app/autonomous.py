@@ -220,9 +220,11 @@ class AutonomousStore:
 class AutonomousAgent:
     """Persistent worker for deterministic maintenance and market-analysis tasks."""
 
-    def __init__(self, store: AutonomousStore, scout=None):
+    def __init__(self, store: AutonomousStore, scout=None, chief=None, portfolio=None):
         self.store = store
         self.scout = scout
+        self.chief = chief
+        self.portfolio = portfolio
         self._task: asyncio.Task | None = None
         self._stopping = asyncio.Event()
 
@@ -267,5 +269,14 @@ class AutonomousAgent:
                 raise RuntimeError("Market scanner is not configured")
             result = await asyncio.to_thread(self.scout.scan)
             self.store.remember("market_scan", {"task_id": task["id"], **result}, validated=True)
+            return result
+        if task["kind"] == "decision_cycle":
+            if self.scout is None or self.chief is None or self.portfolio is None:
+                raise RuntimeError("Decision cycle dependencies are not configured")
+            scan = await asyncio.to_thread(self.scout.scan)
+            portfolio = await asyncio.to_thread(self.portfolio.snapshot)
+            decision = self.chief.decide(scan, portfolio)
+            result = {"scan": scan, "decision": decision.model_dump(), "execution": "proposal_only"}
+            self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
             return result
         raise ValueError(f"Unsupported task kind in this phase: {task['kind']}")

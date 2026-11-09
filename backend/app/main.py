@@ -5,6 +5,7 @@ from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
 from .market_data import CcxtMarketData, MarketDataError
 from .scout import ScoutAgent
 from .strategy_research import StrategyResearchAgent
+from .chief import ChiefAgent
 from .portfolio import PaperPortfolio, PortfolioError
 
 app = FastAPI(title="AI Trading System", version="0.1.0", description="Paper trading only; live execution is not implemented.")
@@ -76,7 +77,13 @@ scout = ScoutAgent(
         max_position_fraction=settings.max_order_fraction,
     ),
 )
-agent_worker = AutonomousAgent(agent_store, scout=scout)
+chief = ChiefAgent(
+    max_order_fraction=settings.max_order_fraction,
+    estimated_fee_rate=settings.fee_rate,
+    estimated_slippage_rate=settings.slippage_rate,
+    minimum_order_value_eur=settings.min_order_value_eur,
+)
+agent_worker = AutonomousAgent(agent_store, scout=scout, chief=chief, portfolio=portfolio)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

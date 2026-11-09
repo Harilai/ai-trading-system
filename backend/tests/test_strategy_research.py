@@ -32,6 +32,8 @@ def test_research_returns_chronological_out_of_sample_results():
     assert len(result["candidates"]) == 3
     assert all("out_of_sample" in item for item in result["candidates"])
     assert result["execution"] == "research_only"
+    assert all(isinstance(item["current_entry_signal"], bool) for item in result["candidates"])
+    assert all(isinstance(item["current_hold_signal"], bool) for item in result["candidates"])
     assert result["cost_model"]["max_position_fraction"] == pytest.approx(0.25)
 
 

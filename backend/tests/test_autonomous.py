@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from app.autonomous import AutonomousStore, utcnow
+from app.autonomous import AutonomousAgent, AutonomousStore, utcnow
 
 
 def test_agent_starts_paused_and_emergency_stopped(tmp_path):
@@ -64,3 +64,34 @@ def test_unexpired_running_task_is_not_recovered(tmp_path):
     with store.connect() as db:
         row = db.execute("SELECT status FROM agent_tasks WHERE id=?", (task["id"],)).fetchone()
     assert row["status"] == "running"
+
+
+def test_decision_cycle_persists_proposal_only_result(tmp_path):
+    import asyncio
+
+    class FakeScout:
+        def scan(self):
+            return {"analyses": [{"market": {"symbol": "BTC/EUR"}}]}
+
+    class FakeDecision:
+        def model_dump(self):
+            return {"action": "hold", "rationale": "No validated opportunity"}
+
+    class FakeChief:
+        def decide(self, scan, portfolio):
+            assert scan["analyses"]
+            assert portfolio["cash"] == 20
+            return FakeDecision()
+
+    class FakePortfolio:
+        def snapshot(self):
+            return {"cash": 20}
+
+    store = AutonomousStore(str(tmp_path / "decision.db"))
+    worker = AutonomousAgent(store, scout=FakeScout(), chief=FakeChief(), portfolio=FakePortfolio())
+    task = {"id": "decision-test", "kind": "decision_cycle", "payload": {}}
+    result = asyncio.run(worker._execute(task))
+    assert result["execution"] == "proposal_only"
+    assert result["decision"]["action"] == "hold"
+    memory = store.overview()["memory"]
+    assert memory[0]["category"] == "chief_decision"
