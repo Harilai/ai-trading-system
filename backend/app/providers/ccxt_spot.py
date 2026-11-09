@@ -147,7 +147,7 @@ class CcxtSpotProvider:
             if volume is None or float(volume) < min_quote_volume or spread > max_spread_fraction:
                 continue
             ranked.append({
-                "symbol": symbol, "last": float(last), "bid": float(bid), "ask": float(ask),
+                "symbol": symbol, "instrument_id": f"{self.provider_id}:spot:{symbol}", "last": float(last), "bid": float(bid), "ask": float(ask),
                 "spread_fraction": spread, "quote_volume_24h": float(volume),
                 "ticker_timestamp_ms": int(timestamp), "provider_id": self.provider_id,
                 "asset_class": AssetClass.CRYPTO.value, "market_type": MarketType.SPOT.value,
