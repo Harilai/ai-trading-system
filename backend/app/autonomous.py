@@ -28,6 +28,7 @@ class AutonomousStore:
                 enabled INTEGER NOT NULL DEFAULT 0,
                 emergency_stop INTEGER NOT NULL DEFAULT 0,
                 last_heartbeat TEXT,
+                last_decision_enqueued_at TEXT,
                 updated_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS agent_tasks (
@@ -60,6 +61,10 @@ class AutonomousStore:
             INSERT OR IGNORE INTO agent_state(id, enabled, emergency_stop, updated_at)
             VALUES(1, 0, 0, CURRENT_TIMESTAMP);
             """)
+        with self.connect() as db:
+            columns = {row['name'] for row in db.execute('PRAGMA table_info(agent_state)')}
+            if 'last_decision_enqueued_at' not in columns:
+                db.execute('ALTER TABLE agent_state ADD COLUMN last_decision_enqueued_at TEXT')
         # Recover expired work on startup as well as during the worker loop.
         self.recover_expired_tasks()
 
@@ -88,6 +93,42 @@ class AutonomousStore:
         if recovered:
             self.audit("expired_tasks_recovered", {"count": recovered})
         return recovered
+
+    def schedule_decision_cycle(self, interval_seconds: int = 300) -> dict[str, Any] | None:
+        """Enqueue at most one periodic cycle; state and queue changes are atomic."""
+        if interval_seconds < 60:
+            raise ValueError("Decision-cycle interval must be at least 60 seconds")
+        now = utcnow()
+        now_text = now.isoformat()
+        task_id = str(uuid4())
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            state = db.execute(
+                "SELECT enabled, emergency_stop, last_decision_enqueued_at "
+                "FROM agent_state WHERE id=1"
+            ).fetchone()
+            if not state["enabled"] or state["emergency_stop"]:
+                return None
+            active = db.execute(
+                "SELECT id FROM agent_tasks WHERE kind='decision_cycle' "
+                "AND status IN ('pending','running') LIMIT 1"
+            ).fetchone()
+            if active:
+                return None
+            last = state["last_decision_enqueued_at"]
+            if last and now - datetime.fromisoformat(last) < timedelta(seconds=interval_seconds):
+                return None
+            db.execute(
+                "INSERT INTO agent_tasks(id,kind,payload,status,due_at,created_at,updated_at) "
+                "VALUES(?,'decision_cycle',?,'pending',?,?,?)",
+                (task_id, json.dumps({"trigger": "scheduler"}), now_text, now_text, now_text),
+            )
+            db.execute(
+                "UPDATE agent_state SET last_decision_enqueued_at=?, updated_at=? WHERE id=1",
+                (now_text, now_text),
+            )
+        self.audit("scheduled_decision_cycle_enqueued", {"task_id": task_id})
+        return {"id": task_id, "kind": "decision_cycle", "status": "pending", "due_at": now_text}
 
     def state(self) -> dict[str, Any]:
         with self.connect() as db:
@@ -246,6 +287,7 @@ class AutonomousAgent:
             state = self.store.state()
             self.store.heartbeat()
             if state["enabled"] and not state["emergency_stop"]:
+                self.store.schedule_decision_cycle(settings.decision_cycle_interval_seconds)
                 task = self.store.claim_due_task()
                 if task:
                     try:
