@@ -14,8 +14,10 @@ Keep the dependency order: review and integrate PR #1, then PR #2, then PR #3. D
 
 ## Priority 0 — validate the existing foundation
 
-- [ ] Run the complete backend test suite in CI and fix all failures.
-- [ ] Review paper order accounting, transaction boundaries, floating-point precision and duplicate submission behaviour.
+- [x] Add a GitHub Actions workflow to run the backend test suite on covered pushes and pull requests.
+- [ ] Obtain a successful run from GitHub Actions and fix any failures.
+- [x] Correct paper-trade cost basis so entry fees are included and realised P/L is net of entry and exit fees.
+- [ ] Review transaction boundaries, floating-point precision and duplicate submission behaviour.
 - [ ] Add portfolio valuation using fresh market prices; distinguish cost basis, market value, realised P/L and unrealised P/L.
 - [ ] Validate indicator calculations against known reference series and edge cases.
 - [ ] Add CI for tests, formatting, type checks and dependency/security scanning.
