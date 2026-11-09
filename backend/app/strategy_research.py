@@ -81,7 +81,9 @@ def _market_regime(closes: Sequence[float]) -> dict[str, float | str]:
         volatility_state = "low"
         percentile = 0.0
     else:
-        percentile = sum(value <= current_volatility for value in rolling_volatility) / len(rolling_volatility)
+        less = sum(value < current_volatility for value in rolling_volatility)
+        equal = sum(value == current_volatility for value in rolling_volatility)
+        percentile = (less + 0.5 * equal) / len(rolling_volatility)
         if percentile >= 0.8:
             volatility_state = "high"
         elif percentile <= 0.2:
