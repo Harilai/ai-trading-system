@@ -255,3 +255,17 @@ def test_quote_candidate_limit_bounds_quote_requests():
     assert result["considered"] == 3
     assert len([call for call in provider.calls if call[0] == "ticker"]) == 3
     assert len([call for call in provider.calls if call[0] == "ohlcv"]) == 2
+
+
+
+def test_quote_screen_samples_across_entire_catalog_not_only_first_page():
+    instruments = [make_instrument(f"SYM{index:02d}") for index in range(12)]
+    provider = FakeEquityProvider(instruments)
+    result = EquityEtfResearchAgent(
+        provider, max_instruments=2, max_quote_candidates=3
+    ).scan()
+    sampled = [call[1] for call in provider.calls if call[0] == "ticker"]
+    assert sampled == ["SYM00", "SYM06", "SYM11"]
+    assert result["eligible_universe"] == 12
+    assert result["quote_sampled"] == 3
+    assert result["considered"] == 3
