@@ -38,6 +38,11 @@ class ScoutAgent:
             quote="EUR",
             limit=self.max_symbols,
         )
+        for failure in getattr(self.market_data, "last_discovery_failures", []):
+            rejected.append({
+                "symbol": failure["provider_id"],
+                "reason": "Provider discovery failed: " + failure["reason"],
+            })
         known_symbols = {item["symbol"].upper() for item in candidates}
         for symbol in include_symbols or []:
             normalized = symbol.strip().upper()
