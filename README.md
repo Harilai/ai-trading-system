@@ -17,7 +17,7 @@ Plataforma modular de trading algorítmico asistido por agentes de IA.
 - **Trading engine:** gestiona órdenes y posiciones.
 - **Dashboard:** presenta cartera, actividad de agentes y rendimiento.
 
-Los agentes se incorporarán por fases. Los mensajes entre agentes usarán esquemas tipados; un LLM nunca podrá saltarse el motor de riesgo.
+Los agentes se incorporarán por fases. Los mensajes entre agentes usarán esquemas tipados; un LLM nunca podrá saltarse el motor de riesgo. Ya existen componentes iniciales independientes para Charts y Risk Manager, todavía no conectados al worker ni al motor de órdenes.
 
 ## Sprint 1 incluye
 
@@ -112,6 +112,6 @@ Endpoints:
 - `POST /api/agent/reset-emergency-stop`
 - `POST /api/agent/tasks` (currently only `health_check` tasks are accepted)
 
-The worker starts paused and will not initiate trades. In this phase it only executes a deterministic health-check task. Market scanning, agent delegation, LLM reasoning triggers and automated trading are not yet implemented. Emergency stop disables the worker; it does not need to cancel broker orders because live execution does not exist.
+The worker starts paused and will not initiate trades. In this phase it only executes a deterministic health-check task. Separate deterministic Charts and Risk Manager components now exist as a first agent layer, but they are not yet orchestrated by the worker or connected to order execution. Market scanning, agent delegation, LLM reasoning triggers and automated trading are not yet implemented. Emergency stop disables the worker; it does not need to cancel broker orders because live execution does not exist.
 
 The persistent memory tables currently store operational observations and audit events. Historical market analysis, strategy knowledge, objectives, outcomes and retrieval policies will be added in later phases. Risk controls remain code/configuration controlled; agents cannot change them.
