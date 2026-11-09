@@ -288,8 +288,9 @@ class AutonomousAgent:
                 self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
                 return result
 
-            scan = await asyncio.to_thread(self.scout.scan)
             portfolio = await asyncio.to_thread(self.portfolio.snapshot)
+            held_symbols = [position["symbol"] for position in portfolio.get("positions", [])]
+            scan = await asyncio.to_thread(self.scout.scan, held_symbols)
             decision = self.chief.decide(scan, portfolio)
             order = None
             execution = "no_order"
