@@ -1,9 +1,67 @@
 import ccxt
+import math
 from datetime import datetime, timezone
 
 
 class MarketDataError(RuntimeError):
     pass
+
+
+def _normalize_discovered_spot_ticker(
+    symbol: str,
+    ticker: dict,
+    *,
+    provider_id: str | None = None,
+    now_ms: int,
+    max_spread_fraction: float,
+    min_quote_volume: float,
+) -> dict | None:
+    """Return a validated discovery row, skipping malformed provider payloads."""
+    if not isinstance(ticker, dict):
+        return None
+    try:
+        timestamp = int(ticker["timestamp"])
+        last = float(ticker["last"])
+        bid = float(ticker["bid"])
+        ask = float(ticker["ask"])
+        if ticker.get("quoteVolume") is not None:
+            quote_volume = float(ticker["quoteVolume"])
+        elif ticker.get("baseVolume") is not None:
+            quote_volume = float(ticker["baseVolume"]) * last
+        else:
+            return None
+    except (KeyError, TypeError, ValueError, OverflowError):
+        return None
+
+    numeric = (last, bid, ask, quote_volume)
+    if not all(math.isfinite(value) for value in numeric):
+        return None
+    if timestamp <= 0 or now_ms - timestamp > 120_000 or timestamp > now_ms + 30_000:
+        return None
+    if min(last, bid, ask) <= 0 or quote_volume < min_quote_volume or ask < bid:
+        return None
+    midpoint = (bid + ask) / 2
+    if midpoint <= 0:
+        return None
+    spread = (ask - bid) / midpoint
+    if not math.isfinite(spread) or spread > max_spread_fraction:
+        return None
+
+    result = {
+        "symbol": symbol,
+        "last": last,
+        "bid": bid,
+        "ask": ask,
+        "spread_fraction": spread,
+        "quote_volume_24h": quote_volume,
+        "ticker_timestamp_ms": timestamp,
+    }
+    if provider_id:
+        result.update({
+            "provider_id": provider_id,
+            "instrument_id": f"{provider_id}:spot:{symbol}",
+        })
+    return result
 
 
 class CcxtMarketData:
@@ -66,35 +124,15 @@ class CcxtMarketData:
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         ranked = []
         for symbol in symbols:
-            ticker = tickers.get(symbol) or {}
-            timestamp = ticker.get("timestamp")
-            last, bid, ask = ticker.get("last"), ticker.get("bid"), ticker.get("ask")
-            if timestamp is None or last is None or bid is None or ask is None:
-                continue
-            if now_ms - int(timestamp) > 120_000 or int(timestamp) > now_ms + 30_000:
-                continue
-            if min(float(last), float(bid), float(ask)) <= 0 or ask < bid:
-                continue
-            midpoint = (float(bid) + float(ask)) / 2
-            spread = (float(ask) - float(bid)) / midpoint
-            quote_volume = ticker.get("quoteVolume")
-            if quote_volume is None and ticker.get("baseVolume") is not None:
-                quote_volume = float(ticker["baseVolume"]) * float(last)
-            if quote_volume is None or float(quote_volume) < min_quote_volume:
-                continue
-            if spread > max_spread_fraction:
-                continue
-            ranked.append(
-                {
-                    "symbol": symbol,
-                    "last": float(last),
-                    "bid": float(bid),
-                    "ask": float(ask),
-                    "spread_fraction": spread,
-                    "quote_volume_24h": float(quote_volume),
-                    "ticker_timestamp_ms": int(timestamp),
-                }
+            row = _normalize_discovered_spot_ticker(
+                symbol,
+                tickers.get(symbol),
+                now_ms=now_ms,
+                max_spread_fraction=max_spread_fraction,
+                min_quote_volume=min_quote_volume,
             )
+            if row is not None:
+                ranked.append(row)
         return sorted(
             ranked,
             key=lambda item: item["quote_volume_24h"],
