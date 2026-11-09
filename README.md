@@ -10,7 +10,7 @@ La rama integrada contiene actualmente:
 - Capa de integración universal: contratos normalizados de proveedor, instrumentos, clases de activo, tipos de mercado y registro/capability matrix.
 - Adaptador inicial de datos públicos CEX crypto spot mediante CCXT (Kraken por defecto; lista configurable de proveedores CCXT).
 - Adaptador opcional de datos de acciones y ETF estadounidenses mediante Twelve Data Basic, activado únicamente al configurar una API key gratuita; incorpora caché SQLite persistente, límite diario conservador, separación mínima entre peticiones y conciliación del consumo con la cabecera `api-credits-used` del proveedor cuando está disponible.
-- Pipeline separado de investigación de acciones/ETF con filtros de divisa, frescura, bid/ask y backtesting cronológico; endpoint manual de solo lectura `/api/research/equities`.
+- Pipeline separado de investigación de acciones/ETF con filtros de divisa y frescura, análisis histórico independiente de la disponibilidad de bid/ask, y bloqueos explícitos de ejecución por spread, sesión bursátil o calidad de cotización; endpoint manual de solo lectura `/api/research/equities`.
 - Descubrimiento y enrutamiento de datos por proveedor; endpoints `/api/providers`, `/api/markets` y `/api/risk-profiles`.
 - Indicadores EMA, SMA, RSI, MACD, Bollinger Bands y ATR.
 - Simulación de compras y ventas con comisiones y slippage configurables.
