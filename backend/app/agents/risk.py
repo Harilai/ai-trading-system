@@ -6,6 +6,8 @@ class RiskManager:
 
     def evaluate(self, proposal: TradeProposal, context: RiskContext) -> RiskDecision:
         symbol = proposal.symbol.strip().upper()
+        if proposal.market_type != "spot" or proposal.asset_class != "crypto":
+            return RiskDecision(accepted=False, reason=f"Risk profile disabled: {proposal.asset_class}/{proposal.market_type}")
         if not symbol.endswith("/EUR"):
             return RiskDecision(accepted=False, reason="Only EUR-quoted spot markets are allowed")
 
