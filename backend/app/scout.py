@@ -59,7 +59,10 @@ class ScoutAgent:
             if not normalized.endswith("/EUR") or instrument_id in known_instruments:
                 continue
             try:
-                ticker = self.market_data.ticker(normalized, provider_id=provider_id)
+                try:
+                    ticker = self.market_data.ticker(normalized, provider_id=provider_id)
+                except TypeError:
+                    ticker = self.market_data.ticker(normalized)
                 if self.market_data.is_stale(ticker, self.max_ticker_age_seconds):
                     continue
                 last = ticker.get("last")
