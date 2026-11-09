@@ -82,6 +82,8 @@ def research_equities(
     max_quote_candidates: int = Query(10, ge=1, le=100),
     timeframe: str = Query("1day", pattern="^(1day|1h|4h)$"),
 ):
+    if max_quote_candidates < max_instruments:
+        raise HTTPException(422, "max_quote_candidates must be greater than or equal to max_instruments")
     try:
         provider = market.get("twelve_data")
         agent = EquityEtfResearchAgent(
