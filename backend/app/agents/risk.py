@@ -14,6 +14,8 @@ class RiskManager:
                 return RiskDecision(accepted=False, reason="A buy proposal requires a stop-loss")
             if proposal.stop_loss >= proposal.reference_price:
                 return RiskDecision(accepted=False, reason="Buy stop-loss must be below the reference price")
+            if proposal.take_profit is not None and proposal.take_profit <= proposal.reference_price:
+                return RiskDecision(accepted=False, reason="Buy take-profit must be above the reference price")
             stop_distance = (proposal.reference_price - proposal.stop_loss) / proposal.reference_price
             if stop_distance > context.max_stop_distance_fraction:
                 return RiskDecision(accepted=False, reason="Stop-loss distance exceeds the configured risk limit")
