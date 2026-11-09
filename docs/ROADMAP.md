@@ -17,7 +17,8 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Scout: descubrimiento de spot EUR por volumen/spread/frescura | Implementado |
 | Charts Agent | Implementado |
 | Strategy Research: EMA, RSI, Bollinger, split 70/30 y costes | Implementado como investigación, no aprobación de trading |
-| Chief Agent y coordinación de decisiones | Pendiente |
+| Chief: selección de oportunidad y propuesta buy/sell/hold | Implementado con Risk Manager obligatorio; proposal-only |
+| Chief Agent y coordinación de decisiones | Implementado inicialmente; ciclo aún proposal-only |
 | Risk Manager conectado obligatoriamente a órdenes | Pendiente |
 | Sniper y generación de propuestas | Pendiente |
 | Ejecución paper autónoma y monitorización de posiciones | Pendiente |
@@ -40,10 +41,10 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 
 ## Prioridad 2 — orquestación segura
 
-- [ ] Implementar Chief con contratos tipados y decisiones auditables.
-- [ ] Integrar Scout, Charts y Strategy Research en un ciclo de análisis recurrente.
+- [x] Implementar Chief con contratos tipados y decisiones auditables (sin ejecución automática).
+- [x] Integrar Scout, Charts y Strategy Research en una tarea de decisión bajo demanda; programación recurrente pendiente.
 - [ ] Implementar Sniper para generar propuestas con entrada, stop-loss, take-profit y tamaño.
-- [ ] Conectar Risk Manager como puerta obligatoria: ninguna propuesta llega al motor de órdenes sin aprobación.
+- [x] Conectar Risk Manager como puerta obligatoria para propuestas del Chief; la conexión con el motor paper queda pendiente.
 - [ ] Añadir idempotencia de tareas/órdenes, estados legales y reconciliación de ejecuciones.
 - [ ] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
 - [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
