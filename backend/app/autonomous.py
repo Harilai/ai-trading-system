@@ -275,16 +275,28 @@ class AutonomousStore:
         self.audit("task_enqueued", {"task_id": task_id, "kind": kind})
         return {"id": task_id, "kind": kind, "status": "pending", "due_at": due}
 
-    def claim_due_task(self, lease_seconds: int = 120) -> dict[str, Any] | None:
+    def claim_due_task(
+        self,
+        lease_seconds: int = 120,
+        *,
+        allowed_kinds: list[str] | None = None,
+    ) -> dict[str, Any] | None:
         now = utcnow()
         lease = (now + timedelta(seconds=lease_seconds)).isoformat()
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            row = db.execute(
-                "SELECT * FROM agent_tasks WHERE status='pending' AND due_at<=? "
-                "ORDER BY due_at, created_at LIMIT 1",
-                (now.isoformat(),),
-            ).fetchone()
+            query = (
+                "SELECT * FROM agent_tasks WHERE status='pending' AND due_at<=?"
+            )
+            parameters: list[Any] = [now.isoformat()]
+            if allowed_kinds is not None:
+                if not allowed_kinds:
+                    return None
+                placeholders = ",".join("?" for _ in allowed_kinds)
+                query += f" AND kind IN ({placeholders})"
+                parameters.extend(allowed_kinds)
+            query += " ORDER BY due_at, created_at LIMIT 1"
+            row = db.execute(query, parameters).fetchone()
             if row is None:
                 return None
             changed = db.execute(
@@ -390,6 +402,10 @@ class AutonomousAgent:
             try:
                 # Reclaim leases and refresh heartbeat on every iteration.
                 self.store.recover_expired_tasks()
+                self.store.schedule_database_backup(
+                    settings.database_backup_interval_seconds,
+                    settings.database_backup_retention_days,
+                )
                 state = self.store.state()
                 self.store.heartbeat()
                 if state["enabled"] and not state["emergency_stop"]:
@@ -397,12 +413,15 @@ class AutonomousAgent:
                     if self.equity_research is not None:
                         self.store.schedule_equity_research(settings.equity_research_interval_seconds)
                     task = self.store.claim_due_task()
-                    if task:
-                        try:
-                            result = await self._execute(task)
-                            self.store.finish_task(task["id"], result)
-                        except Exception as exc:
-                            self.store.fail_task(task, str(exc))
+                else:
+                    # Backups continue while trading is paused or emergency-stopped.
+                    task = self.store.claim_due_task(allowed_kinds=["database_backup"])
+                if task:
+                    try:
+                        result = await self._execute(task)
+                        self.store.finish_task(task["id"], result)
+                    except Exception as exc:
+                        self.store.fail_task(task, str(exc))
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -421,6 +440,23 @@ class AutonomousAgent:
                 pass
 
     async def _execute(self, task: dict[str, Any]) -> dict[str, Any]:
+        if task["kind"] == "database_backup":
+            from .database_backup import create_database_backup
+
+            result = await asyncio.to_thread(
+                create_database_backup,
+                self.store.path,
+                retention_days=int(task["payload"].get(
+                    "retention_days",
+                    settings.database_backup_retention_days,
+                )),
+            )
+            self.store.remember(
+                "database_backup",
+                {"task_id": task["id"], **result},
+                validated=True,
+            )
+            return result
         if task["kind"] == "health_check":
             state = self.store.state()
             result = {"agent_enabled": bool(state["enabled"]), "live_trading": False}
