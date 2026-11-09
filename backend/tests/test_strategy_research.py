@@ -155,3 +155,17 @@ def test_research_reports_fee_and_slippage_stress_scenarios():
         candidate["cost_sensitivity"]["1.5"]["available"]
         for candidate in result["candidates"]
     )
+
+
+
+def test_default_walk_forward_gate_is_compatible_with_250_candle_scans():
+    closes = [100 + index * 0.03 + 2 * math.sin(index / 6) for index in range(250)]
+    result = StrategyResearchAgent().research(candles_from_closes(closes))
+
+    assert result["promotion_gates"]["minimum_walk_forward_bars_per_window"] == 40
+    for candidate in result["candidates"]:
+        assert all(
+            window["evaluation_bars"] >= 40
+            for window in candidate["walk_forward"]["windows"]
+        )
+        assert "insufficient_walk_forward_history" not in candidate["validation_failures"]
