@@ -35,7 +35,7 @@ def test_order_rejects_stale_market_data(monkeypatch, tmp_path):
     stale_timestamp = int(datetime(2020, 1, 1, tzinfo=timezone.utc).timestamp() * 1000)
     monkeypatch.setattr(
         "app.main.market.ticker",
-        lambda symbol: {"symbol": symbol, "last": 10000, "timestamp": stale_timestamp},
+        lambda symbol, provider_id=None: {"symbol": symbol, "last": 10000, "timestamp": stale_timestamp},
     )
     response = client.post(
         "/api/orders",
