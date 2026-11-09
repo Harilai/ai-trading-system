@@ -36,8 +36,9 @@ Keep the dependency order: review and integrate PR #1, then PR #2, then PR #3. D
 
 - [ ] Define typed contracts for market observations, agent reports, trade proposals and risk decisions.
 - [ ] Implement Scout market discovery over explicitly supported EUR-quoted crypto markets.
-- [ ] Implement Charts analysis and validated multi-timeframe indicator output.
-- [ ] Implement a deterministic Risk Manager that rejects invalid or oversized proposals.
+- [x] Add an initial deterministic Charts component with typed indicator output and minimum-history validation (not yet orchestrated).
+- [x] Add an initial deterministic spot Risk Manager with EUR-only, stop-loss distance, allocation, available-cash and no-short checks (not yet connected to order execution).
+- [ ] Integrate Charts and Risk Manager into a typed agent workflow and prove that no proposal can bypass risk validation.
 - [ ] Add News and Sentiment only after source attribution, freshness and data-quality policies are defined.
 - [ ] Implement Chief orchestration and persist objectives, tasks, decisions and outcomes.
 
