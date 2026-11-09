@@ -29,6 +29,8 @@ class Settings(BaseSettings):
     agent_control_token: str = ""
     decision_cycle_interval_seconds: int = Field(default=300, ge=60)
     equity_research_interval_seconds: int = Field(default=21600, ge=3600)
+    database_backup_interval_seconds: int = Field(default=86400, ge=3600)
+    database_backup_retention_days: int = Field(default=7, ge=1, le=90)
     model_config = SettingsConfigDict(env_file=PROJECT_ROOT / ".env", extra="ignore")
 
 settings = Settings()
