@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import time
 
 from .agents.charts import ChartsAgent
 from .market_data import MarketDataError
@@ -68,7 +69,7 @@ class EquityEtfResearchAgent:
                 quote = self.provider.ticker(instrument.symbol)
                 if quote.get("last") is None or float(quote["last"]) <= 0:
                     raise MarketDataError("Quote has no valid last price")
-                age_ms = max(0, __import__("time").time_ns() // 1_000_000 - int(quote["timestamp"]))
+                age_ms = max(0, time.time_ns() // 1_000_000 - int(quote["timestamp"]))
                 if age_ms > self.max_quote_age_seconds * 1000:
                     raise MarketDataError("Quote is stale")
                 bid = quote.get("bid")
