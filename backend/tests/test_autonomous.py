@@ -309,3 +309,73 @@ def test_scheduler_rejects_too_frequent_cycles(tmp_path):
     store = AutonomousStore(str(tmp_path / "schedule.db"))
     with pytest.raises(ValueError, match="60 seconds"):
         store.schedule_decision_cycle(30)
+
+
+def test_equity_research_scheduler_is_independent_and_low_frequency(tmp_path):
+    store = AutonomousStore(str(tmp_path / "equity-schedule.db"))
+    assert store.schedule_equity_research(21600) is None
+    store.set_enabled(True)
+    first = store.schedule_equity_research(21600)
+    assert first["kind"] == "equity_research"
+    assert store.schedule_equity_research(21600) is None
+
+    claimed = store.claim_due_task()
+    assert claimed["kind"] == "equity_research"
+    store.finish_task(claimed["id"], {"analysed": 2})
+    assert store.schedule_equity_research(21600) is None
+    with store.connect() as db:
+        db.execute(
+            "UPDATE agent_state SET last_equity_research_enqueued_at=? WHERE id=1",
+            ((utcnow() - timedelta(seconds=21601)).isoformat(),),
+        )
+    second = store.schedule_equity_research(21600)
+    assert second is not None
+    assert second["id"] != first["id"]
+
+
+def test_equity_research_scheduler_respects_pause_and_minimum_interval(tmp_path):
+    store = AutonomousStore(str(tmp_path / "equity-schedule.db"))
+    with pytest.raises(ValueError, match="3600 seconds"):
+        store.schedule_equity_research(300)
+    store.set_enabled(True)
+    store.emergency_stop()
+    assert store.schedule_equity_research(21600) is None
+
+
+def test_equity_research_task_runs_read_only_and_persists_observation(tmp_path):
+    import asyncio
+
+    class FakeResearch:
+        def __init__(self):
+            self.calls = 0
+
+        def scan(self):
+            self.calls += 1
+            return {
+                "universe": "twelve_data_us_equities_and_etfs",
+                "analysed": 1,
+                "execution": "disabled_research_only",
+            }
+
+    store = AutonomousStore(str(tmp_path / "equity-research.db"))
+    research = FakeResearch()
+    worker = AutonomousAgent(store, equity_research=research)
+    task = {"id": "equity-research-task", "kind": "equity_research", "payload": {}}
+    result = asyncio.run(worker._execute(task))
+
+    assert result["analysed"] == 1
+    assert result["execution"] == "disabled_research_only"
+    assert research.calls == 1
+    memory = store.overview()["memory"]
+    assert memory[0]["category"] == "equity_etf_research"
+    assert memory[0]["content"]["task_id"] == task["id"]
+
+
+def test_equity_research_task_fails_closed_without_provider(tmp_path):
+    import asyncio
+
+    store = AutonomousStore(str(tmp_path / "equity-research.db"))
+    worker = AutonomousAgent(store)
+    task = {"id": "equity-research-task", "kind": "equity_research", "payload": {}}
+    with pytest.raises(RuntimeError, match="not configured"):
+        asyncio.run(worker._execute(task))
