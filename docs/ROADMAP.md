@@ -1,71 +1,94 @@
 # Engineering roadmap
 
-This roadmap reflects the repository state inspected on 2026-11-09. Items are not considered complete merely because they are planned or have tests written.
+Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
-## Current integration queue
+## Estado integrado
 
-| Work | Branch / PR | Status |
-|---|---|---|
-| Paper-trading backend foundation | `feature/sprint-1-paper-trading` / [PR #1](https://github.com/Harilai/ai-trading-system/pull/1) | Open draft; tests not executed |
-| Persistent agent foundation | `feature/persistent-autonomous-agent` / [PR #2](https://github.com/Harilai/ai-trading-system/pull/2) | Open draft; based on PR #1; tests not executed |
-| Runtime expired-task recovery | `fix/agent-task-lease-recovery` / [PR #3](https://github.com/Harilai/ai-trading-system/pull/3) | Open draft; based on PR #2; tests not executed |
+| Área | Estado |
+|---|---|
+| Backend FastAPI y paper portfolio SQLite | Implementado |
+| Datos públicos crypto vía CCXT | Implementado |
+| Indicadores técnicos | Implementado |
+| Contabilidad de comisiones en coste base y P/L realizado | Implementado |
+| Validación de datos obsoletos y órdenes | Implementado |
+| Worker persistente, cola, leases y reintentos | Implementado |
+| Recuperación de leases expirados en ejecución | Implementado |
+| API de control autenticada | Implementada; endurecimiento de despliegue pendiente |
+| Scout: descubrimiento de spot EUR por volumen/spread/frescura | Implementado |
+| Charts Agent | Implementado |
+| Strategy Research: EMA, RSI, Bollinger, split 70/30 y costes | Implementado como investigación, no aprobación de trading |
+| Chief Agent y coordinación de decisiones | Pendiente |
+| Risk Manager conectado obligatoriamente a órdenes | Pendiente |
+| Sniper y generación de propuestas | Pendiente |
+| Ejecución paper autónoma y monitorización de posiciones | Pendiente |
+| Acciones/ETF y FX | Pendiente |
+| News/Sentiment con fuentes auditables | Pendiente |
+| Gestor 50/50 de beneficios y retiradas manuales | Pendiente |
+| Dashboard | Pendiente |
+| Infraestructura gratuita/Oracle Always Free y despliegue 24/7 | Pendiente |
+| Live trading | No implementado; deshabilitado |
 
-Keep the dependency order: review and integrate PR #1, then PR #2, then PR #3. Do not merge around failing financial-safety or persistence checks.
+## Prioridad 1 — calidad de datos y estrategia
 
-## Priority 0 — validate the existing foundation
+- [ ] Ampliar el universo de mercado sin exceder límites de rate ni filtros de liquidez.
+- [ ] Añadir pruebas de descubrimiento con tickers ausentes, mercados inactivos, spreads extremos y fallos de proveedor.
+- [ ] Verificar cálculos de indicadores con series de referencia conocidas.
+- [ ] Mejorar backtesting con métricas de retorno, drawdown, profit factor, exposición y sensibilidad a costes.
+- [ ] Añadir validación walk-forward, ventanas múltiples y prevención de sobreajuste.
+- [ ] Persistir versiones de estrategias, resultados y motivos de promoción/rechazo.
+- [ ] Clasificar régimen de mercado y evitar seleccionar una estrategia por una sola ventana.
 
-- [x] Add a GitHub Actions workflow to run the backend test suite on covered pushes and pull requests.
-- [ ] Obtain a successful run from GitHub Actions and fix any failures.
-- [x] Correct paper-trade cost basis so entry fees are included and realised P/L is net of entry and exit fees.
-- [ ] Review transaction boundaries, floating-point precision and duplicate submission behaviour.
-- [ ] Add portfolio valuation using fresh market prices; distinguish cost basis, market value, realised P/L and unrealised P/L.
-- [ ] Validate indicator calculations against known reference series and edge cases.
-- [ ] Add CI for tests, formatting, type checks and dependency/security scanning.
-- [ ] Review agent API authentication and ensure it is not exposed publicly before TLS, access controls, rate limits and secret management are in place.
+## Prioridad 2 — orquestación segura
 
-## Priority 1 — make the persistent worker reliable
+- [ ] Implementar Chief con contratos tipados y decisiones auditables.
+- [ ] Integrar Scout, Charts y Strategy Research en un ciclo de análisis recurrente.
+- [ ] Implementar Sniper para generar propuestas con entrada, stop-loss, take-profit y tamaño.
+- [ ] Conectar Risk Manager como puerta obligatoria: ninguna propuesta llega al motor de órdenes sin aprobación.
+- [ ] Añadir idempotencia de tareas/órdenes, estados legales y reconciliación de ejecuciones.
+- [ ] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
+- [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
 
-- [ ] Add durable task idempotency keys and enforce legal task-state transitions.
-- [ ] Add lease renewal for long-running tasks and a bounded recovery policy.
-- [ ] Expose worker heartbeat, queue depth, last error and liveness in health/status endpoints.
-- [ ] Add graceful shutdown and restart/recovery integration tests.
-- [ ] Add task scheduling and cancellation with explicit audit events.
-- [ ] Keep the worker paused by default and preserve the emergency-stop invariant.
+## Prioridad 3 — contabilidad y control del capital
 
-## Priority 2 — deterministic market intelligence
+- [ ] Añadir valoración a mercado y separar coste base, valor actual, P/L realizado y no realizado.
+- [ ] Implementar reserva del 50% de beneficios netos realizados y reinversión del 50%.
+- [ ] Implementar solicitudes manuales de retirada de cualquier importe disponible, con confirmación del propietario.
+- [ ] Calcular mínimos y costes de retirada según proveedor; nunca conceder permisos de retirada a claves de trading.
+- [ ] Recalcular riesgo y capital viable tras una retirada.
 
-- [ ] Define typed contracts for market observations, agent reports, trade proposals and risk decisions.
-- [ ] Implement Scout market discovery over explicitly supported EUR-quoted crypto markets.
-- [x] Add an initial deterministic Charts component with typed indicator output and minimum-history validation (not yet orchestrated).
-- [x] Add an initial deterministic spot Risk Manager with EUR-only, stop-loss distance, allocation, available-cash and no-short checks (not yet connected to order execution).
-- [ ] Integrate Charts and Risk Manager into a typed agent workflow and prove that no proposal can bypass risk validation.
-- [ ] Add News and Sentiment only after source attribution, freshness and data-quality policies are defined.
-- [ ] Implement Chief orchestration and persist objectives, tasks, decisions and outcomes.
+## Prioridad 4 — cobertura y producto
 
-## Priority 3 — research and simulated execution
+- [ ] Evaluar proveedor de acciones/ETF, horarios, permisos, datos y comisiones.
+- [ ] Añadir FX con tipos y timestamps verificables antes de mezclar divisas.
+- [ ] Añadir News/Sentiment solo con atribución de fuente, frescura y calidad.
+- [ ] Crear dashboard responsive con cartera, posiciones, investigación, decisiones, auditoría y controles.
+- [ ] Añadir PostgreSQL/migraciones cuando la carga lo justifique.
 
-- [ ] Build a reproducible backtesting engine with fees, slippage and out-of-sample evaluation.
-- [ ] Add strategy registry, regime classification and strategy-performance reporting.
-- [ ] Implement Sniper trade proposals with entry, exit, stop-loss and position sizing.
-- [ ] Add paper execution integration and position monitoring; no live broker orders.
-- [ ] Keep learning/strategy changes gated by backtests and paper-trading evidence.
+## Prioridad 5 — despliegue y operación
 
-## Priority 4 — product and operations
+- [ ] Evaluar Oracle Cloud Always Free y alternativas en el momento del despliegue; no asumir disponibilidad permanente.
+- [ ] Mantener operación sin APIs de inferencia de pago; LLM local opcional y lógica determinista como fallback.
+- [ ] Añadir health/readiness, monitorización, backups y restore probado.
+- [ ] Endurecer Docker: usuario no root, secretos, TLS/reverse proxy y acceso restringido.
+- [ ] Medir disponibilidad real antes de afirmar que funciona 24/7.
 
-- [ ] Build a responsive dashboard for portfolio, positions, agent activity, tasks, audit and controls.
-- [ ] Add independent stock/ETF market-data provider and validated FX accounting before enabling those assets.
-- [ ] Add PostgreSQL production configuration, migrations and tested backup/restore.
-- [ ] Harden Docker Compose deployment for Ubuntu VPS: non-root containers, secrets, TLS/reverse proxy, monitoring and recovery.
-- [ ] Document installation, operations, incident response and release procedures.
+## Seguridad no negociable
 
-## Non-negotiable safety constraints
+- Paper trading hasta completar pruebas y revisión separada de live execution.
+- Live trading deshabilitado por defecto y nunca activable por agentes o LLM.
+- Ningún agente puede cambiar sus propios límites de riesgo.
+- No incluir claves de exchange/broker en Git, logs ni frontend.
+- Las claves de trading no tendrán permisos de retirada.
+- Si la calidad de datos, el estado del proveedor o la conciliación son inciertos, se bloquean nuevas entradas.
+- No prometer rentabilidad ni seleccionar estrategias solo por resultados in-sample.
 
-- Paper trading only until a separately reviewed live-execution phase is explicitly authorised.
-- Live execution remains disabled by default and must not be enabled by an agent or an LLM.
-- Risk limits cannot be changed by autonomous agents.
-- Never commit exchange/broker credentials; use deployment secret management and no withdrawal permissions.
-- No profitability claims without reproducible, appropriately validated evidence.
+## Pruebas y definición de terminado
 
-## Capability boundary
+Cada fase debe incluir:
+1. Tests unitarios de lógica y límites.
+2. Tests de integración con proveedores simulados.
+3. Tests de fallos, datos stale, rate limits, reinicios y duplicados.
+4. CI verde sobre el commit exacto que se propone fusionar.
+5. Revisión de diferencias y actualización de documentación.
 
-The repository's worker runs only when the application is deployed and running. A ChatGPT conversation does not keep the project process alive. The current worker foundation executes deterministic health-check tasks only; it is not yet an autonomous trading system.
+No se fusionará código con CI fallida o con una protección financiera no probada.
