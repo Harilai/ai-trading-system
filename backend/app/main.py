@@ -5,6 +5,7 @@ from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
 from .market_data import MarketDataError
 from .providers.ccxt_spot import CcxtSpotProvider
 from .providers.twelve_data import TwelveDataProvider
+from .equity_research import EquityEtfResearchAgent
 from .providers.registry import ProviderRegistry
 from .scout import ScoutAgent
 from .strategy_research import StrategyResearchAgent
@@ -18,7 +19,12 @@ for configured_provider in settings.market_data_provider_ids.split(','):
     if provider_id:
         market.register(CcxtSpotProvider(provider_id))
 if settings.twelve_data_api_key:
-    market.register(TwelveDataProvider(settings.twelve_data_api_key))
+    market.register(TwelveDataProvider(
+        settings.twelve_data_api_key,
+        state_path=settings.twelve_data_state_path,
+        daily_credit_budget=settings.twelve_data_daily_credit_budget,
+        min_request_interval_seconds=settings.twelve_data_min_request_interval_seconds,
+    ))
 portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 
 class OrderRequest(BaseModel):
@@ -66,6 +72,29 @@ def markets():
         ],
         "provider_failures": failures,
     }
+
+
+
+
+@app.get("/api/research/equities")
+def research_equities(
+    max_instruments: int = Query(5, ge=1, le=10),
+    max_quote_candidates: int = Query(10, ge=1, le=100),
+    timeframe: str = Query("1day", pattern="^(1day|1h|4h)$"),
+):
+    if max_quote_candidates < max_instruments:
+        raise HTTPException(422, "max_quote_candidates must be greater than or equal to max_instruments")
+    try:
+        provider = market.get("twelve_data")
+        agent = EquityEtfResearchAgent(
+            provider,
+            max_instruments=max_instruments,
+            max_quote_candidates=max_quote_candidates,
+            timeframe=timeframe,
+        )
+        return agent.scan()
+    except MarketDataError as exc:
+        raise HTTPException(503, str(exc)) from exc
 
 
 @app.get("/api/health")

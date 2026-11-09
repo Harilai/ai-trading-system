@@ -55,3 +55,20 @@ def test_order_rejects_non_positive_quantity_before_market_request(monkeypatch):
         json={"symbol": "BTC/EUR", "side": "buy", "quantity": 0},
     )
     assert response.status_code == 422
+
+
+def test_equity_research_endpoint_is_read_only_and_requires_configured_provider(monkeypatch):
+    from app.providers.registry import ProviderRegistryError
+
+    def unavailable(_provider_id):
+        raise ProviderRegistryError("Provider is not configured: twelve_data")
+
+    monkeypatch.setattr("app.main.market.get", unavailable)
+    response = client.get("/api/research/equities")
+    assert response.status_code == 503
+    assert "twelve_data" in response.json()["detail"]
+
+
+def test_equity_research_endpoint_validates_scan_bounds():
+    response = client.get("/api/research/equities?max_instruments=100")
+    assert response.status_code == 422
