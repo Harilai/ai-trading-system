@@ -4,7 +4,12 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_APP_FILE = Path(__file__).resolve()
+PROJECT_ROOT = (
+    _APP_FILE.parents[2]
+    if (_APP_FILE.parents[2] / "docker-compose.yml").exists()
+    else _APP_FILE.parents[1]
+)
 
 class Settings(BaseSettings):
     database_path: str = "data/trading.db"
