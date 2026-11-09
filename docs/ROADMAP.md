@@ -21,7 +21,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Indicadores técnicos | Implementado |
 | Contabilidad de comisiones en coste base y P/L realizado | Implementado |
 | Validación de datos obsoletos y órdenes | Implementado |
-| Worker persistente, cola, leases y reintentos | Implementado |
+| Worker persistente, cola, leases y reintentos | Implementado; readiness comprueba DB y heartbeat reciente |
 | Programación periódica de decision_cycle sin solapamientos | Implementada; 5 min por defecto, solo con worker habilitado |
 | Recuperación de leases expirados en ejecución | Implementado; el worker registra fallos del bucle y continúa tras errores transitorios |
 | API de control y órdenes paper autenticadas | Implementadas con token; Docker no-root, rootfs read-only, capacidades eliminadas y bind local por defecto |
@@ -96,7 +96,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 
 - [ ] Evaluar Oracle Cloud Always Free y alternativas en el momento del despliegue; no asumir disponibilidad permanente.
 - [ ] Mantener operación sin APIs de inferencia de pago; LLM local opcional y lógica determinista como fallback.
-- [ ] Añadir health/readiness, monitorización, backups y restore probado.
+- [x] Añadir liveness y readiness con verificación SQLite y heartbeat del worker, integrado en el healthcheck Docker.\n- [ ] Añadir backups y restore probado.
 - [x] Proteger el endpoint manual de órdenes paper con token y gate obligatorio del Risk Manager; compras con stop-loss explícito.\n- [x] Ejecutar Docker como usuario no root, rootfs read-only, eliminar capacidades y enlazar el puerto a localhost por defecto.\n- [ ] Configurar TLS/reverse proxy para acceso remoto; no exponer directamente el puerto API.
 - [ ] Medir disponibilidad real antes de afirmar que funciona 24/7.
 

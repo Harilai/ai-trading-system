@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi.testclient import TestClient
 
@@ -195,3 +195,40 @@ def test_agent_task_request_accepts_read_only_equity_research_kind():
     task = TaskRequest(kind="equity_research", payload={"max_instruments": 3})
     assert task.kind == "equity_research"
     assert task.payload["max_instruments"] == 3
+
+
+
+def test_readiness_requires_database_and_recent_worker_heartbeat(monkeypatch):
+    from datetime import timedelta
+
+    fresh = datetime.now(timezone.utc).isoformat()
+    monkeypatch.setattr("app.main.agent_store.state", lambda: {"last_heartbeat": fresh})
+
+    response = client.get("/api/health/ready")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+    assert response.json()["database"] == "ok"
+    assert response.json()["worker"] == "ok"
+    assert response.json()["worker_heartbeat_age_seconds"] < 30
+
+
+def test_readiness_rejects_stale_worker_heartbeat(monkeypatch):
+    stale = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+    monkeypatch.setattr("app.main.agent_store.state", lambda: {"last_heartbeat": stale})
+
+    response = client.get("/api/health/ready")
+
+    assert response.status_code == 503
+    assert "heartbeat is stale" in response.json()["detail"]
+
+
+def test_readiness_rejects_database_failure(monkeypatch):
+    def unavailable():
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr("app.main.agent_store.connect", unavailable)
+    response = client.get("/api/health/ready")
+
+    assert response.status_code == 503
+    assert "readiness check failed" in response.json()["detail"]

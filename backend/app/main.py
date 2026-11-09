@@ -1,4 +1,5 @@
 import hmac
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, Query
@@ -16,6 +17,8 @@ from .chief import ChiefAgent
 from .agents.contracts import RiskContext, TradeProposal
 from .agents.risk import RiskManager
 from .portfolio import PaperPortfolio, PortfolioError
+
+WORKER_HEARTBEAT_MAX_AGE_SECONDS = 600
 
 app = FastAPI(title="AI Trading System", version="0.1.0", description="Paper trading only; live execution is not implemented.")
 market = ProviderRegistry()
@@ -108,7 +111,37 @@ def research_equities(
 
 @app.get("/api/health")
 def health():
-    return {"status":"ok","mode":"paper","live_trading_enabled":False}
+    return {"status": "ok", "mode": "paper", "live_trading_enabled": False}
+
+
+@app.get("/api/health/ready")
+def readiness():
+    try:
+        with agent_store.connect() as db:
+            db.execute("SELECT 1")
+        state = agent_store.state()
+        heartbeat = state.get("last_heartbeat")
+        if not heartbeat:
+            raise HTTPException(503, "Autonomous worker has not reported a heartbeat")
+        heartbeat_at = datetime.fromisoformat(heartbeat)
+        if heartbeat_at.tzinfo is None:
+            heartbeat_at = heartbeat_at.replace(tzinfo=timezone.utc)
+        age_seconds = (datetime.now(timezone.utc) - heartbeat_at).total_seconds()
+        if age_seconds < 0 or age_seconds > WORKER_HEARTBEAT_MAX_AGE_SECONDS:
+            raise HTTPException(503, "Autonomous worker heartbeat is stale")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503, "Database or worker readiness check failed") from exc
+
+    return {
+        "status": "ready",
+        "mode": "paper",
+        "database": "ok",
+        "worker": "ok",
+        "worker_heartbeat_age_seconds": round(age_seconds, 2),
+        "live_trading_enabled": False,
+    }
 
 @app.get("/api/market/{symbol:path}/ticker")
 def ticker(symbol: str, provider_id: str | None = None):
