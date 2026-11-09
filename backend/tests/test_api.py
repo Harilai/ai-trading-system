@@ -43,3 +43,15 @@ def test_order_rejects_stale_market_data(monkeypatch, tmp_path):
     )
     assert response.status_code == 503
     assert "stale" in response.json()["detail"].lower()
+
+
+def test_order_rejects_non_positive_quantity_before_market_request(monkeypatch):
+    def unexpected_ticker(_symbol):
+        raise AssertionError("Invalid quantity must be rejected before market data access")
+
+    monkeypatch.setattr("app.main.market.ticker", unexpected_ticker)
+    response = client.post(
+        "/api/orders",
+        json={"symbol": "BTC/EUR", "side": "buy", "quantity": 0},
+    )
+    assert response.status_code == 422
