@@ -90,7 +90,7 @@ def test_discovery_can_be_limited_to_one_asset_class(tmp_path):
     transport = FakeTwelveDataTransport({
         "stocks": {"data": [{"symbol": "MSFT", "currency": "USD"}], "status": "ok"},
     })
-    provider = TwelveDataProvider("test-key", opener=transport)
+    provider = TwelveDataProvider("test-key", opener=transport, state_path=str(tmp_path / "state.db"), min_request_interval_seconds=0)
     instruments = provider.discover_markets((AssetClass.EQUITY,))
     assert [item.symbol for item in instruments] == ["MSFT"]
     assert [call[0] for call in transport.calls] == ["stocks"]
@@ -103,7 +103,7 @@ def test_ticker_preserves_missing_bid_ask_instead_of_fabricating_spread(tmp_path
             "volume": "1000000", "exchange": "NASDAQ", "currency": "USD",
         }
     })
-    provider = TwelveDataProvider("test-key", opener=transport)
+    provider = TwelveDataProvider("test-key", opener=transport, state_path=str(tmp_path / "state.db"), min_request_interval_seconds=0)
     quote = provider.ticker("AAPL")
     assert quote["last"] == pytest.approx(212.5)
     assert quote["bid"] is None
@@ -123,7 +123,7 @@ def test_ohlcv_converts_exchange_local_timestamps_to_utc_epoch(tmp_path):
             "status": "ok",
         }
     })
-    provider = TwelveDataProvider("test-key", opener=transport)
+    provider = TwelveDataProvider("test-key", opener=transport, state_path=str(tmp_path / "state.db"), min_request_interval_seconds=0)
     rows = provider.ohlcv("AAPL", "1h", 2)
     assert len(rows) == 2
     assert rows[0][4] == pytest.approx(10)
