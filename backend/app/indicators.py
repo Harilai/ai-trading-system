@@ -116,15 +116,15 @@ def atr(
     for candle in candles:
         row = {
             key: float(candle[key])
-            for key in ("open", "high", "low", "close")
+            for key in ("high", "low", "close")
         }
         if not all(math.isfinite(value) for value in row.values()):
             raise ValueError("ATR candle values must be finite")
         if min(row.values()) <= 0:
             raise ValueError("ATR prices must be positive")
-        if row["high"] < max(row["open"], row["close"], row["low"]):
+        if row["high"] < max(row["close"], row["low"]):
             raise ValueError("Invalid candle high")
-        if row["low"] > min(row["open"], row["close"], row["high"]):
+        if row["low"] > min(row["close"], row["high"]):
             raise ValueError("Invalid candle low")
         normalized.append(row)
 
