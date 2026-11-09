@@ -179,6 +179,8 @@ class StrategyResearchAgent:
                 out_sample["net_return"] - 0.5 * out_sample["max_drawdown"]
                 if eligible else None
             )
+            current_index = len(normalized) - 1
+            current_closes = [row["close"] for row in normalized]
             results.append(
                 {
                     "strategy_id": strategy_id,
@@ -187,6 +189,8 @@ class StrategyResearchAgent:
                     "out_of_sample": out_sample,
                     "eligible": eligible,
                     "score": score,
+                    "current_entry_signal": signal(current_closes, current_index, False),
+                    "current_hold_signal": signal(current_closes, current_index, True),
                 }
             )
         eligible_results = [item for item in results if item["eligible"]]
