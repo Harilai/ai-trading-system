@@ -106,21 +106,30 @@ class TwelveDataProvider:
                 (cache_key, json.dumps(payload), time.time() + ttl),
             )
 
-    def _reserve_api_credit(self) -> None:
+    @staticmethod
+    def _estimated_credits(endpoint: str, params: dict) -> int:
+        # Current adapter requests one symbol per quote/time-series call.
+        # Catalog endpoints are charged as one request; unknown endpoints default to one.
+        symbols = params.get("symbol")
+        if endpoint in {"quote", "time_series"} and symbols:
+            return max(1, len([item for item in str(symbols).split(",") if item.strip()]))
+        return 1
+
+    def _reserve_api_credit(self, estimated_credits: int) -> None:
         now = time.time()
         utc_day = datetime.now(timezone.utc).date().isoformat()
         with self._quota_lock, self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT credits FROM api_usage WHERE utc_day=?", (utc_day,)).fetchone()
             used = int(row[0]) if row else 0
-            if used >= self.daily_credit_budget:
+            if used + estimated_credits > self.daily_credit_budget:
                 raise MarketDataError(
                     f"Twelve Data daily safety budget exhausted ({used}/{self.daily_credit_budget} estimated credits); retry after UTC midnight"
                 )
             db.execute(
-                "INSERT INTO api_usage(utc_day,credits) VALUES(?,1) "
-                "ON CONFLICT(utc_day) DO UPDATE SET credits=credits+1",
-                (utc_day,),
+                "INSERT INTO api_usage(utc_day,credits) VALUES(?,?) "
+                "ON CONFLICT(utc_day) DO UPDATE SET credits=credits+excluded.credits",
+                (utc_day, estimated_credits),
             )
             row = db.execute("SELECT next_request_at FROM api_rate_state WHERE id=1").fetchone()
             next_request_at = float(row[0]) if row else 0.0
@@ -132,6 +141,20 @@ class TwelveDataProvider:
         delay = slot - time.time()
         if delay > 0:
             self._sleep(delay)
+
+
+    def _reconcile_api_credits(self, estimated: int, actual: int) -> None:
+        """Replace the provisional estimate with provider-reported API credits."""
+        delta = actual - estimated
+        if delta == 0:
+            return
+        utc_day = datetime.now(timezone.utc).date().isoformat()
+        with self._quota_lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            db.execute(
+                "UPDATE api_usage SET credits=MAX(0, credits + ?) WHERE utc_day=?",
+                (delta, utc_day),
+            )
 
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
@@ -176,7 +199,8 @@ class TwelveDataProvider:
         if cached is not None:
             return cached
 
-        self._reserve_api_credit()
+        estimated_credits = self._estimated_credits(endpoint, query)
+        self._reserve_api_credit(estimated_credits)
         request_query = dict(query)
         request_query["apikey"] = self._api_key
         url = f"{self.BASE_URL}/{endpoint.lstrip('/')}?{urlencode(request_query)}"
@@ -184,6 +208,14 @@ class TwelveDataProvider:
             response = self._opener(url, timeout=self.timeout)
             payload = response.read()
             data = json.loads(payload.decode("utf-8"))
+            headers = getattr(response, "headers", {})
+            actual_header = headers.get("api-credits-used") if hasattr(headers, "get") else None
+            if actual_header is not None:
+                try:
+                    actual_credits = max(0, int(actual_header))
+                except (TypeError, ValueError):
+                    actual_credits = estimated_credits
+                self._reconcile_api_credits(estimated_credits, actual_credits)
         except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
             raise MarketDataError(f"Twelve Data request failed for {endpoint}: {type(exc).__name__}") from exc
         if not isinstance(data, dict):
