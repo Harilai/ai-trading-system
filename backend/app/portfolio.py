@@ -37,13 +37,17 @@ class PaperPortfolio:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS withdrawal_requests ("
                 "id TEXT PRIMARY KEY, amount REAL NOT NULL, status TEXT NOT NULL, "
-                "profit_component REAL NOT NULL DEFAULT 0, requested_at TEXT NOT NULL, decided_at TEXT)"
+                "profit_component REAL NOT NULL DEFAULT 0, "
+                "principal_component REAL NOT NULL DEFAULT 0, requested_at TEXT NOT NULL, decided_at TEXT)"
             )
             self._migrate_positions(db)
             self._ensure_column(db, "trades", "client_order_id", "TEXT")
             self._ensure_column(db, "trades", "provider_id", "TEXT NOT NULL DEFAULT 'ccxt:kraken'")
             self._ensure_column(db, "trades", "instrument_id", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(db, "account", "withdrawn_profit", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column(
+                db, "withdrawal_requests", "principal_component", "REAL NOT NULL DEFAULT 0"
+            )
             db.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_client_order_id "
                 "ON trades(client_order_id) WHERE client_order_id IS NOT NULL"
@@ -99,6 +103,9 @@ class PaperPortfolio:
                 dict(row)
                 for row in db.execute("SELECT * FROM positions ORDER BY provider_id, instrument_id")
             ]
+            pending_withdrawals = float(db.execute(
+                "SELECT COALESCE(SUM(amount),0) FROM withdrawal_requests WHERE status='pending'"
+            ).fetchone()[0])
 
         cost_basis_value = 0.0
         market_value = 0.0
@@ -132,12 +139,16 @@ class PaperPortfolio:
             position["unrealised_pnl"] = position_unrealised
 
         cash = float(account["cash"])
+        total_realised_profit = max(0.0, float(account["realised_pnl"]))
         net_realised_profit = max(
             0.0,
-            float(account["realised_pnl"]) - float(account["withdrawn_profit"]),
+            total_realised_profit - float(account["withdrawn_profit"]),
         )
-        withdrawal_reserve = net_realised_profit * 0.5
-        reinvestment_reserve = net_realised_profit * 0.5
+        withdrawal_reserve = max(
+            0.0,
+            total_realised_profit * 0.5 - float(account["withdrawn_profit"]),
+        )
+        reinvestment_reserve = total_realised_profit * 0.5
         return {
             "currency": "EUR",
             "initial_cash": account["initial_cash"],
@@ -155,7 +166,8 @@ class PaperPortfolio:
             "withdrawal_reserve": withdrawal_reserve,
             "reinvestment_reserve": reinvestment_reserve,
             "withdrawable_reserved_profit": min(cash, withdrawal_reserve),
-            "available_cash_for_manual_withdrawal": cash,
+            "pending_withdrawals": pending_withdrawals,
+            "available_cash_for_manual_withdrawal": max(0.0, cash - pending_withdrawals),
             "mode": "paper",
         }
 
@@ -303,16 +315,28 @@ class PaperPortfolio:
         stamp = datetime.now(timezone.utc).isoformat()
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            account = db.execute("SELECT cash, realised_pnl, withdrawn_profit FROM account WHERE id=1").fetchone()
-            realised_profit = max(0.0, float(account["realised_pnl"]) - float(account["withdrawn_profit"]))
-            withdrawable_reserve = min(float(account["cash"]), realised_profit * 0.5)
-            if amount > withdrawable_reserve + 1e-9:
-                raise PortfolioError("Withdrawal exceeds the 50% reserve of net realised profits; principal and unrealised gains are protected")
+            account = db.execute("SELECT cash FROM account WHERE id=1").fetchone()
+            pending = float(db.execute(
+                "SELECT COALESCE(SUM(amount),0) FROM withdrawal_requests WHERE status='pending'"
+            ).fetchone()[0])
+            available_cash = max(0.0, float(account["cash"]) - pending)
+            if amount > available_cash + 1e-9:
+                raise PortfolioError(
+                    "Withdrawal exceeds available cash after pending requests; "
+                    "invested positions are not liquidated automatically"
+                )
             db.execute(
-                "INSERT INTO withdrawal_requests(id,amount,status,requested_at) VALUES(?,?,'pending',?)",
+                "INSERT INTO withdrawal_requests("
+                "id,amount,status,requested_at) VALUES(?,?,'pending',?)",
                 (request_id, float(amount), stamp),
             )
-        return {"id": request_id, "amount": float(amount), "status": "pending", "requested_at": stamp}
+        return {
+            "id": request_id,
+            "amount": float(amount),
+            "status": "pending",
+            "requested_at": stamp,
+            "funding_source": "available_cash",
+        }
 
     def approve_withdrawal(self, request_id: str) -> dict:
         stamp = datetime.now(timezone.utc).isoformat()
@@ -330,26 +354,27 @@ class PaperPortfolio:
             amount = float(request["amount"])
             if amount > account["cash"] + 1e-9:
                 raise PortfolioError("Available cash changed; withdrawal cannot be approved")
-            profit_available = max(
+            total_realised_profit = max(0.0, float(account["realised_pnl"]))
+            withdrawal_reserve = max(
                 0.0,
-                float(account["realised_pnl"]) - float(account["withdrawn_profit"]),
+                total_realised_profit * 0.5 - float(account["withdrawn_profit"]),
             )
-            withdrawable_reserve = min(float(account["cash"]), profit_available * 0.5)
-            if amount > withdrawable_reserve + 1e-9:
-                raise PortfolioError("Withdrawal exceeds the available profit reserve")
-            profit_component = amount
+            profit_component = min(amount, withdrawal_reserve)
+            principal_component = amount - profit_component
             db.execute(
                 "UPDATE account SET cash=cash-?, withdrawn_profit=withdrawn_profit+? WHERE id=1",
                 (amount, profit_component),
             )
             db.execute(
-                "UPDATE withdrawal_requests SET status='approved', profit_component=?, decided_at=? WHERE id=?",
-                (profit_component, stamp, request_id),
+                "UPDATE withdrawal_requests SET status='approved', profit_component=?, "
+                "principal_component=?, decided_at=? WHERE id=?",
+                (profit_component, principal_component, stamp, request_id),
             )
             result = dict(request)
             result.update({
                 "status": "approved",
                 "profit_component": profit_component,
+                "principal_component": principal_component,
                 "decided_at": stamp,
             })
             return result
