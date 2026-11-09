@@ -10,11 +10,11 @@ from .providers.base import AssetClass
 
 
 class EquityEtfResearchAgent:
-    """Research-only pipeline for US stocks and ETFs from a data provider.
+    """Research-only pipeline for US stocks and ETFs.
 
-    It never emits TradeProposal objects or submits orders. A missing bid/ask,
-    stale quote, non-USD listing, or insufficient history prevents a candidate
-    from being recommended for later execution.
+    Research eligibility is deliberately separate from execution eligibility:
+    missing bid/ask or a closed market must not discard useful historical
+    research, but they remain explicit blockers for any future execution path.
     """
 
     def __init__(
@@ -27,7 +27,8 @@ class EquityEtfResearchAgent:
         timeframe: str = "1day",
         candle_limit: int = 250,
         max_quote_age_seconds: int = 24 * 60 * 60,
-        require_two_sided_quote: bool = True,
+        require_two_sided_quote: bool = False,
+        max_execution_spread_fraction: float = 0.02,
     ):
         if max_instruments < 1:
             raise ValueError("max_instruments must be positive")
@@ -37,6 +38,8 @@ class EquityEtfResearchAgent:
             raise ValueError("Equity research requires between 120 and 5000 candles")
         if max_quote_age_seconds < 1:
             raise ValueError("max_quote_age_seconds must be positive")
+        if not 0 < max_execution_spread_fraction <= 1:
+            raise ValueError("max_execution_spread_fraction must be between 0 and 1")
         self.provider = provider
         self.charts = charts or ChartsAgent()
         self.strategy_research = strategy_research or StrategyResearchAgent()
@@ -45,6 +48,7 @@ class EquityEtfResearchAgent:
         self.candle_limit = candle_limit
         self.max_quote_age_seconds = max_quote_age_seconds
         self.require_two_sided_quote = require_two_sided_quote
+        self.max_execution_spread_fraction = max_execution_spread_fraction
 
     def scan(self, asset_classes: tuple[AssetClass, ...] = (AssetClass.EQUITY, AssetClass.ETF)) -> dict:
         instruments = self.provider.discover_markets(asset_classes)
@@ -69,20 +73,43 @@ class EquityEtfResearchAgent:
                 quote = self.provider.ticker(instrument.symbol)
                 if quote.get("last") is None or float(quote["last"]) <= 0:
                     raise MarketDataError("Quote has no valid last price")
-                age_ms = max(0, time.time_ns() // 1_000_000 - int(quote["timestamp"]))
+                timestamp_ms = int(quote["timestamp"])
+                age_ms = max(0, time.time_ns() // 1_000_000 - timestamp_ms)
                 if age_ms > self.max_quote_age_seconds * 1000:
                     raise MarketDataError("Quote is stale")
+
                 bid = quote.get("bid")
                 ask = quote.get("ask")
-                if self.require_two_sided_quote and (bid is None or ask is None):
-                    raise MarketDataError("Two-sided bid/ask quote required before execution eligibility")
-                if bid is not None and ask is not None:
-                    bid, ask = float(bid), float(ask)
-                    if bid <= 0 or ask < bid:
-                        raise MarketDataError("Invalid bid/ask spread")
-                    spread_fraction = (ask - bid) / ((ask + bid) / 2)
-                else:
+                blockers: list[str] = [
+                    "No equity/ETF broker adapter is configured",
+                    "No asset-specific equity/ETF Risk Manager approval path exists",
+                    "This research result is not a trade instruction",
+                ]
+                if bid is None or ask is None:
+                    if self.require_two_sided_quote:
+                        raise MarketDataError("Two-sided bid/ask quote required")
                     spread_fraction = None
+                    blockers.append("Two-sided bid/ask quote is unavailable")
+                else:
+                    bid, ask = float(bid), float(ask)
+                    if bid <= 0 or ask <= 0 or ask < bid:
+                        raise MarketDataError("Invalid bid/ask spread")
+                    midpoint = (ask + bid) / 2
+                    spread_fraction = (ask - bid) / midpoint if midpoint > 0 else None
+                    if spread_fraction is None or spread_fraction > self.max_execution_spread_fraction:
+                        blockers.append("Bid/ask spread exceeds the execution-quality threshold")
+
+                market_open = quote.get("is_market_open")
+                if market_open is False:
+                    blockers.append("US exchange is currently reported closed")
+                elif market_open is not True:
+                    blockers.append("Exchange session state is unknown")
+
+                average_volume = quote.get("averageVolume")
+                if average_volume is None:
+                    blockers.append("Average trading volume is unavailable")
+                elif float(average_volume) <= 0:
+                    blockers.append("Average trading volume is not positive")
 
                 rows = self.provider.ohlcv(
                     instrument.symbol,
@@ -113,17 +140,16 @@ class EquityEtfResearchAgent:
                         "bid": bid,
                         "ask": ask,
                         "spread_fraction": spread_fraction,
-                        "timestamp_ms": int(quote["timestamp"]),
-                        "is_market_open": quote.get("is_market_open"),
+                        "timestamp_ms": timestamp_ms,
+                        "age_seconds": round(age_ms / 1000, 2),
+                        "average_volume": float(average_volume) if average_volume is not None else None,
+                        "is_market_open": market_open,
                     },
                     "chart_analysis": chart.model_dump(),
                     "strategy_research": research,
+                    "research_eligible": True,
                     "execution_eligible": False,
-                    "execution_blockers": [
-                        "No equity/ETF broker adapter is configured",
-                        "No asset-specific equity/ETF Risk Manager approval path exists",
-                        "This research result is not a trade instruction",
-                    ],
+                    "execution_blockers": blockers,
                 })
             except (MarketDataError, ValueError, TypeError, KeyError) as exc:
                 rejected.append({"symbol": instrument.symbol, "reason": str(exc)})
