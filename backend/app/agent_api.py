@@ -22,7 +22,7 @@ class WithdrawalRequestBody(BaseModel):
 
 
 class TaskRequest(BaseModel):
-    kind: str = Field(pattern="^(health_check|market_scan|decision_cycle)$")
+    kind: str = Field(pattern="^(health_check|market_scan|equity_research|decision_cycle)$")
     payload: dict = Field(default_factory=dict)
 
 
