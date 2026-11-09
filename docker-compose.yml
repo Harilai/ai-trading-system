@@ -3,16 +3,30 @@ services:
     build: ./backend
     container_name: ai-trading-api
     restart: unless-stopped
+    init: true
     ports:
-      - "8000:8000"
+      # Keep the API private by default. Use an SSH tunnel or a separately
+      # configured TLS reverse proxy for remote access.
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     volumes:
       - trading_data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
     healthcheck:
-      test: ["CMD","python","-c","import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 20s
+    stop_grace_period: 30s
+
 volumes:
   trading_data:
