@@ -113,6 +113,11 @@ def test_legacy_database_is_migrated_with_protection_and_idempotency_columns(tmp
         db.execute("CREATE TABLE positions (symbol TEXT PRIMARY KEY, quantity REAL, average_price REAL)")
         db.execute("CREATE TABLE trades (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, side TEXT, quantity REAL, price REAL, fee REAL, total REAL, created_at TEXT)")
         db.execute("CREATE TABLE account (id INTEGER PRIMARY KEY CHECK(id=1), initial_cash REAL, cash REAL, realised_pnl REAL DEFAULT 0)")
+        db.execute(
+            "CREATE TABLE withdrawal_requests (id TEXT PRIMARY KEY, amount REAL NOT NULL, "
+            "status TEXT NOT NULL, profit_component REAL NOT NULL DEFAULT 0, "
+            "requested_at TEXT NOT NULL, decided_at TEXT)"
+        )
     PaperPortfolio(path, 20)
     with sqlite3.connect(path) as db:
         position_columns = {row[1] for row in db.execute("PRAGMA table_info(positions)")}
