@@ -56,6 +56,14 @@ class EquityEtfResearchAgent:
         rejected: list[dict[str, str]] = []
         seen: set[str] = set()
         considered = 0
+        exchange_states: dict[str, dict] = {}
+        market_state_error = None
+        market_state_reader = getattr(self.provider, "market_state", None)
+        if callable(market_state_reader):
+            try:
+                exchange_states = market_state_reader()
+            except MarketDataError as exc:
+                market_state_error = str(exc)
 
         for instrument in instruments:
             if considered >= self.max_instruments:
@@ -99,11 +107,21 @@ class EquityEtfResearchAgent:
                     if spread_fraction is None or spread_fraction > self.max_execution_spread_fraction:
                         blockers.append("Bid/ask spread exceeds the execution-quality threshold")
 
-                market_open = quote.get("is_market_open")
+                exchange = instrument.metadata.get("exchange") if instrument.metadata else None
+                market_state = exchange_states.get(str(exchange).casefold()) if exchange else None
+                if market_state is None and instrument.metadata:
+                    mic = instrument.metadata.get("mic_code")
+                    market_state = exchange_states.get(str(mic).casefold()) if mic else None
+                market_open = (
+                    market_state.get("is_market_open") if market_state is not None
+                    else quote.get("is_market_open")
+                )
                 if market_open is False:
                     blockers.append("US exchange is currently reported closed")
                 elif market_open is not True:
                     blockers.append("Exchange session state is unknown")
+                if market_state_error:
+                    blockers.append("Exchange session lookup failed; execution remains blocked")
 
                 average_volume = quote.get("averageVolume")
                 if average_volume is None:
@@ -144,6 +162,8 @@ class EquityEtfResearchAgent:
                         "age_seconds": round(age_ms / 1000, 2),
                         "average_volume": float(average_volume) if average_volume is not None else None,
                         "is_market_open": market_open,
+                        "exchange_session": market_state,
+                        "market_state_error": market_state_error,
                     },
                     "chart_analysis": chart.model_dump(),
                     "strategy_research": research,
