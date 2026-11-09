@@ -59,3 +59,20 @@ def paper_order(order: OrderRequest):
             settings.fee_rate,settings.slippage_rate,settings.max_order_fraction,settings.min_order_value_eur)
     except PortfolioError as exc: raise HTTPException(422,str(exc)) from exc
     except MarketDataError as exc: raise HTTPException(502,str(exc)) from exc
+
+
+from contextlib import asynccontextmanager
+from .autonomous import AutonomousAgent, AutonomousStore
+from .agent_api import router as agent_router
+
+agent_store = AutonomousStore(settings.database_path)
+agent_worker = AutonomousAgent(agent_store)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await agent_worker.start()
+    yield
+    await agent_worker.stop()
+
+app.router.lifespan_context = lifespan
+app.include_router(agent_router)
