@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import sqlite3
 from datetime import datetime, timedelta, timezone
@@ -59,6 +60,24 @@ class AutonomousStore:
                 details TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS strategy_research_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                provider_id TEXT NOT NULL,
+                instrument_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                timeframe TEXT NOT NULL,
+                strategy_id TEXT NOT NULL,
+                strategy_version TEXT NOT NULL,
+                eligible INTEGER NOT NULL,
+                score REAL,
+                validation_failures TEXT NOT NULL,
+                result TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(task_id, instrument_id, strategy_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_strategy_history_lookup
+                ON strategy_research_history(instrument_id, strategy_id, created_at DESC);
             INSERT OR IGNORE INTO agent_state(id, enabled, emergency_stop, updated_at)
             VALUES(1, 0, 0, CURRENT_TIMESTAMP);
             """)
@@ -277,6 +296,108 @@ class AutonomousStore:
             )
             return int(cur.lastrowid)
 
+    def record_strategy_research(
+        self,
+        task_id: str,
+        market: dict[str, Any],
+        timeframe: str,
+        research: dict[str, Any],
+    ) -> int:
+        """Persist candidate-level validation evidence with a reproducible config fingerprint."""
+        candidates = research.get("candidates")
+        if not isinstance(candidates, list) or not candidates:
+            return 0
+        provider_id = str(market.get("provider_id") or "unknown")
+        symbol = str(market.get("symbol") or "").upper()
+        instrument_id = str(
+            market.get("instrument_id") or f"{provider_id}:unknown:{symbol}"
+        )
+        if not symbol or not instrument_id:
+            return 0
+        config = {
+            "method": research.get("method"),
+            "cost_model": research.get("cost_model", {}),
+            "promotion_gates": research.get("promotion_gates", {}),
+        }
+        config_fingerprint = hashlib.sha256(
+            json.dumps(config, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()[:16]
+        now = utcnow().isoformat()
+        rows = []
+        for candidate in candidates:
+            if not isinstance(candidate, dict) or not candidate.get("strategy_id"):
+                continue
+            strategy_id = str(candidate["strategy_id"])
+            strategy_version = f"{strategy_id}:{config_fingerprint}"
+            failures = candidate.get("validation_failures", [])
+            result = {
+                "description": candidate.get("description"),
+                "in_sample": candidate.get("in_sample"),
+                "out_of_sample": candidate.get("out_of_sample"),
+                "benchmark_excess_return": candidate.get("benchmark_excess_return"),
+                "beats_buy_and_hold": candidate.get("beats_buy_and_hold"),
+                "walk_forward": candidate.get("walk_forward"),
+                "cost_sensitivity": candidate.get("cost_sensitivity"),
+                "score": candidate.get("score"),
+            }
+            rows.append((
+                task_id, provider_id, instrument_id, symbol, str(timeframe or "unknown"),
+                strategy_id, strategy_version, int(bool(candidate.get("eligible"))),
+                candidate.get("score"), json.dumps(failures, ensure_ascii=False),
+                json.dumps(result, ensure_ascii=False), now,
+            ))
+        if not rows:
+            return 0
+        with self.lock, self.connect() as db:
+            db.executemany(
+                """
+                INSERT OR IGNORE INTO strategy_research_history(
+                    task_id, provider_id, instrument_id, symbol, timeframe,
+                    strategy_id, strategy_version, eligible, score,
+                    validation_failures, result, created_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                rows,
+            )
+        self.audit("strategy_research_persisted", {
+            "task_id": task_id, "instrument_id": instrument_id,
+            "candidate_count": len(rows), "config_fingerprint": config_fingerprint,
+        })
+        return len(rows)
+
+    def strategy_history(
+        self,
+        *,
+        limit: int = 100,
+        strategy_id: str | None = None,
+        instrument_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        clauses = []
+        params: list[Any] = []
+        if strategy_id:
+            clauses.append("strategy_id=?")
+            params.append(strategy_id)
+        if instrument_id:
+            clauses.append("instrument_id=?")
+            params.append(instrument_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        with self.connect() as db:
+            rows = [
+                dict(row) for row in db.execute(
+                    f"SELECT * FROM strategy_research_history {where} "
+                    "ORDER BY created_at DESC, id DESC LIMIT ?",
+                    params,
+                )
+            ]
+        for row in rows:
+            row["eligible"] = bool(row["eligible"])
+            row["validation_failures"] = json.loads(row["validation_failures"])
+            row["result"] = json.loads(row["result"])
+        return rows
+
     def overview(self) -> dict[str, Any]:
         state = self.state()
         with self.connect() as db:
@@ -377,6 +498,11 @@ class AutonomousAgent:
             if self.scout is None:
                 raise RuntimeError("Market scanner is not configured")
             result = await asyncio.to_thread(self.scout.scan)
+            for item in result.get("analyses", []):
+                self.store.record_strategy_research(
+                    task["id"], item.get("market", {}), result.get("timeframe", "unknown"),
+                    item.get("strategy_research", {}),
+                )
             self.store.remember("market_scan", {"task_id": task["id"], **result}, validated=True)
             return result
         if task["kind"] == "equity_research":
@@ -421,6 +547,11 @@ class AutonomousAgent:
                 for item in held_positions
             }
             scan = await asyncio.to_thread(self.scout.scan, held_positions)
+            for item in scan.get("analyses", []):
+                self.store.record_strategy_research(
+                    task["id"], item.get("market", {}), scan.get("timeframe", "unknown"),
+                    item.get("strategy_research", {}),
+                )
             valuation_prices = {}
             for item in scan.get("analyses", []):
                 market = item.get("market", {})
