@@ -74,6 +74,8 @@ class TwelveDataProvider:
 
     @staticmethod
     def _cache_ttl(endpoint: str, params: dict) -> int:
+        if endpoint == "market_state":
+            return 60
         if endpoint in {"stocks", "etfs/list"}:
             return 86400
         if endpoint == "quote":
@@ -83,7 +85,7 @@ class TwelveDataProvider:
             return 21600 if interval in {"1day", "1week", "1month"} else 300
         return 0
 
-    def _cached_response(self, cache_key: str) -> dict | None:
+    def _cached_response(self, cache_key: str) -> dict | list | None:
         now = time.time()
         with self._connect() as db:
             row = db.execute(
@@ -97,7 +99,7 @@ class TwelveDataProvider:
                 return None
             return json.loads(row[0])
 
-    def _store_response(self, cache_key: str, payload: dict, ttl: int) -> None:
+    def _store_response(self, cache_key: str, payload: dict | list, ttl: int) -> None:
         if ttl <= 0:
             return
         with self._connect() as db:
@@ -191,7 +193,7 @@ class TwelveDataProvider:
             ),
         )
 
-    def _request(self, endpoint: str, params: dict | None = None) -> dict:
+    def _request(self, endpoint: str, params: dict | None = None) -> dict | list:
         query = dict(params or {})
         cache_material = json.dumps([endpoint, query], sort_keys=True, separators=(",", ":"))
         cache_key = hashlib.sha256(cache_material.encode("utf-8")).hexdigest()
@@ -217,9 +219,9 @@ class TwelveDataProvider:
                 self._reconcile_api_credits(estimated_credits, actual_credits)
         except (HTTPError, URLError, TimeoutError, OSError, ValueError) as exc:
             raise MarketDataError(f"Twelve Data request failed for {endpoint}: {type(exc).__name__}") from exc
-        if not isinstance(data, dict):
+        if not isinstance(data, (dict, list)):
             raise MarketDataError(f"Twelve Data returned an invalid response for {endpoint}")
-        if data.get("status") == "error" or data.get("code") not in (None, 200):
+        if isinstance(data, dict) and (data.get("status") == "error" or data.get("code") not in (None, 200)):
             message = str(data.get("message") or data.get("status") or "provider error")
             raise MarketDataError(f"Twelve Data {endpoint} error: {message[:240]}")
         self._store_response(cache_key, data, self._cache_ttl(endpoint, query))
@@ -292,6 +294,28 @@ class TwelveDataProvider:
                     },
                 ))
         return discovered
+
+    def market_state(self) -> dict[str, dict]:
+        data = self._request("market_state", {"country": "United States"})
+        if not isinstance(data, list):
+            raise MarketDataError("Twelve Data market_state returned an invalid response")
+        states: dict[str, dict] = {}
+        for item in data:
+            if not isinstance(item, dict) or not isinstance(item.get("is_market_open"), bool):
+                continue
+            state = {
+                "name": item.get("name"),
+                "code": item.get("code"),
+                "country": item.get("country"),
+                "is_market_open": item["is_market_open"],
+                "time_to_open": item.get("time_to_open"),
+                "time_to_close": item.get("time_to_close"),
+                "time_after_open": item.get("time_after_open"),
+            }
+            for key in (item.get("name"), item.get("code")):
+                if isinstance(key, str) and key.strip():
+                    states[key.strip().casefold()] = state
+        return states
 
     def ticker(self, symbol: str) -> dict:
         data = self._request("quote", {"symbol": symbol})
