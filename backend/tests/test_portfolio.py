@@ -31,7 +31,8 @@ def test_realised_pnl_includes_entry_and_exit_fees(portfolio):
     assert portfolio.snapshot()["realised_pnl"] == pytest.approx(0.979)
 
 
-def test_partial_sell_preserves_remaining_cost_basis(portfolio):
+def test_partial_sell_preserves_remaining_cost_basis(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "partial.db"), 100)
     portfolio.execute("BTC/EUR", "buy", 0.002, 10000, 0.001, 0, 1, 1)
     portfolio.execute("BTC/EUR", "sell", 0.001, 11000, 0.001, 0, 1, 1)
     position = portfolio.snapshot()["positions"][0]
