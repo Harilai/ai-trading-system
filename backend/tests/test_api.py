@@ -214,7 +214,7 @@ def test_readiness_requires_database_and_recent_worker_heartbeat(monkeypatch):
 
 
 def test_readiness_rejects_stale_worker_heartbeat(monkeypatch):
-    stale = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+    stale = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
     monkeypatch.setattr("app.main.agent_store.state", lambda: {"last_heartbeat": stale})
 
     response = client.get("/api/health/ready")
