@@ -29,6 +29,7 @@ class AutonomousStore:
                 emergency_stop INTEGER NOT NULL DEFAULT 0,
                 last_heartbeat TEXT,
                 last_decision_enqueued_at TEXT,
+                last_equity_research_enqueued_at TEXT,
                 updated_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS agent_tasks (
@@ -65,6 +66,8 @@ class AutonomousStore:
             columns = {row['name'] for row in db.execute('PRAGMA table_info(agent_state)')}
             if 'last_decision_enqueued_at' not in columns:
                 db.execute('ALTER TABLE agent_state ADD COLUMN last_decision_enqueued_at TEXT')
+            if 'last_equity_research_enqueued_at' not in columns:
+                db.execute('ALTER TABLE agent_state ADD COLUMN last_equity_research_enqueued_at TEXT')
         # Recover expired work on startup as well as during the worker loop.
         self.recover_expired_tasks()
 
@@ -129,6 +132,42 @@ class AutonomousStore:
             )
         self.audit("scheduled_decision_cycle_enqueued", {"task_id": task_id})
         return {"id": task_id, "kind": "decision_cycle", "status": "pending", "due_at": now_text}
+
+    def schedule_equity_research(self, interval_seconds: int = 21600) -> dict[str, Any] | None:
+        """Enqueue a low-frequency read-only equity research scan without overlapping work."""
+        if interval_seconds < 3600:
+            raise ValueError("Equity research interval must be at least 3600 seconds")
+        now = utcnow()
+        now_text = now.isoformat()
+        task_id = str(uuid4())
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            state = db.execute(
+                "SELECT enabled, emergency_stop, last_equity_research_enqueued_at "
+                "FROM agent_state WHERE id=1"
+            ).fetchone()
+            if not state["enabled"] or state["emergency_stop"]:
+                return None
+            active = db.execute(
+                "SELECT id FROM agent_tasks WHERE kind='equity_research' "
+                "AND status IN ('pending','running') LIMIT 1"
+            ).fetchone()
+            if active:
+                return None
+            last = state["last_equity_research_enqueued_at"]
+            if last and now - datetime.fromisoformat(last) < timedelta(seconds=interval_seconds):
+                return None
+            db.execute(
+                "INSERT INTO agent_tasks(id,kind,payload,status,due_at,created_at,updated_at) "
+                "VALUES(?,'equity_research',?,'pending',?,?,?)",
+                (task_id, json.dumps({"trigger": "scheduler", "read_only": True}), now_text, now_text, now_text),
+            )
+            db.execute(
+                "UPDATE agent_state SET last_equity_research_enqueued_at=?, updated_at=? WHERE id=1",
+                (now_text, now_text),
+            )
+        self.audit("scheduled_equity_research_enqueued", {"task_id": task_id})
+        return {"id": task_id, "kind": "equity_research", "status": "pending", "due_at": now_text}
 
     def state(self) -> dict[str, Any]:
         with self.connect() as db:
@@ -261,11 +300,12 @@ class AutonomousStore:
 class AutonomousAgent:
     """Persistent worker for deterministic maintenance and market-analysis tasks."""
 
-    def __init__(self, store: AutonomousStore, scout=None, chief=None, portfolio=None):
+    def __init__(self, store: AutonomousStore, scout=None, chief=None, portfolio=None, equity_research=None):
         self.store = store
         self.scout = scout
         self.chief = chief
         self.portfolio = portfolio
+        self.equity_research = equity_research
         self._task: asyncio.Task | None = None
         self._stopping = asyncio.Event()
 
@@ -288,6 +328,8 @@ class AutonomousAgent:
             self.store.heartbeat()
             if state["enabled"] and not state["emergency_stop"]:
                 self.store.schedule_decision_cycle(settings.decision_cycle_interval_seconds)
+                if self.equity_research is not None:
+                    self.store.schedule_equity_research(settings.equity_research_interval_seconds)
                 task = self.store.claim_due_task()
                 if task:
                     try:
@@ -311,6 +353,16 @@ class AutonomousAgent:
                 raise RuntimeError("Market scanner is not configured")
             result = await asyncio.to_thread(self.scout.scan)
             self.store.remember("market_scan", {"task_id": task["id"], **result}, validated=True)
+            return result
+        if task["kind"] == "equity_research":
+            if self.equity_research is None:
+                raise RuntimeError("Equity/ETF research provider is not configured")
+            result = await asyncio.to_thread(self.equity_research.scan)
+            self.store.remember(
+                "equity_etf_research",
+                {"task_id": task["id"], **result},
+                validated=True,
+            )
             return result
         if task["kind"] == "decision_cycle":
             if self.scout is None or self.chief is None or self.portfolio is None:
