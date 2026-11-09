@@ -7,7 +7,12 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Área | Estado |
 |---|---|
 | Backend FastAPI y paper portfolio SQLite | Implementado |
-| Datos públicos crypto vía CCXT | Implementado |
+| Datos públicos crypto spot vía CCXT | Implementado; solo datos públicos |
+| Contratos normalizados de proveedores e instrumentos | Implementado |
+| Registro de proveedores y capability matrix | Implementado |
+| Descubrimiento multi-provider para adaptadores configurados | Implementado en datos; actualmente un proveedor por defecto |
+| Router de ejecución normalizado | Contrato inicial; ningún adaptador live |
+| Perfiles de riesgo por clase/tipo de mercado | Contratos implementados; solo crypto spot habilitado |
 | Indicadores técnicos | Implementado |
 | Contabilidad de comisiones en coste base y P/L realizado | Implementado |
 | Validación de datos obsoletos y órdenes | Implementado |
@@ -23,7 +28,9 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Risk Manager conectado obligatoriamente a órdenes | Pendiente |
 | Sniper y generación de propuestas | Pendiente |
 | Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada; ciclo bajo demanda, no programado |
-| Acciones/ETF y FX | Pendiente |
+| Acciones/ETF y FX | Pendiente; requiere broker/data adapters y validación |
+| DEX, wallets, blockchain y DeFi | Pendiente; no hay integración ni firma |
+| Futuros, opciones, margin y derivados | Deshabilitados; perfiles y límites específicos pendientes |
 | News/Sentiment con fuentes auditables | Pendiente |
 | Gestor 50/50 de beneficios y retiradas manuales | Pendiente |
 | Dashboard | Pendiente |
@@ -61,7 +68,12 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 
 ## Prioridad 4 — cobertura y producto
 
-- [ ] Evaluar proveedor de acciones/ETF, horarios, permisos, datos y comisiones.
+- [ ] Implementar y validar un adaptador de broker de acciones/ETF, horarios, permisos, datos, mínimos y comisiones.
+- [ ] Generalizar el portfolio a claves `provider_id + instrument_id` y reconciliación multi-proveedor.
+- [ ] Implementar adaptadores FX, índices y commodities solo tras validar APIs y elegibilidad.
+- [ ] Diseñar wallet read-only y blockchain monitoring antes de añadir firma aislada; no usar seeds en agentes.
+- [ ] Implementar DEX swaps con simulación, gas, slippage, MEV y reconciliación antes de habilitar ejecución.
+- [ ] Mantener margin, futures, options y apalancamiento deshabilitados hasta completar sus perfiles y pruebas independientes.
 - [ ] Añadir FX con tipos y timestamps verificables antes de mezclar divisas.
 - [ ] Añadir News/Sentiment solo con atribución de fuente, frescura y calidad.
 - [ ] Crear dashboard responsive con cartera, posiciones, investigación, decisiones, auditoría y controles.
@@ -78,6 +90,8 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 ## Seguridad no negociable
 
 - Paper trading hasta completar pruebas y revisión separada de live execution.
+- Un provider solo se considera disponible si está registrado, sus capacidades están declaradas y se han probado; no inferir ejecución desde datos públicos.
+- Las capacidades no implementadas (balances, órdenes, cancelación, partial fills, reconciliación, withdrawals, signing) deben permanecer false.
 - Live trading deshabilitado por defecto y nunca activable por agentes o LLM.
 - Ningún agente puede cambiar sus propios límites de riesgo.
 - No incluir claves de exchange/broker en Git, logs ni frontend.
