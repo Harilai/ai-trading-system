@@ -34,6 +34,7 @@ def test_chief_proposes_buy_only_after_strategy_and_risk_validation():
     assert decision.action == "buy"
     assert decision.proposal is not None
     assert decision.proposal.stop_loss < decision.proposal.reference_price
+    assert decision.proposal.take_profit > decision.proposal.reference_price
     assert decision.risk.accepted is True
     assert decision.proposal.quantity * decision.proposal.reference_price <= 250
 
@@ -66,3 +67,38 @@ def test_chief_rejects_buy_if_stop_distance_exceeds_risk_limit():
     assert decision.action == "hold"
     assert decision.risk is not None
     assert decision.risk.accepted is False
+
+
+def test_chief_exits_on_persisted_stop_loss_even_without_strategy_recommendation():
+    scan = eligible_scan()
+    scan["analyses"][0]["strategy_research"]["recommended_strategy"] = None
+    decision = ChiefAgent().decide(
+        scan,
+        portfolio(positions=[{
+            "symbol": "BTC/EUR",
+            "quantity": 0.25,
+            "strategy_id": "ema_12_26",
+            "stop_loss": 100.0,
+            "take_profit": 110.0,
+        }]),
+    )
+    assert decision.action == "sell"
+    assert "stop-loss" in decision.proposal.rationale
+    assert decision.risk.accepted is True
+
+
+def test_chief_exits_on_persisted_take_profit():
+    scan = eligible_scan(price=111.0)
+    decision = ChiefAgent().decide(
+        scan,
+        portfolio(positions=[{
+            "symbol": "BTC/EUR",
+            "quantity": 0.25,
+            "strategy_id": "ema_12_26",
+            "stop_loss": 90.0,
+            "take_profit": 110.0,
+        }]),
+    )
+    assert decision.action == "sell"
+    assert "take-profit" in decision.proposal.rationale
+    assert decision.risk.accepted is True
