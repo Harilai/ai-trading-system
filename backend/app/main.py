@@ -125,7 +125,7 @@ def readiness():
         if heartbeat_at.tzinfo is None:
             heartbeat_at = heartbeat_at.replace(tzinfo=timezone.utc)
         age_seconds = (datetime.now(timezone.utc) - heartbeat_at).total_seconds()
-        if age_seconds < 0 or age_seconds > 30:
+        if age_seconds < 0 or age_seconds > 300:
             raise HTTPException(503, "Autonomous worker heartbeat is stale")
     except HTTPException:
         raise
