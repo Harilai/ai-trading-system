@@ -42,6 +42,12 @@ class ProviderCapabilities:
     asset_classes: tuple[AssetClass, ...]
     market_types: tuple[MarketType, ...]
     public_market_data: bool
+    requires_authentication_for_market_data: bool = False
+    requires_authentication_for_trading: bool = True
+    connectivity_status: str = "not_checked"
+    rate_limit_ms: int | None = None
+    geographic_restrictions: tuple[str, ...] = ()
+    account_eligibility: tuple[str, ...] = ()
     authenticated_account: bool = False
     balances: bool = False
     positions: bool = False
