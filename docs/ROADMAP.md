@@ -17,11 +17,11 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Scout: descubrimiento de spot EUR por volumen/spread/frescura | Implementado |
 | Charts Agent | Implementado |
 | Strategy Research: EMA, RSI, Bollinger, split 70/30 y costes | Implementado como investigación, no aprobación de trading |
-| Chief: selección de oportunidad y propuesta buy/sell/hold | Implementado con Risk Manager obligatorio; proposal-only |
+| Chief: selección de oportunidad y propuesta buy/sell/hold | Implementado con Risk Manager obligatorio |
 | Chief Agent y coordinación de decisiones | Implementado inicialmente; ciclo aún proposal-only |
 | Risk Manager conectado obligatoriamente a órdenes | Pendiente |
 | Sniper y generación de propuestas | Pendiente |
-| Ejecución paper autónoma y monitorización de posiciones | Pendiente |
+| Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada; ciclo bajo demanda, no programado |
 | Acciones/ETF y FX | Pendiente |
 | News/Sentiment con fuentes auditables | Pendiente |
 | Gestor 50/50 de beneficios y retiradas manuales | Pendiente |
@@ -45,7 +45,8 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 - [x] Integrar Scout, Charts y Strategy Research en una tarea de decisión bajo demanda; programación recurrente pendiente.
 - [ ] Implementar Sniper para generar propuestas con entrada, stop-loss, take-profit y tamaño.
 - [x] Conectar Risk Manager como puerta obligatoria para propuestas del Chief; la conexión con el motor paper queda pendiente.
-- [ ] Añadir idempotencia de tareas/órdenes, estados legales y reconciliación de ejecuciones.
+- [x] Añadir idempotencia de órdenes paper mediante `client_order_id` vinculado a la tarea.
+- [ ] Completar estados legales de órdenes, conciliación y recuperación frente a fallos en cada frontera de persistencia.
 - [ ] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
 - [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
 
