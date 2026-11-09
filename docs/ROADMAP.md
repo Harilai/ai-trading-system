@@ -53,7 +53,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 - [x] Añadir benchmark buy-and-hold OOS con la misma fracción de exposición y retorno excedente por estrategia.\n- [x] Añadir escenarios de sensibilidad de comisiones y slippage a 1,5x y 2x; exigir rentabilidad neta y superar buy-and-hold en 1,5x para promocionar, mantener 2x como diagnóstico.
 - [x] Añadir tres ventanas walk-forward diagnósticas y métricas por ventana.\n- [x] Exigir tres ventanas walk-forward con mínimo de 40 velas evaluables y una operación cerrada por ventana, al menos dos ventanas positivas, media positiva, drawdown limitado y superar buy-and-hold neto de costes; devolver motivos de rechazo.
 - [x] Persistir por instrumento las versiones/configuración de estrategia, resultados OOS, benchmark, walk-forward, sensibilidad de costes y motivos de promoción/rechazo; escritura idempotente por tarea.
-- [ ] Clasificar régimen de mercado y evitar seleccionar una estrategia por una sola ventana.
+- [x] Añadir diagnóstico de estructura (tendencia alcista/bajista/rango) mediante efficiency ratio y volatilidad relativa mediante percentil rolling; se persiste como contexto y no modifica gates ni autoriza operaciones.
 
 ## Prioridad 2 — orquestación segura
 

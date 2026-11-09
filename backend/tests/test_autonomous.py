@@ -429,6 +429,7 @@ def test_strategy_research_history_persists_versioned_candidate_evidence(tmp_pat
         "method": "chronological_70_30",
         "cost_model": {"fee_rate_per_side": 0.0026, "slippage_rate_per_side": 0.0005},
         "promotion_gates": {"must_beat_buy_and_hold": True},
+        "market_regime": {"status": "available", "structure": "trending_up", "volatility": "normal"},
         "candidates": [
             {
                 "strategy_id": "ema_12_26",
@@ -467,6 +468,7 @@ def test_strategy_research_history_persists_versioned_candidate_evidence(tmp_pat
     assert rejected["eligible"] is False
     assert rejected["validation_failures"] == ["does_not_beat_buy_and_hold"]
     assert rejected["result"]["cost_sensitivity"]["2.0"]["beats_buy_and_hold"] is False
+    assert rejected["result"]["market_regime"]["structure"] == "trending_up"
     promoted = by_id["rsi_14_reversion"]
     assert promoted["eligible"] is True
     assert promoted["strategy_version"].startswith("rsi_14_reversion:logic-v1:config-")
