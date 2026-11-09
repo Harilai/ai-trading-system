@@ -79,3 +79,27 @@ def test_walk_forward_windows_are_chronological_and_do_not_overlap():
     assert windows[1]["end_index"] == windows[2]["start_index"]
     assert windows[0]["start_index"] < windows[1]["start_index"] < windows[2]["start_index"]
     assert all("net_return" in window and "max_drawdown" in window for window in windows)
+
+
+def test_research_rejects_non_chronological_or_duplicate_candles():
+    rows = candles_from_closes([100.0 + index for index in range(120)])
+    rows[20]["timestamp"] = rows[19]["timestamp"]
+    with pytest.raises(ValueError, match="strictly increasing"):
+        StrategyResearchAgent().research(rows)
+
+    rows = candles_from_closes([100.0 + index for index in range(120)])
+    rows[20], rows[21] = rows[21], rows[20]
+    with pytest.raises(ValueError, match="strictly increasing"):
+        StrategyResearchAgent().research(rows)
+
+
+def test_research_rejects_non_finite_or_negative_ohlcv_values():
+    rows = candles_from_closes([100.0] * 120)
+    rows[30]["close"] = float("nan")
+    with pytest.raises(ValueError, match="finite"):
+        StrategyResearchAgent().research(rows)
+
+    rows = candles_from_closes([100.0] * 120)
+    rows[30]["volume"] = -1
+    with pytest.raises(ValueError, match="volume cannot be negative"):
+        StrategyResearchAgent().research(rows)
