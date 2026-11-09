@@ -196,3 +196,29 @@ def test_rate_limiter_waits_for_reserved_slot(tmp_path):
     provider.ticker("MSFT")
     assert len(delays) == 1
     assert delays[0] > 0
+
+
+def test_provider_credit_header_reconciles_daily_usage(tmp_path):
+    class Response(io.BytesIO):
+        headers = {"api-credits-used": "3"}
+
+    def opener(url, timeout=15):
+        return Response(json.dumps({
+            "symbol": "AAPL", "close": "212.50", "timestamp": 1_800_000_000,
+        }).encode("utf-8"))
+
+    state_path = str(tmp_path / "state.db")
+    provider = TwelveDataProvider(
+        "test-key", opener=opener, state_path=state_path,
+        daily_credit_budget=2, min_request_interval_seconds=0,
+    )
+    provider.ticker("AAPL")
+
+    # The provider reported three credits although the local estimate was one.
+    # The reconciled ledger must block another request against a two-credit budget.
+    other = TwelveDataProvider(
+        "test-key", opener=opener, state_path=state_path,
+        daily_credit_budget=2, min_request_interval_seconds=0,
+    )
+    with pytest.raises(MarketDataError, match="daily safety budget exhausted"):
+        other.ticker("MSFT")
