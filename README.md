@@ -99,6 +99,7 @@ El contenedor se ejecuta como usuario no privilegiado, con sistema de archivos r
 - `POST /api/agent/withdrawals` — solicita retirada paper de cualquier efectivo disponible; se desglosa la parte de beneficio reservado y la parte no reservada.
 - `POST /api/agent/withdrawals/{id}/approve` y `/cancel` — aprobación/cancelación manual con token.
 - `POST /api/orders` — solo paper; exige `X-Agent-Token` válido (`AGENT_CONTROL_TOKEN`), aprobación del Risk Manager y stop-loss explícito en compras; admite `provider_id`, `instrument_id`, `strategy_id` y niveles protectores.
+- `GET /api/agent/strategy-history?limit=100&strategy_id=ema_12_26&instrument_id=...` — historial persistente de validación, benchmark, walk-forward, costes y motivos de rechazo; requiere `X-Agent-Token`.
 - `GET /api/agent/status` — requiere `X-Agent-Token`.
 - `POST /api/agent/resume`, `/pause`, `/emergency-stop`, `/reset-emergency-stop`.
 - `POST /api/agent/tasks` — acepta `health_check`, `market_scan`, `equity_research` (solo lectura) y `decision_cycle`; este último puede ejecutar una orden paper aprobada.
