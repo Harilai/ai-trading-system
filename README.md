@@ -9,7 +9,7 @@ La rama integrada contiene actualmente:
 - Backend FastAPI y cartera simulada persistida en SQLite.
 - Capa de integración universal: contratos normalizados de proveedor, instrumentos, clases de activo, tipos de mercado y registro/capability matrix.
 - Adaptador inicial de datos públicos CEX crypto spot mediante CCXT (Kraken por defecto; lista configurable de proveedores CCXT).
-- Adaptador opcional de datos de acciones y ETF estadounidenses mediante Twelve Data Basic, activado únicamente al configurar una API key gratuita; incorpora caché SQLite persistente, límite diario conservador, separación mínima entre peticiones y conciliación del consumo con la cabecera `api-credits-used` del proveedor cuando está disponible.
+- Adaptador opcional de datos de acciones y ETF estadounidenses mediante Twelve Data Basic, activado únicamente al configurar una API key gratuita; incorpora caché SQLite persistente, límites persistentes diario y móvil de 60 segundos basados en créditos estimados, separación mínima entre peticiones y conciliación del consumo con la cabecera `api-credits-used` del proveedor cuando está disponible.
 - Pipeline separado de investigación de acciones/ETF con filtros de divisa y frescura, análisis histórico independiente de la disponibilidad de bid/ask, y bloqueos explícitos de ejecución por spread, sesión bursátil o calidad de cotización; endpoint manual de solo lectura `/api/research/equities`.
 - Descubrimiento y enrutamiento de datos por proveedor; endpoints `/api/providers`, `/api/markets` y `/api/risk-profiles`.
 - Indicadores EMA, SMA, RSI, MACD, Bollinger Bands y ATR.
@@ -69,7 +69,7 @@ pytest -q
 
 Crea el archivo `.env` en la raíz del repositorio, junto a `docker-compose.yml`, copiando `.env.example`. Añade la clave nueva de Twelve Data en `TWELVE_DATA_API_KEY=`. El archivo está excluido por Git y no debe subirse al repositorio. La configuración carga ese archivo tanto al ejecutar desde la raíz como desde `backend/`; Docker Compose lo inyecta mediante `env_file`.
 
-La integración conserva su caché y estado de cuota en `data/twelve_data_state.sqlite3` (dentro del volumen persistente de Docker). Por defecto limita el ritmo a una petición cada 7,5 segundos y aplica un presupuesto de seguridad de 750 unidades de petición estimadas por día, dejando margen respecto al límite publicado de 800 créditos. El coste real en créditos puede depender del endpoint; la caché evita repetir llamadas idénticas mientras los datos siguen vigentes.
+La integración conserva su caché y estado de cuota en `data/twelve_data_state.sqlite3` (dentro del volumen persistente de Docker). Por defecto limita el ritmo a una petición cada 7,5 segundos, aplica un máximo móvil de 8 créditos estimados en cualquier ventana de 60 segundos y un presupuesto diario de 750 créditos, dejando margen respecto al límite publicado de 800 créditos. El coste real puede variar por endpoint: cuando la respuesta incluye `api-credits-used`, el adaptador concilia tanto el registro diario como la ventana móvil; si no está presente, conserva la estimación local conservadora. El coste real en créditos puede depender del endpoint; la caché evita repetir llamadas idénticas mientras los datos siguen vigentes.
 
 ## Docker
 
