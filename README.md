@@ -77,7 +77,7 @@ docker compose logs -f api
 - `GET /api/trades`
 - `POST /api/orders` (solo paper)
 
-Ejemplo de orden simulada: `{"symbol":"BTC/EUR","side":"buy","quantity":0.0001}`.
+Ejemplo de orden simulada: `{"symbol":"BTC/EUR","side":"buy","quantity":0.00005}`.
 
 ## Seguridad
 
