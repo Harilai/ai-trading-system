@@ -5,6 +5,7 @@ from typing import Any
 from .agents.charts import ChartsAgent
 from .agents.contracts import MarketAnalysis
 from .strategy_research import StrategyResearchAgent
+from .market_data import MarketDataError
 
 
 class ScoutAgent:
@@ -72,7 +73,7 @@ class ScoutAgent:
                         "strategy_research": research,
                     }
                 )
-            except (ValueError, KeyError, TypeError) as exc:
+            except (MarketDataError, ValueError, KeyError, TypeError) as exc:
                 rejected.append({"symbol": symbol, "reason": str(exc)})
 
         return {
