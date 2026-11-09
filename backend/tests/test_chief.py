@@ -183,3 +183,15 @@ def test_chief_exit_targets_the_exact_provider_position():
     assert decision.proposal.provider_id == "ccxt:coinbase"
     assert decision.proposal.instrument_id == "ccxt:coinbase:spot:BTC/EUR"
     assert decision.proposal.quantity == 0.25
+
+
+
+def test_chief_respects_cash_reserved_for_pending_withdrawal():
+    account = portfolio(equity=1000, cash=1000)
+    account["available_cash_for_manual_withdrawal"] = 1.0
+    decision = ChiefAgent().decide(eligible_scan(), account)
+
+    assert decision.action == "hold"
+    assert decision.risk is not None
+    assert decision.risk.accepted is False
+    assert "Insufficient available cash" in decision.risk.reason
