@@ -4,6 +4,7 @@ from .config import settings
 from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
 from .market_data import CcxtMarketData, MarketDataError
 from .scout import ScoutAgent
+from .strategy_research import StrategyResearchAgent
 from .portfolio import PaperPortfolio, PortfolioError
 
 app = FastAPI(title="AI Trading System", version="0.1.0", description="Paper trading only; live execution is not implemented.")
@@ -67,7 +68,13 @@ from .autonomous import AutonomousAgent, AutonomousStore
 from .agent_api import router as agent_router
 
 agent_store = AutonomousStore(settings.database_path)
-scout = ScoutAgent(market)
+scout = ScoutAgent(
+    market,
+    strategy_research=StrategyResearchAgent(
+        fee_rate=settings.fee_rate,
+        slippage_rate=settings.slippage_rate,
+    ),
+)
 agent_worker = AutonomousAgent(agent_store, scout=scout)
 
 @asynccontextmanager
