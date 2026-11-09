@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 from .agents.contracts import RiskContext, RiskDecision, TradeProposal
 from .agents.risk import RiskManager
+from .agents.sniper import SniperAgent
 
 
 class ChiefDecision(BaseModel):
@@ -27,6 +28,7 @@ class ChiefAgent:
         self,
         *,
         risk_manager: RiskManager | None = None,
+        sniper: SniperAgent | None = None,
         max_order_fraction: float = 0.25,
         max_stop_distance_fraction: float = 0.05,
         risk_per_trade_fraction: float = 0.01,
@@ -45,6 +47,13 @@ class ChiefAgent:
         if minimum_order_value_eur <= 0:
             raise ValueError("minimum_order_value_eur must be positive")
         self.risk_manager = risk_manager or RiskManager()
+        self.sniper = sniper or SniperAgent(
+            max_order_fraction=max_order_fraction,
+            risk_per_trade_fraction=risk_per_trade_fraction,
+            estimated_fee_rate=estimated_fee_rate,
+            estimated_slippage_rate=estimated_slippage_rate,
+            minimum_order_value=minimum_order_value_eur,
+        )
         self.max_order_fraction = max_order_fraction
         self.max_stop_distance_fraction = max_stop_distance_fraction
         self.risk_per_trade_fraction = risk_per_trade_fraction
@@ -195,39 +204,15 @@ class ChiefAgent:
         for score, item, candidate, strategy_id, symbol in opportunities:
             market = item["market"]
             analysis = item["analysis"]
-            price = float(market.get("ask") or market.get("last") or analysis.get("close") or 0)
-            atr_value = float(analysis.get("indicators", {}).get("atr_14", 0) or 0)
-            if price <= 0 or not candidate.get("current_entry_signal", False):
-                continue
-            stop_distance = 2.0 * atr_value
-            stop_loss = price - stop_distance
-            take_profit = price + 2.0 * stop_distance
-            if atr_value <= 0 or stop_loss <= 0:
-                continue
-            risk_budget = equity * self.risk_per_trade_fraction
-            risk_quantity = risk_budget / stop_distance
-            allocation_quantity = equity * self.max_order_fraction / (
-                price * (1.0 + self.estimated_fee_rate)
+            proposal = self.sniper.propose(
+                market,
+                analysis,
+                candidate,
+                equity=equity,
+                available_cash=cash,
             )
-            cash_quantity = cash / (
-                price * (1.0 + self.estimated_fee_rate) * (1.0 + self.estimated_slippage_rate)
-            )
-            quantity = min(risk_quantity, allocation_quantity, cash_quantity)
-            if quantity <= 0 or quantity * price < self.minimum_order_value_eur:
+            if proposal is None:
                 continue
-
-            proposal = TradeProposal(
-                symbol=symbol,
-                provider_id=str(market.get("provider_id") or "ccxt:kraken"),
-                instrument_id=str(market.get("instrument_id") or self._instrument_identity(str(market.get("provider_id") or "ccxt:kraken"), None, symbol)),
-                side="buy",
-                quantity=quantity,
-                reference_price=price,
-                stop_loss=stop_loss,
-                take_profit=take_profit,
-                rationale=f"{strategy_id} entry; OOS score {score:.6f}; risk budget {self.risk_per_trade_fraction:.2%}",
-                source_agent="chief",
-            )
             risk = self.risk_manager.evaluate(proposal, context)
             if risk.accepted:
                 return ChiefDecision(
