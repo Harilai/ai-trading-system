@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     initial_cash_eur: float = 20.0
     exchange_id: str = "kraken"
     market_data_provider_ids: str = "kraken"
+    twelve_data_api_key: str = ""
     fee_rate: float = 0.0026
     slippage_rate: float = 0.0005
     max_order_fraction: float = 0.25
