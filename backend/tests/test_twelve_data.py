@@ -269,3 +269,32 @@ def test_market_state_rejects_unexpected_object_response(tmp_path):
     )
     with pytest.raises(MarketDataError, match="invalid response"):
         provider.market_state()
+
+
+def test_rolling_minute_credit_budget_waits_before_ninth_credit(tmp_path):
+    delays = []
+    transport = FakeTwelveDataTransport({
+        "quote": {"symbol": "AAPL", "close": "212.50", "timestamp": 1_800_000_000},
+    })
+    provider = TwelveDataProvider(
+        "test-key", opener=transport, state_path=str(tmp_path / "state.db"),
+        daily_credit_budget=20, per_minute_credit_budget=8,
+        min_request_interval_seconds=0, sleeper=delays.append,
+    )
+    for index in range(8):
+        provider.ticker(f"STOCK{index}")
+    provider.ticker("NINTH")
+    assert len(transport.calls) == 9
+    assert len(delays) == 1
+    assert delays[0] >= 59
+
+
+def test_request_cost_above_minute_budget_is_rejected_before_transport(tmp_path):
+    transport = FakeTwelveDataTransport({})
+    provider = TwelveDataProvider(
+        "test-key", opener=transport, state_path=str(tmp_path / "state.db"),
+        per_minute_credit_budget=8, min_request_interval_seconds=0,
+    )
+    with pytest.raises(MarketDataError, match="exceeds the per-minute safety budget"):
+        provider._reserve_api_credit(9)
+    assert transport.calls == []
