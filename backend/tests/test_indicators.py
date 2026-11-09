@@ -81,3 +81,13 @@ def test_atr_rejects_non_finite_and_inconsistent_candles():
     invalid[1]["low"] = 12
     with pytest.raises(ValueError, match="Invalid candle"):
         atr(invalid, period=1)
+
+
+
+def test_atr_supports_high_low_close_candle_feeds_without_open():
+    candles = [
+        {"high": 11, "low": 8, "close": 10},
+        {"high": 12, "low": 9, "close": 11},
+        {"high": 13, "low": 10, "close": 12},
+    ]
+    assert atr(candles, period=2) == pytest.approx(3)
