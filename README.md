@@ -25,7 +25,7 @@ Los agentes se incorporarán por fases. Los mensajes entre agentes usarán esque
 - Datos públicos de criptomonedas mediante CCXT (Kraken por defecto).
 - Indicadores EMA, SMA, RSI, MACD, Bollinger Bands y ATR.
 - Cartera paper persistida en SQLite.
-- Simulación de compras y ventas con comisión y slippage configurables.
+- Simulación de compras y ventas con comisión y slippage configurables; las comisiones de entrada se incluyen en el coste medio y el P/L realizado es neto de ambas patas.
 - Rechazo de datos ausentes o desactualizados.
 - Restricción inicial a pares cotizados en EUR para evitar conversiones FX incorrectas.
 - Docker Compose y pruebas automatizadas.
@@ -39,7 +39,8 @@ Capital virtual inicial: **20 EUR**, según la decisión acordada para el proyec
 - El fill paper se calcula con ticker público, comisión y slippage configurados.
 - Cartera de una sola cuenta.
 - Agentes LLM, dashboard y backtesting quedan para siguientes sprints.
-- El valor invertido del resumen inicial se calcula al precio medio de entrada; el marcado a mercado y P/L no realizado se incorporarán con el servicio de valoración.
+- El coste de posición incluye las comisiones de entrada; el P/L realizado descuenta tanto las comisiones de entrada como las de salida.
+- El campo `invested_value` representa coste de adquisición, no valor de mercado; el marcado a mercado y el P/L no realizado siguen pendientes.
 
 ## Ejecución local
 
@@ -57,7 +58,9 @@ uvicorn app.main:app --reload
 API: http://localhost:8000  
 Swagger: http://localhost:8000/docs
 
-Tests desde backend/: `pytest`
+Tests desde backend/: `pytest`.
+
+GitHub Actions ejecuta la suite del backend en los pushes y pull requests cubiertos por `.github/workflows/backend-ci.yml`.
 
 ## Docker
 
