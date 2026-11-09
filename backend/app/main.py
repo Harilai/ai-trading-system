@@ -5,6 +5,7 @@ from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
 from .market_data import MarketDataError
 from .providers.ccxt_spot import CcxtSpotProvider
 from .providers.twelve_data import TwelveDataProvider
+from .equity_research import EquityEtfResearchAgent
 from .providers.registry import ProviderRegistry
 from .scout import ScoutAgent
 from .strategy_research import StrategyResearchAgent
@@ -66,6 +67,25 @@ def markets():
         ],
         "provider_failures": failures,
     }
+
+
+
+
+@app.get("/api/research/equities")
+def research_equities(
+    max_instruments: int = Query(5, ge=1, le=10),
+    timeframe: str = Query("1day", pattern="^(1day|1h|4h)$"),
+):
+    try:
+        provider = market.get("twelve_data")
+        agent = EquityEtfResearchAgent(
+            provider,
+            max_instruments=max_instruments,
+            timeframe=timeframe,
+        )
+        return agent.scan()
+    except MarketDataError as exc:
+        raise HTTPException(503, str(exc)) from exc
 
 
 @app.get("/api/health")
