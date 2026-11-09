@@ -1,5 +1,5 @@
 import hmac
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from .autonomous import AutonomousStore
 from .config import settings
@@ -63,6 +63,26 @@ def reset_stop(x_agent_token: str | None = Header(default=None)):
 def enqueue_task(task: TaskRequest, x_agent_token: str | None = Header(default=None)):
     require_control_token(x_agent_token)
     return store.enqueue(task.kind, task.payload)
+
+
+@router.get("/strategy-history")
+def strategy_history(
+    limit: int = Query(default=100, ge=1, le=1000),
+    strategy_id: str | None = None,
+    instrument_id: str | None = None,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_control_token(x_agent_token)
+    try:
+        return {
+            "items": store.strategy_history(
+                limit=limit,
+                strategy_id=strategy_id,
+                instrument_id=instrument_id,
+            )
+        }
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/withdrawals")
