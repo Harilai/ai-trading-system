@@ -100,3 +100,18 @@ def test_registry_filters_asset_classes():
     instruments, failures = registry.discover_markets((AssetClass.EQUITY,))
     assert instruments == []
     assert failures == []
+
+
+def test_initial_ccxt_adapter_is_public_data_only():
+    from app.providers.ccxt_spot import CcxtSpotProvider
+
+    provider = CcxtSpotProvider("kraken")
+    capabilities = provider.capabilities()
+    assert capabilities.provider_id == "ccxt:kraken"
+    assert capabilities.public_market_data is True
+    assert capabilities.requires_authentication_for_market_data is False
+    assert capabilities.requires_authentication_for_trading is True
+    assert capabilities.order_management is False
+    assert capabilities.balances is False
+    assert capabilities.supports_withdrawals is False
+    assert capabilities.connectivity_status == "not_checked"
