@@ -49,7 +49,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 
 - [ ] Ampliar el universo de mercado sin exceder límites de rate ni filtros de liquidez.
 - [ ] Añadir pruebas de descubrimiento con tickers ausentes, mercados inactivos, spreads extremos y fallos de proveedor.
-- [x] Rechazar OHLCV no finito, volúmenes negativos, timestamps duplicados/desordenados y velas OHLC inconsistentes antes del backtest.\n- [ ] Verificar cálculos de indicadores con series de referencia conocidas.
+- [x] Rechazar OHLCV no finito, volúmenes negativos, timestamps duplicados/desordenados y velas OHLC inconsistentes antes del backtest.\n- [x] Verificar SMA, EMA, RSI, MACD, Bollinger y ATR con series de referencia; rechazar valores no finitos y parámetros inválidos.
 - [x] Añadir benchmark buy-and-hold OOS con la misma fracción de exposición y retorno excedente por estrategia.\n- [ ] Mejorar backtesting con métricas de retorno, drawdown, profit factor, exposición y sensibilidad a costes.
 - [x] Añadir tres ventanas walk-forward diagnósticas y métricas por ventana.\n- [x] Exigir tres ventanas walk-forward con mínimo de 60 velas evaluables y una operación cerrada por ventana, al menos dos ventanas positivas, media positiva, drawdown limitado y superar buy-and-hold neto de costes; devolver motivos de rechazo.
 - [ ] Persistir versiones de estrategias, resultados y motivos de promoción/rechazo.
