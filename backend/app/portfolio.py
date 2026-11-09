@@ -313,7 +313,11 @@ class PaperPortfolio:
             }
 
     def request_withdrawal(self, amount: float) -> dict:
-        if not math.isfinite(float(amount)) or amount <= 0:
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError) as exc:
+            raise PortfolioError("Withdrawal amount must be a positive finite number") from exc
+        if not math.isfinite(amount) or amount <= 0:
             raise PortfolioError("Withdrawal amount must be a positive finite number")
         request_id = str(uuid4())
         stamp = datetime.now(timezone.utc).isoformat()
