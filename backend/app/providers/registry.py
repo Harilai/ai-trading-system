@@ -5,6 +5,8 @@ from typing import Iterable
 
 from datetime import datetime, timezone
 
+from ..market_data import MarketDataError
+
 from .base import (
     AssetClass,
     MarketDataProvider,
@@ -13,7 +15,7 @@ from .base import (
 )
 
 
-class ProviderRegistryError(RuntimeError):
+class ProviderRegistryError(MarketDataError):
     pass
 
 
