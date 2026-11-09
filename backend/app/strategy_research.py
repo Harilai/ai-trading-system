@@ -53,6 +53,52 @@ def _ema_signal(closes: Sequence[float], index: int, in_position: bool) -> bool:
     return fast > slow
 
 
+def _market_regime(closes: Sequence[float]) -> dict[str, float | str]:
+    """Describe recent directionality and volatility without controlling execution."""
+    if len(closes) < 21:
+        return {"status": "insufficient_history", "method": "efficiency_ratio_and_rolling_volatility"}
+    recent = [float(value) for value in closes[-21:]]
+    changes = [current - previous for previous, current in zip(recent[:-1], recent[1:])]
+    path_length = sum(abs(change) for change in changes)
+    efficiency = abs(recent[-1] - recent[0]) / path_length if path_length > 0 else 0.0
+    if efficiency >= 0.6:
+        structure = "trending_up" if recent[-1] > recent[0] else "trending_down"
+    else:
+        structure = "range"
+
+    returns = [
+        math.log(current / previous)
+        for previous, current in zip(closes[:-1], closes[1:])
+    ]
+    rolling_volatility = []
+    for end in range(20, len(returns) + 1):
+        window = returns[end - 20 : end]
+        mean = sum(window) / 20
+        variance = sum((value - mean) ** 2 for value in window) / 20
+        rolling_volatility.append(math.sqrt(variance))
+    current_volatility = rolling_volatility[-1]
+    if max(rolling_volatility, default=0.0) <= 1e-12:
+        volatility_state = "low"
+        percentile = 0.0
+    else:
+        percentile = sum(value <= current_volatility for value in rolling_volatility) / len(rolling_volatility)
+        if percentile >= 0.8:
+            volatility_state = "high"
+        elif percentile <= 0.2:
+            volatility_state = "low"
+        else:
+            volatility_state = "normal"
+    return {
+        "status": "available",
+        "method": "20_bar_efficiency_ratio_and_rolling_log_return_volatility_percentile",
+        "structure": structure,
+        "volatility": volatility_state,
+        "trend_efficiency_ratio": efficiency,
+        "realized_volatility_20": current_volatility,
+        "volatility_percentile": percentile,
+    }
+
+
 class StrategyResearchAgent:
     """Compares simple long-only candidates using chronological out-of-sample tests."""
 
@@ -212,6 +258,7 @@ class StrategyResearchAgent:
             len(normalized),
         )
         results = []
+        market_regime = _market_regime([row["close"] for row in normalized])
         stress_multipliers = (1.5, 2.0)
         benchmark_cost_sensitivity = {}
         for multiplier in stress_multipliers:
@@ -375,6 +422,7 @@ class StrategyResearchAgent:
                 "must_beat_buy_and_hold": True,
                 "must_remain_profitable_and_beat_buy_and_hold_at_1_5x_costs": True,
             },
+            "market_regime": market_regime,
             "benchmark": {
                 "name": "buy_and_hold",
                 "out_of_sample": benchmark,
