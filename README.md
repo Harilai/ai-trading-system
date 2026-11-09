@@ -12,6 +12,7 @@ La rama integrada contiene actualmente:
 - Descubrimiento y enrutamiento de datos por proveedor; endpoints `/api/providers`, `/api/markets` y `/api/risk-profiles`.
 - Indicadores EMA, SMA, RSI, MACD, Bollinger Bands y ATR.
 - Simulación de compras y ventas con comisiones y slippage configurables.
+- Cartera paper con posiciones y operaciones aisladas por `provider_id + instrument_id`, incluida migración automática de bases SQLite anteriores.
 - Rechazo de pares no admitidos y datos de mercado obsoletos.
 - Worker asíncrono persistente con cola durable, leases, reintentos y recuperación de tareas expiradas.
 - API de supervisión autenticada: estado, pausa, reanudación, parada de emergencia y encolado de tareas.
@@ -19,7 +20,7 @@ La rama integrada contiene actualmente:
 - Charts Agent determinista.
 - Strategy Research Agent con tres estrategias candidatas long-only (EMA 12/26, RSI(14) y Bollinger(20,2)), backtesting cronológico 70/30, ejecución simulada en la apertura de la vela siguiente y costes configurables.
 
-**Límite funcional actual:** el `decision_cycle` puede ejecutar compras/ventas paper solo cuando el Risk Manager aprueba la propuesta. La capa universal es una arquitectura extensible, no soporte universal ya operativo: actualmente solo está implementado el adaptador de datos públicos crypto spot vía CCXT. No hay adaptadores de ejecución para brokers, DEX, wallets, forex, acciones, ETF, índices, materias primas, futuros, opciones ni DeFi. El portfolio paper todavía usa el símbolo como clave y no admite carteras multi-proveedor con el mismo símbolo. No hay trading real ni permisos privados de proveedor.
+**Límite funcional actual:** el `decision_cycle` puede ejecutar compras/ventas paper solo cuando el Risk Manager aprueba la propuesta. La capa universal es una arquitectura extensible, no soporte universal ya operativo: actualmente solo está implementado el adaptador de datos públicos crypto spot vía CCXT. No hay adaptadores de ejecución para brokers, DEX, wallets, forex, acciones, ETF, índices, materias primas, futuros, opciones ni DeFi. La cartera paper ya identifica cada posición mediante `provider_id + instrument_id`, por lo que puede mantener el mismo símbolo en proveedores distintos. La migración SQLite conserva las posiciones antiguas asignándolas al proveedor histórico `ccxt:kraken`. No hay trading real ni permisos privados de proveedor.
 
 ## Capital y divisa
 
@@ -84,7 +85,7 @@ docker compose logs -f api
 - `GET /api/agent/withdrawals` — requiere `X-Agent-Token`.
 - `POST /api/agent/withdrawals` — solicita retirada paper de la reserva de beneficio.
 - `POST /api/agent/withdrawals/{id}/approve` y `/cancel` — aprobación/cancelación manual con token.
-- `POST /api/orders` — solo paper.
+- `POST /api/orders` — solo paper; admite `provider_id` e `instrument_id`.
 - `GET /api/agent/status` — requiere `X-Agent-Token`.
 - `POST /api/agent/resume`, `/pause`, `/emergency-stop`, `/reset-emergency-stop`.
 - `POST /api/agent/tasks` — acepta `health_check`, `market_scan` y `decision_cycle`; este último puede ejecutar una orden paper aprobada.
