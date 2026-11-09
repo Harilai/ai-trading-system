@@ -28,9 +28,13 @@ def test_research_returns_chronological_out_of_sample_results():
     closes = [100 + index * 0.05 + 4 * math.sin(index / 5) for index in range(240)]
     result = StrategyResearchAgent(minimum_oos_trades=1).research(candles_from_closes(closes))
     assert result["method"] == "chronological_70_30_plus_three_walk_forward_diagnostics_next_bar_open_fills"
+    assert result["benchmark"]["name"] == "buy_and_hold"
+    assert result["benchmark"]["out_of_sample"]["trades"] == 1
     assert result["candidate_count"] == 3
     assert len(result["candidates"]) == 3
     assert all("out_of_sample" in item for item in result["candidates"])
+    assert all("benchmark_excess_return" in item for item in result["candidates"])
+    assert all(isinstance(item["beats_buy_and_hold"], bool) for item in result["candidates"])
     assert all(item["walk_forward"]["window_count"] == 3 for item in result["candidates"])
     assert all(
         [window["window"] for window in item["walk_forward"]["windows"]] == [1, 2, 3]
