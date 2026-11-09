@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from app.autonomous import AutonomousStore, utcnow
+from app.autonomous import AutonomousAgent, AutonomousStore, utcnow
 
 
 def test_agent_starts_paused_and_emergency_stopped(tmp_path):
