@@ -126,7 +126,7 @@ def test_legacy_database_is_migrated_with_protection_and_idempotency_columns(tmp
     assert {"client_order_id", "provider_id", "instrument_id"} <= trade_columns
     with sqlite3.connect(path) as db:
         withdrawal_columns = {row[1] for row in db.execute("PRAGMA table_info(withdrawal_requests)")}
-    assert {"profit_component", "principal_component"} <= withdrawal_columns
+    assert {"profit_component", "non_reserved_component"} <= withdrawal_columns
 
 
 def test_market_valuation_distinguishes_realised_and_unrealised_pnl(portfolio):
@@ -156,7 +156,7 @@ def test_manual_withdrawal_uses_profit_reserve_then_available_principal(portfoli
     approved = portfolio.approve_withdrawal(request["id"])
     assert approved["status"] == "approved"
     assert approved["profit_component"] == pytest.approx(0.4895)
-    assert approved["principal_component"] == pytest.approx(0.0105)
+    assert approved["non_reserved_component"] == pytest.approx(0.0105)
     snapshot = portfolio.snapshot()
     assert snapshot["withdrawn_profit"] == pytest.approx(0.4895)
     assert snapshot["withdrawable_reserved_profit"] == pytest.approx(0)
@@ -166,7 +166,7 @@ def test_owner_can_withdraw_available_initial_principal(portfolio):
     request = portfolio.request_withdrawal(5.0)
     approved = portfolio.approve_withdrawal(request["id"])
     assert approved["profit_component"] == pytest.approx(0)
-    assert approved["principal_component"] == pytest.approx(5)
+    assert approved["non_reserved_component"] == pytest.approx(5)
     assert portfolio.snapshot()["cash"] == pytest.approx(15)
 
 
