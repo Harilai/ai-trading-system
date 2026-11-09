@@ -4,14 +4,6 @@ from typing import Callable, Sequence
 import math
 
 
-@dataclass(frozen=True)
-class StrategySpec:
-    strategy_id: str
-    description: str
-    signal: Callable[[Sequence[float], int], bool]
-    warmup: int
-
-
 def _ema_series(values: Sequence[float], period: int) -> list[float]:
     if len(values) < period:
         raise ValueError("Insufficient history for EMA")
@@ -36,34 +28,6 @@ def _rsi_at(values: Sequence[float], index: int, period: int = 14) -> float:
     if losses == 0:
         return 100.0 if gains else 50.0
     return 100.0 - 100.0 / (1.0 + gains / losses)
-
-
-def _ema_cross(closes: Sequence[float], index: int) -> bool:
-    fast = _ema_series(closes[: index + 1], 12)[-1]
-    slow = _ema_series(closes[: index + 1], 26)[-1]
-    return fast > slow
-
-
-def _rsi_reversion(closes: Sequence[float], index: int) -> bool:
-    value = _rsi_at(closes, index)
-    return value < 30.0 if index == 14 else (
-        _rsi_reversion_state(closes, index)
-    )
-
-
-def _rsi_reversion_state(closes: Sequence[float], index: int) -> bool:
-    # Enter below 30 and remain invested until RSI recovers above 55.
-    # The backtester supplies a desired-state signal; this function is a
-    # stateless approximation that intentionally avoids anticipatory data.
-    return _rsi_at(closes, index) < 30.0
-
-
-def _bollinger_reversion(closes: Sequence[float], index: int) -> bool:
-    window = closes[index - 19 : index + 1]
-    mean = sum(window) / 20
-    variance = sum((value - mean) ** 2 for value in window) / 20
-    lower = mean - 2.0 * variance**0.5
-    return closes[index] < lower
 
 
 def _rsi_signal(closes: Sequence[float], index: int, in_position: bool) -> bool:
