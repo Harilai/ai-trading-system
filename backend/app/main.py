@@ -18,7 +18,7 @@ from .agents.contracts import RiskContext, TradeProposal
 from .agents.risk import RiskManager
 from .portfolio import PaperPortfolio, PortfolioError
 
-WORKER_HEARTBEAT_MAX_AGE_SECONDS = 300
+WORKER_HEARTBEAT_MAX_AGE_SECONDS = 600
 
 app = FastAPI(title="AI Trading System", version="0.1.0", description="Paper trading only; live execution is not implemented.")
 market = ProviderRegistry()
