@@ -137,27 +137,46 @@ def test_incomplete_valuation_uses_cost_basis_and_flags_incomplete(portfolio):
     assert snapshot["valuation_source"] == "cost_basis_or_partial"
 
 
-def test_withdrawal_is_limited_to_half_of_net_realised_profit(portfolio):
+def test_manual_withdrawal_uses_profit_reserve_then_available_principal(portfolio):
     portfolio.execute("BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1)
     portfolio.execute("BTC/EUR", "sell", 0.001, 11000, 0.001, 0, 1, 1)
     reserve = portfolio.snapshot()["withdrawable_reserved_profit"]
     assert reserve == pytest.approx(0.4895)
-    with pytest.raises(PortfolioError, match="50% reserve"):
-        portfolio.request_withdrawal(0.50)
-    request = portfolio.request_withdrawal(0.40)
+
+    request = portfolio.request_withdrawal(0.50)
     assert request["status"] == "pending"
     approved = portfolio.approve_withdrawal(request["id"])
     assert approved["status"] == "approved"
-    assert approved["profit_component"] == pytest.approx(0.40)
+    assert approved["profit_component"] == pytest.approx(0.4895)
+    assert approved["principal_component"] == pytest.approx(0.0105)
     snapshot = portfolio.snapshot()
-    assert snapshot["withdrawn_profit"] == pytest.approx(0.40)
-    assert snapshot["withdrawable_reserved_profit"] == pytest.approx(0.2895)
+    assert snapshot["withdrawn_profit"] == pytest.approx(0.4895)
+    assert snapshot["withdrawable_reserved_profit"] == pytest.approx(0)
 
 
-def test_withdrawal_cannot_use_initial_principal_or_unrealised_gains(portfolio):
+def test_owner_can_withdraw_available_initial_principal(portfolio):
+    request = portfolio.request_withdrawal(5.0)
+    approved = portfolio.approve_withdrawal(request["id"])
+    assert approved["profit_component"] == pytest.approx(0)
+    assert approved["principal_component"] == pytest.approx(5)
+    assert portfolio.snapshot()["cash"] == pytest.approx(15)
+
+
+def test_pending_withdrawals_reserve_available_cash(portfolio):
+    first = portfolio.request_withdrawal(12)
+    assert portfolio.snapshot()["available_cash_for_manual_withdrawal"] == pytest.approx(8)
+    with pytest.raises(PortfolioError, match="after pending requests"):
+        portfolio.request_withdrawal(9)
+    portfolio.cancel_withdrawal(first["id"])
+    assert portfolio.snapshot()["available_cash_for_manual_withdrawal"] == pytest.approx(20)
+
+
+def test_withdrawal_cannot_exceed_available_cash_or_liquidate_positions(portfolio):
+    with pytest.raises(PortfolioError, match="available cash"):
+        portfolio.request_withdrawal(21)
     portfolio.execute("BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1)
-    with pytest.raises(PortfolioError, match="50% reserve"):
-        portfolio.request_withdrawal(1.0)
+    with pytest.raises(PortfolioError, match="not liquidated automatically"):
+        portfolio.request_withdrawal(20)
 
 
 def test_pending_withdrawal_can_be_cancelled_once(portfolio):
