@@ -25,6 +25,15 @@ def providers():
     return market.describe()
 
 
+@app.get("/api/risk-profiles")
+def risk_profiles():
+    from .risk_profiles import RISK_PROFILES
+    return {
+        name.value: {**profile, "controls": list(profile["controls"])}
+        for name, profile in RISK_PROFILES.items()
+    }
+
+
 @app.get("/api/markets")
 def markets():
     instruments, failures = market.discover_markets()
@@ -56,21 +65,21 @@ def health():
     return {"status":"ok","mode":"paper","live_trading_enabled":False}
 
 @app.get("/api/market/{symbol:path}/ticker")
-def ticker(symbol: str):
-    try: return market.ticker(symbol.upper())
+def ticker(symbol: str, provider_id: str | None = None):
+    try: return market.ticker(symbol.upper(), provider_id)
     except MarketDataError as exc: raise HTTPException(502,str(exc)) from exc
 
 @app.get("/api/market/{symbol:path}/ohlcv")
-def candles(symbol: str, timeframe: str="1h", limit: int=Query(100,ge=30,le=500)):
+def candles(symbol: str, timeframe: str="1h", limit: int=Query(100,ge=30,le=500), provider_id: str | None = None):
     try:
-        rows=market.ohlcv(symbol.upper(),timeframe,limit)
+        rows=market.ohlcv(symbol.upper(),timeframe,limit,provider_id=provider_id)
         return {"symbol":symbol.upper(),"timeframe":timeframe,"candles":[{"timestamp":r[0],"open":r[1],"high":r[2],"low":r[3],"close":r[4],"volume":r[5]} for r in rows]}
     except MarketDataError as exc: raise HTTPException(502,str(exc)) from exc
 
 @app.get("/api/market/{symbol:path}/indicators")
-def indicators(symbol: str, timeframe: str="1h", limit: int=Query(100,ge=50,le=500)):
+def indicators(symbol: str, timeframe: str="1h", limit: int=Query(100,ge=50,le=500), provider_id: str | None = None):
     try:
-        rows=market.ohlcv(symbol.upper(),timeframe,limit)
+        rows=market.ohlcv(symbol.upper(),timeframe,limit,provider_id=provider_id)
         closes=[r[4] for r in rows]
         bars=[{"high":r[2],"low":r[3],"close":r[4]} for r in rows]
         return {"symbol":symbol.upper(),"timeframe":timeframe,"as_of_ms":rows[-1][0],
