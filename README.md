@@ -57,6 +57,7 @@ uvicorn app.main:app --reload
 ```
 
 API: http://localhost:8000  
+Dashboard: http://localhost:8000/dashboard  
 Swagger: http://localhost:8000/docs
 
 Tests desde `backend/`:
@@ -111,6 +112,8 @@ docker compose up -d api
 ```
 
 El servicio `backup` ejecuta este mismo mecanismo automáticamente cada 24 horas (`BACKUP_INTERVAL_SECONDS`) y elimina copias locales con más de 14 días (`BACKUP_RETENTION_DAYS`). Consulta su actividad con `docker compose logs -f backup`. Las copias siguen dentro del mismo volumen/servidor: no protegen frente a pérdida del servidor o del volumen. Conserva también una copia externa y comprueba periódicamente que puedes restaurarla.
+
+El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y controles del worker. Para pausar, reanudar, activar emergencia o encolar tareas, introduce `AGENT_CONTROL_TOKEN`; el token solo se mantiene en memoria de esa página y no se guarda en `localStorage`. No incluye envío manual de órdenes ni conexión de wallets.
 
 ## Endpoints principales
 
