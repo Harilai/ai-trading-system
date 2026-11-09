@@ -60,6 +60,8 @@ class EquityEtfResearchAgent:
         if last <= 0:
             raise MarketDataError("Quote has no valid last price")
         timestamp_ms = int(quote["timestamp"])
+        if timestamp_ms > now_ms + 5 * 60 * 1000:
+            raise MarketDataError("Quote timestamp is unexpectedly in the future")
         age_ms = max(0, now_ms - timestamp_ms)
         if age_ms > max_age_ms:
             raise MarketDataError("Quote is stale")
