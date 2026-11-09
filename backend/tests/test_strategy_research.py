@@ -132,3 +132,26 @@ def test_candidate_reports_each_failed_promotion_gate():
         assert isinstance(candidate["validation_failures"], list)
         assert candidate["eligible"] is (not candidate["validation_failures"])
         assert candidate["score"] is None
+
+
+
+def test_research_reports_fee_and_slippage_stress_scenarios():
+    closes = [100 + index * 0.03 + 2 * math.sin(index / 6) for index in range(300)]
+    result = StrategyResearchAgent(minimum_oos_trades=1).research(candles_from_closes(closes))
+
+    base_return = result["benchmark"]["out_of_sample"]["net_return"]
+    stress = result["benchmark_cost_sensitivity"]
+    assert stress["1.5"]["available"] is True
+    assert stress["2.0"]["available"] is True
+    assert stress["1.5"]["fee_rate_per_side"] > result["cost_model"]["fee_rate_per_side"]
+    assert stress["2.0"]["slippage_rate_per_side"] > result["cost_model"]["slippage_rate_per_side"]
+    assert stress["1.5"]["out_of_sample"]["net_return"] <= base_return
+    assert stress["2.0"]["out_of_sample"]["net_return"] <= stress["1.5"]["out_of_sample"]["net_return"]
+    assert all(
+        set(candidate["cost_sensitivity"]) == {"1.5", "2.0"}
+        for candidate in result["candidates"]
+    )
+    assert all(
+        candidate["cost_sensitivity"]["1.5"]["available"]
+        for candidate in result["candidates"]
+    )
