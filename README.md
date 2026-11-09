@@ -16,7 +16,7 @@ La rama integrada contiene actualmente:
 - Simulación de compras y ventas con comisiones y slippage configurables.
 - Cartera paper con posiciones y operaciones aisladas por `provider_id + instrument_id`, incluida migración automática de bases SQLite anteriores.
 - Rechazo de pares no admitidos y datos de mercado obsoletos.
-- Worker asíncrono persistente con cola durable, leases, reintentos y recuperación de tareas expiradas.
+- Worker asíncrono persistente con cola durable, leases, reintentos, recuperación de tareas expiradas y tolerancia a fallos transitorios del bucle de supervisión.
 - API de supervisión autenticada: estado, pausa, reanudación, parada de emergencia y encolado de tareas.
 - Scout que descubre mercados spot cotizados en EUR, filtra por liquidez, spread y frescura de ticker.
 - Charts Agent determinista.

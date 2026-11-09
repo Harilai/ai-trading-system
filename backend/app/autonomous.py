@@ -300,8 +300,20 @@ class AutonomousStore:
 class AutonomousAgent:
     """Persistent worker for deterministic maintenance and market-analysis tasks."""
 
-    def __init__(self, store: AutonomousStore, scout=None, chief=None, portfolio=None, equity_research=None):
+    def __init__(
+        self,
+        store: AutonomousStore,
+        scout=None,
+        chief=None,
+        portfolio=None,
+        equity_research=None,
+        *,
+        poll_interval_seconds: float = 5.0,
+    ):
+        if poll_interval_seconds <= 0:
+            raise ValueError("poll_interval_seconds must be positive")
         self.store = store
+        self.poll_interval_seconds = poll_interval_seconds
         self.scout = scout
         self.chief = chief
         self.portfolio = portfolio
@@ -322,23 +334,36 @@ class AutonomousAgent:
 
     async def _run(self) -> None:
         while not self._stopping.is_set():
-            # A live process must also reclaim leases that expire after startup.
-            self.store.recover_expired_tasks()
-            state = self.store.state()
-            self.store.heartbeat()
-            if state["enabled"] and not state["emergency_stop"]:
-                self.store.schedule_decision_cycle(settings.decision_cycle_interval_seconds)
-                if self.equity_research is not None:
-                    self.store.schedule_equity_research(settings.equity_research_interval_seconds)
-                task = self.store.claim_due_task()
-                if task:
-                    try:
-                        result = await self._execute(task)
-                        self.store.finish_task(task["id"], result)
-                    except Exception as exc:
-                        self.store.fail_task(task, str(exc))
             try:
-                await asyncio.wait_for(self._stopping.wait(), timeout=5)
+                # Reclaim leases and refresh heartbeat on every iteration.
+                self.store.recover_expired_tasks()
+                state = self.store.state()
+                self.store.heartbeat()
+                if state["enabled"] and not state["emergency_stop"]:
+                    self.store.schedule_decision_cycle(settings.decision_cycle_interval_seconds)
+                    if self.equity_research is not None:
+                        self.store.schedule_equity_research(settings.equity_research_interval_seconds)
+                    task = self.store.claim_due_task()
+                    if task:
+                        try:
+                            result = await self._execute(task)
+                            self.store.finish_task(task["id"], result)
+                        except Exception as exc:
+                            self.store.fail_task(task, str(exc))
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                # Database/provider failures outside task execution must not kill
+                # the persistent worker process. Retry on the next poll.
+                try:
+                    self.store.audit("worker_loop_error", {"error": str(exc)[:1000]})
+                except Exception:
+                    pass
+            try:
+                await asyncio.wait_for(
+                    self._stopping.wait(),
+                    timeout=self.poll_interval_seconds,
+                )
             except asyncio.TimeoutError:
                 pass
 
