@@ -91,6 +91,7 @@ def research_equities(
             max_instruments=max_instruments,
             max_quote_candidates=max_quote_candidates,
             timeframe=timeframe,
+            rotation_state_path=settings.database_path,
         )
         return agent.scan()
     except MarketDataError as exc:
@@ -178,7 +179,12 @@ chief = ChiefAgent(
     minimum_order_value_eur=settings.min_order_value_eur,
 )
 equity_research_agent = (
-    EquityEtfResearchAgent(market.get("twelve_data"), max_instruments=5, max_quote_candidates=10)
+    EquityEtfResearchAgent(
+        market.get("twelve_data"),
+        max_instruments=5,
+        max_quote_candidates=10,
+        rotation_state_path=settings.database_path,
+    )
     if settings.twelve_data_api_key else None
 )
 agent_worker = AutonomousAgent(

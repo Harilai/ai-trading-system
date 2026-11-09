@@ -280,3 +280,48 @@ def test_equity_research_rejects_implausibly_future_quote_timestamp():
     result = EquityEtfResearchAgent(provider).scan()
     assert result["analysed"] == 0
     assert result["rejected"][0]["reason"] == "Quote timestamp is unexpectedly in the future"
+
+
+
+def test_quote_sample_rotation_covers_catalog_over_repeated_scans(tmp_path):
+    instruments = [make_instrument(f"STOCK{i:02d}") for i in range(12)]
+    state_path = tmp_path / "research-state.sqlite3"
+    agent = EquityEtfResearchAgent(
+        FakeEquityProvider(instruments),
+        max_instruments=2,
+        max_quote_candidates=3,
+        rotation_state_path=str(state_path),
+    )
+
+    observed = set()
+    for _ in range(12):
+        sample, rotation = agent._sample_quote_universe(instruments)
+        assert len(sample) == 3
+        assert rotation["enabled"] is True
+        observed.update(item.symbol for item in sample)
+
+    assert observed == {item.symbol for item in instruments}
+
+
+def test_quote_sample_rotation_cursor_persists_between_agent_instances(tmp_path):
+    instruments = [make_instrument(f"STOCK{i:02d}") for i in range(20)]
+    state_path = tmp_path / "research-state.sqlite3"
+    first = EquityEtfResearchAgent(
+        FakeEquityProvider(instruments),
+        max_instruments=2,
+        max_quote_candidates=4,
+        rotation_state_path=str(state_path),
+    )
+    _, first_rotation = first._sample_quote_universe(instruments)
+
+    restarted = EquityEtfResearchAgent(
+        FakeEquityProvider(instruments),
+        max_instruments=2,
+        max_quote_candidates=4,
+        rotation_state_path=str(state_path),
+    )
+    _, next_rotation = restarted._sample_quote_universe(instruments)
+
+    assert first_rotation["cursor_start"] == 0
+    assert next_rotation["cursor_start"] == first_rotation["cursor_next"]
+    assert next_rotation["cursor_start"] == 1
