@@ -1,0 +1,94 @@
+# Engineering roadmap
+
+Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
+
+## Estado integrado
+
+| Área | Estado |
+|---|---|
+| Backend FastAPI y paper portfolio SQLite | Implementado |
+| Datos públicos crypto vía CCXT | Implementado |
+| Indicadores técnicos | Implementado |
+| Contabilidad de comisiones en coste base y P/L realizado | Implementado |
+| Validación de datos obsoletos y órdenes | Implementado |
+| Worker persistente, cola, leases y reintentos | Implementado |
+| Recuperación de leases expirados en ejecución | Implementado |
+| API de control autenticada | Implementada; endurecimiento de despliegue pendiente |
+| Scout: descubrimiento de spot EUR por volumen/spread/frescura | Implementado |
+| Charts Agent | Implementado |
+| Strategy Research: EMA, RSI, Bollinger, split 70/30 y costes | Implementado como investigación, no aprobación de trading |
+| Chief Agent y coordinación de decisiones | Pendiente |
+| Risk Manager conectado obligatoriamente a órdenes | Pendiente |
+| Sniper y generación de propuestas | Pendiente |
+| Ejecución paper autónoma y monitorización de posiciones | Pendiente |
+| Acciones/ETF y FX | Pendiente |
+| News/Sentiment con fuentes auditables | Pendiente |
+| Gestor 50/50 de beneficios y retiradas manuales | Pendiente |
+| Dashboard | Pendiente |
+| Infraestructura gratuita/Oracle Always Free y despliegue 24/7 | Pendiente |
+| Live trading | No implementado; deshabilitado |
+
+## Prioridad 1 — calidad de datos y estrategia
+
+- [ ] Ampliar el universo de mercado sin exceder límites de rate ni filtros de liquidez.
+- [ ] Añadir pruebas de descubrimiento con tickers ausentes, mercados inactivos, spreads extremos y fallos de proveedor.
+- [ ] Verificar cálculos de indicadores con series de referencia conocidas.
+- [ ] Mejorar backtesting con métricas de retorno, drawdown, profit factor, exposición y sensibilidad a costes.
+- [ ] Añadir validación walk-forward, ventanas múltiples y prevención de sobreajuste.
+- [ ] Persistir versiones de estrategias, resultados y motivos de promoción/rechazo.
+- [ ] Clasificar régimen de mercado y evitar seleccionar una estrategia por una sola ventana.
+
+## Prioridad 2 — orquestación segura
+
+- [ ] Implementar Chief con contratos tipados y decisiones auditables.
+- [ ] Integrar Scout, Charts y Strategy Research en un ciclo de análisis recurrente.
+- [ ] Implementar Sniper para generar propuestas con entrada, stop-loss, take-profit y tamaño.
+- [ ] Conectar Risk Manager como puerta obligatoria: ninguna propuesta llega al motor de órdenes sin aprobación.
+- [ ] Añadir idempotencia de tareas/órdenes, estados legales y reconciliación de ejecuciones.
+- [ ] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
+- [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
+
+## Prioridad 3 — contabilidad y control del capital
+
+- [ ] Añadir valoración a mercado y separar coste base, valor actual, P/L realizado y no realizado.
+- [ ] Implementar reserva del 50% de beneficios netos realizados y reinversión del 50%.
+- [ ] Implementar solicitudes manuales de retirada de cualquier importe disponible, con confirmación del propietario.
+- [ ] Calcular mínimos y costes de retirada según proveedor; nunca conceder permisos de retirada a claves de trading.
+- [ ] Recalcular riesgo y capital viable tras una retirada.
+
+## Prioridad 4 — cobertura y producto
+
+- [ ] Evaluar proveedor de acciones/ETF, horarios, permisos, datos y comisiones.
+- [ ] Añadir FX con tipos y timestamps verificables antes de mezclar divisas.
+- [ ] Añadir News/Sentiment solo con atribución de fuente, frescura y calidad.
+- [ ] Crear dashboard responsive con cartera, posiciones, investigación, decisiones, auditoría y controles.
+- [ ] Añadir PostgreSQL/migraciones cuando la carga lo justifique.
+
+## Prioridad 5 — despliegue y operación
+
+- [ ] Evaluar Oracle Cloud Always Free y alternativas en el momento del despliegue; no asumir disponibilidad permanente.
+- [ ] Mantener operación sin APIs de inferencia de pago; LLM local opcional y lógica determinista como fallback.
+- [ ] Añadir health/readiness, monitorización, backups y restore probado.
+- [ ] Endurecer Docker: usuario no root, secretos, TLS/reverse proxy y acceso restringido.
+- [ ] Medir disponibilidad real antes de afirmar que funciona 24/7.
+
+## Seguridad no negociable
+
+- Paper trading hasta completar pruebas y revisión separada de live execution.
+- Live trading deshabilitado por defecto y nunca activable por agentes o LLM.
+- Ningún agente puede cambiar sus propios límites de riesgo.
+- No incluir claves de exchange/broker en Git, logs ni frontend.
+- Las claves de trading no tendrán permisos de retirada.
+- Si la calidad de datos, el estado del proveedor o la conciliación son inciertos, se bloquean nuevas entradas.
+- No prometer rentabilidad ni seleccionar estrategias solo por resultados in-sample.
+
+## Pruebas y definición de terminado
+
+Cada fase debe incluir:
+1. Tests unitarios de lógica y límites.
+2. Tests de integración con proveedores simulados.
+3. Tests de fallos, datos stale, rate limits, reinicios y duplicados.
+4. CI verde sobre el commit exacto que se propone fusionar.
+5. Revisión de diferencias y actualización de documentación.
+
+No se fusionará código con CI fallida o con una protección financiera no probada.
