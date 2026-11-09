@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from .config import settings
 from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
 from .market_data import CcxtMarketData, MarketDataError
+from .scout import ScoutAgent
 from .portfolio import PaperPortfolio, PortfolioError
 
 app = FastAPI(title="AI Trading System", version="0.1.0", description="Paper trading only; live execution is not implemented.")
@@ -66,7 +67,8 @@ from .autonomous import AutonomousAgent, AutonomousStore
 from .agent_api import router as agent_router
 
 agent_store = AutonomousStore(settings.database_path)
-agent_worker = AutonomousAgent(agent_store)
+scout = ScoutAgent(market)
+agent_worker = AutonomousAgent(agent_store, scout=scout)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
