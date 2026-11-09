@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import sqlite3
 import time
 from typing import Any
 
@@ -30,6 +31,7 @@ class EquityEtfResearchAgent:
         max_quote_age_seconds: int = 24 * 60 * 60,
         require_two_sided_quote: bool = False,
         max_execution_spread_fraction: float = 0.02,
+        rotation_state_path: str | None = None,
     ):
         if max_instruments < 1:
             raise ValueError("max_instruments must be positive")
@@ -53,6 +55,60 @@ class EquityEtfResearchAgent:
         self.max_quote_age_seconds = max_quote_age_seconds
         self.require_two_sided_quote = require_two_sided_quote
         self.max_execution_spread_fraction = max_execution_spread_fraction
+        self.rotation_state_path = rotation_state_path
+
+    def _sample_quote_universe(self, eligible_universe: list) -> tuple[list, dict]:
+        total = len(eligible_universe)
+        limit = self.max_quote_candidates
+        if total <= limit:
+            return eligible_universe, {
+                "enabled": bool(self.rotation_state_path),
+                "cursor_start": 0,
+                "cursor_next": 0,
+                "catalog_size": total,
+            }
+
+        if limit == 1:
+            offsets = [total // 2]
+        else:
+            offsets = sorted({
+                round(index * (total - 1) / (limit - 1))
+                for index in range(limit)
+            })
+
+        cursor_start = 0
+        cursor_next = 0
+        if self.rotation_state_path:
+            state_path = Path(self.rotation_state_path)
+            state_path.parent.mkdir(parents=True, exist_ok=True)
+            with sqlite3.connect(str(state_path), timeout=15) as db:
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS equity_research_rotation ("
+                    "provider_id TEXT PRIMARY KEY, cursor INTEGER NOT NULL)"
+                )
+                db.execute("BEGIN IMMEDIATE")
+                row = db.execute(
+                    "SELECT cursor FROM equity_research_rotation WHERE provider_id=?",
+                    (self.provider.provider_id,),
+                ).fetchone()
+                cursor_start = int(row[0]) % total if row else 0
+                cursor_next = (cursor_start + 1) % total
+                db.execute(
+                    "INSERT INTO equity_research_rotation(provider_id,cursor) VALUES(?,?) "
+                    "ON CONFLICT(provider_id) DO UPDATE SET cursor=excluded.cursor",
+                    (self.provider.provider_id, cursor_next),
+                )
+
+        sample = [
+            eligible_universe[(cursor_start + offset) % total]
+            for offset in offsets
+        ]
+        return sample, {
+            "enabled": bool(self.rotation_state_path),
+            "cursor_start": cursor_start,
+            "cursor_next": cursor_next,
+            "catalog_size": total,
+        }
 
     @staticmethod
     def _quote_quality(quote: dict, now_ms: int, max_age_ms: int) -> tuple[float, dict]:
@@ -136,17 +192,7 @@ class EquityEtfResearchAgent:
             seen.add(instrument.instrument_id)
             eligible_universe.append(instrument)
 
-        if len(eligible_universe) <= self.max_quote_candidates:
-            quote_sample = eligible_universe
-        elif self.max_quote_candidates == 1:
-            quote_sample = [eligible_universe[len(eligible_universe) // 2]]
-        else:
-            last = len(eligible_universe) - 1
-            sample_indexes = {
-                round(index * last / (self.max_quote_candidates - 1))
-                for index in range(self.max_quote_candidates)
-            }
-            quote_sample = [eligible_universe[index] for index in sorted(sample_indexes)]
+        quote_sample, sample_rotation = self._sample_quote_universe(eligible_universe)
 
         # Stage 1: bounded quote screening over a catalog-wide stratified sample.
         for instrument in quote_sample:
@@ -266,7 +312,12 @@ class EquityEtfResearchAgent:
             "quote_candidates": len(candidates),
             "ranked": len(ranked_candidates),
             "analysed": len(analyses),
-            "selection_method": "catalog_wide_stratified_quote_sample_then_volume_60_freshness_25_spread_15",
+            "selection_method": (
+                "rotating_catalog_wide_stratified_quote_sample_then_volume_60_freshness_25_spread_15"
+                if sample_rotation["enabled"]
+                else "catalog_wide_stratified_quote_sample_then_volume_60_freshness_25_spread_15"
+            ),
+            "sample_rotation": sample_rotation,
             "analyses": analyses,
             "rejected": rejected,
             "execution": "disabled_research_only",
