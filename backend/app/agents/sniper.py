@@ -51,9 +51,16 @@ class SniperAgent:
         score = candidate.get("score")
         if not isinstance(score, (int, float)) or not math.isfinite(float(score)):
             return None
+        try:
+            equity = float(equity)
+            available_cash = float(available_cash)
+            price = float(market.get("ask") or market.get("last") or analysis.get("close") or 0)
+            atr_value = float(analysis.get("indicators", {}).get("atr_14", 0) or 0)
+        except (TypeError, ValueError, OverflowError):
+            return None
         if (
-            not math.isfinite(float(equity))
-            or not math.isfinite(float(available_cash))
+            not math.isfinite(equity)
+            or not math.isfinite(available_cash)
             or equity <= 0
             or available_cash <= 0
         ):
@@ -62,8 +69,6 @@ class SniperAgent:
         symbol = str(market.get("symbol") or "").strip().upper()
         if not symbol.endswith("/EUR"):
             return None
-        price = float(market.get("ask") or market.get("last") or analysis.get("close") or 0)
-        atr_value = float(analysis.get("indicators", {}).get("atr_14", 0) or 0)
         if (
             not math.isfinite(price)
             or not math.isfinite(atr_value)
@@ -79,7 +84,21 @@ class SniperAgent:
             return None
 
         risk_budget = equity * self.risk_per_trade_fraction
-        risk_quantity = risk_budget / stop_distance
+        # Estimate the full round trip: adverse entry/stop slippage plus fees on
+        # both sides. Sizing only against the chart distance understates risk.
+        estimated_entry_fill = price * (1.0 + self.estimated_slippage_rate)
+        estimated_stop_fill = stop_loss * (1.0 - self.estimated_slippage_rate)
+        estimated_round_trip_cost_per_unit = self.estimated_fee_rate * (
+            estimated_entry_fill + estimated_stop_fill
+        )
+        risk_per_unit = (
+            estimated_entry_fill
+            - estimated_stop_fill
+            + estimated_round_trip_cost_per_unit
+        )
+        if not math.isfinite(risk_per_unit) or risk_per_unit <= 0:
+            return None
+        risk_quantity = risk_budget / risk_per_unit
         allocation_quantity = (
             equity * self.max_order_fraction
             / (price * (1.0 + self.estimated_fee_rate))
