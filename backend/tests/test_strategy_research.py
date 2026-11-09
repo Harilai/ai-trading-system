@@ -103,3 +103,32 @@ def test_research_rejects_non_finite_or_negative_ohlcv_values():
     rows[30]["volume"] = -1
     with pytest.raises(ValueError, match="volume cannot be negative"):
         StrategyResearchAgent().research(rows)
+
+
+
+def test_walk_forward_evidence_is_a_mandatory_promotion_gate():
+    closes = [100 + index * 0.05 + 4 * math.sin(index / 5) for index in range(300)]
+    result = StrategyResearchAgent(
+        minimum_oos_trades=1,
+        minimum_walk_forward_bars=60,
+    ).research(candles_from_closes(closes))
+
+    assert result["promotion_gates"]["must_beat_buy_and_hold"] is True
+    assert result["promotion_gates"]["minimum_walk_forward_bars_per_window"] == 60
+    assert result["eligible_count"] == 0
+    assert result["recommended_strategy"] is None
+    assert all(not item["eligible"] for item in result["candidates"])
+    assert all(
+        "insufficient_walk_forward_history" in item["validation_failures"]
+        for item in result["candidates"]
+    )
+
+
+def test_candidate_reports_each_failed_promotion_gate():
+    closes = [100 + index * 0.01 for index in range(180)]
+    result = StrategyResearchAgent().research(candles_from_closes(closes))
+
+    for candidate in result["candidates"]:
+        assert isinstance(candidate["validation_failures"], list)
+        assert candidate["eligible"] is (not candidate["validation_failures"])
+        assert candidate["score"] is None
