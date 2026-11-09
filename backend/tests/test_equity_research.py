@@ -269,3 +269,14 @@ def test_quote_screen_samples_across_entire_catalog_not_only_first_page():
     assert result["eligible_universe"] == 12
     assert result["quote_sampled"] == 3
     assert result["considered"] == 3
+
+
+def test_equity_research_rejects_implausibly_future_quote_timestamp():
+    future = int(datetime.now(timezone.utc).timestamp() * 1000) + 10 * 60 * 1000
+    provider = FakeEquityProvider(quote={
+        "last": 210.0, "bid": 209.9, "ask": 210.1,
+        "timestamp": future, "averageVolume": 100000,
+    })
+    result = EquityEtfResearchAgent(provider).scan()
+    assert result["analysed"] == 0
+    assert result["rejected"][0]["reason"] == "Quote timestamp is unexpectedly in the future"
