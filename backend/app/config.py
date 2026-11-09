@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     max_data_age_seconds: int = 60
     agent_control_token: str = ""
     decision_cycle_interval_seconds: int = Field(default=300, ge=60)
+    equity_research_interval_seconds: int = Field(default=21600, ge=3600)
     model_config = SettingsConfigDict(env_file=PROJECT_ROOT / ".env", extra="ignore")
 
 settings = Settings()
