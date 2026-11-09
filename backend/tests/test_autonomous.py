@@ -382,8 +382,9 @@ def test_equity_research_task_fails_closed_without_provider(tmp_path):
 
 
 
-@pytest.mark.asyncio
-async def test_worker_survives_transient_store_failure_and_retries(tmp_path):
+def test_worker_survives_transient_store_failure_and_retries(tmp_path):
+    import asyncio
+
     class FlakyStore(AutonomousStore):
         def __init__(self, path):
             super().__init__(path)
@@ -408,7 +409,7 @@ async def test_worker_survives_transient_store_failure_and_retries(tmp_path):
     worker = AutonomousAgent(store, poll_interval_seconds=0.01)
     store.worker = worker
 
-    await worker._run()
+    asyncio.run(worker._run())
 
     assert store.state_calls >= 2
     assert any(action == "worker_loop_error" for action, _ in store.audit_events)
