@@ -59,7 +59,7 @@ def test_discovery_returns_us_equities_and_etfs_with_distinct_asset_classes(tmp_
         "stocks": {
             "data": [{
                 "symbol": "AAPL", "name": "Apple Inc", "currency": "USD",
-                "exchange": "NASDAQ", "country": "United States", "type": "Common Stock",
+                "exchange": "NASDAQ", "mic_code": "XNAS", "country": "United States", "type": "Common Stock",
             }],
             "status": "ok",
         },
@@ -67,7 +67,7 @@ def test_discovery_returns_us_equities_and_etfs_with_distinct_asset_classes(tmp_
             "result": {
                 "list": [{
                     "symbol": "SPY", "name": "SPDR S&P 500 ETF Trust",
-                    "country": "United States", "mic_code": "ARCX",
+                    "country": "United States", "exchange": "NYSE Arca", "mic_code": "ARCX",
                     "fund_family": "SPDR", "fund_type": "Large Blend",
                 }]
             },
@@ -82,7 +82,10 @@ def test_discovery_returns_us_equities_and_etfs_with_distinct_asset_classes(tmp_
     assert equity.asset_class is AssetClass.EQUITY
     assert equity.market_type is MarketType.CASH_EQUITY
     assert equity.quote == "USD"
+    assert equity.metadata["mic_code"] == "XNAS"
     assert etf.symbol == "SPY"
+    assert etf.metadata["exchange"] == "NYSE Arca"
+    assert etf.metadata["mic_code"] == "ARCX"
     assert etf.asset_class is AssetClass.ETF
     assert etf.metadata["fund_family"] == "SPDR"
     assert transport.calls[0][0] == "stocks"
