@@ -40,7 +40,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | News/Sentiment con fuentes auditables | Pendiente |
 | Valoración a mercado, P/L realizado/no realizado | Implementado en cartera paper; depende de cotización fresca |
 | Reserva 50/50 de beneficio neto realizado | Implementada como cálculo de reserva; política provisional configurable pendiente |
-| Solicitud/aprobación/cancelación manual de retiradas paper | Implementada; limitada a reserva de beneficio realizado |
+| Solicitud/aprobación/cancelación manual de retiradas paper | Implementada; cualquier efectivo disponible, con desglose auditado entre beneficio reservado y capital no reservado; sin liquidación automática |
 | Dashboard | Pendiente |
 | Infraestructura gratuita/Oracle Always Free y despliegue 24/7 | Pendiente |
 | Live trading | No implementado; deshabilitado |
@@ -71,7 +71,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 
 - [x] Añadir valoración a mercado y separar coste base, valor actual, P/L realizado y no realizado.
 - [x] Calcular reserva del 50% de beneficios netos realizados y reinversión del 50% (valor por defecto provisional).
-- [x] Implementar solicitudes manuales de retirada limitadas a la reserva de beneficios, con aprobación explícita del propietario.
+- [x] Permitir solicitudes manuales sobre cualquier efectivo disponible, con aprobación explícita, reserva de efectivo para solicitudes pendientes y desglose entre beneficio reservado y capital no reservado.
 - [ ] Calcular mínimos y costes de retirada según proveedor; nunca conceder permisos de retirada a claves de trading.
 - [ ] Recalcular riesgo y capital viable tras una retirada.
 

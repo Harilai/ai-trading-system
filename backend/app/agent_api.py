@@ -78,7 +78,9 @@ def request_withdrawal(
 ):
     require_control_token(x_agent_token)
     try:
-        return portfolio.request_withdrawal(request.amount)
+        result = portfolio.request_withdrawal(request.amount)
+        store.audit("withdrawal_requested", result)
+        return result
     except PortfolioError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -87,7 +89,9 @@ def request_withdrawal(
 def approve_withdrawal(request_id: str, x_agent_token: str | None = Header(default=None)):
     require_control_token(x_agent_token)
     try:
-        return portfolio.approve_withdrawal(request_id)
+        result = portfolio.approve_withdrawal(request_id)
+        store.audit("withdrawal_approved", result)
+        return result
     except PortfolioError as exc:
         raise HTTPException(422, str(exc)) from exc
 
@@ -96,6 +100,8 @@ def approve_withdrawal(request_id: str, x_agent_token: str | None = Header(defau
 def cancel_withdrawal(request_id: str, x_agent_token: str | None = Header(default=None)):
     require_control_token(x_agent_token)
     try:
-        return portfolio.cancel_withdrawal(request_id)
+        result = portfolio.cancel_withdrawal(request_id)
+        store.audit("withdrawal_cancelled", result)
+        return result
     except PortfolioError as exc:
         raise HTTPException(422, str(exc)) from exc
