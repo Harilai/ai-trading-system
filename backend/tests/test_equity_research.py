@@ -36,7 +36,7 @@ def make_candles(count=240):
 class FakeEquityProvider:
     provider_id = "twelve_data"
 
-    def __init__(self, instruments=None, quote=None, candles=None):
+    def __init__(self, instruments=None, quote=None, candles=None, states=None):
         self.instruments = instruments or [make_instrument()]
         self.quote = quote or {
             "last": 210.0,
@@ -48,6 +48,12 @@ class FakeEquityProvider:
         }
         self.candles = candles if candles is not None else make_candles()
         self.calls = []
+        self.states = states
+
+    def market_state(self):
+        if self.states is None:
+            return {}
+        return self.states
 
     def discover_markets(self, asset_classes=None):
         self.calls.append(("discover", asset_classes))
@@ -175,3 +181,20 @@ def test_equity_research_rejects_invalid_configuration():
         EquityEtfResearchAgent(FakeEquityProvider(), max_instruments=0)
     with pytest.raises(ValueError, match="spread"):
         EquityEtfResearchAgent(FakeEquityProvider(), max_execution_spread_fraction=0)
+
+
+def test_exchange_market_state_endpoint_overrides_quote_flag():
+    provider = FakeEquityProvider(
+        quote={
+            "last": 210.0, "bid": 209.9, "ask": 210.1,
+            "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+            "averageVolume": 100000,
+            "is_market_open": False,
+        },
+        states={"nasdaq": {"name": "NASDAQ", "code": "XNAS", "is_market_open": True}},
+    )
+    result = EquityEtfResearchAgent(provider).scan()
+    analysis = result["analyses"][0]
+    assert analysis["quote"]["is_market_open"] is True
+    assert analysis["quote"]["exchange_session"]["code"] == "XNAS"
+    assert "US exchange is currently reported closed" not in analysis["execution_blockers"]
