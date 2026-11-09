@@ -3,7 +3,10 @@ from pathlib import Path
 from threading import RLock
 from datetime import datetime, timezone
 
-class PortfolioError(ValueError): pass
+
+class PortfolioError(ValueError):
+    pass
+
 
 class PaperPortfolio:
     def __init__(self, database_path: str, initial_cash: float = 20.0):
@@ -25,43 +28,87 @@ class PaperPortfolio:
         with self.connect() as db:
             account = db.execute("SELECT * FROM account WHERE id=1").fetchone()
             positions = [dict(x) for x in db.execute("SELECT * FROM positions ORDER BY symbol")]
-        invested = sum(p["quantity"]*p["average_price"] for p in positions)
-        return {"currency":"EUR","initial_cash":account["initial_cash"],"cash":account["cash"],
-                "positions":positions,"invested_value":invested,"equity":account["cash"]+invested,
-                "realised_pnl":account["realised_pnl"],"mode":"paper"}
+        # This is cost basis (including entry fees), not a live market valuation.
+        invested_cost = sum(p["quantity"] * p["average_price"] for p in positions)
+        return {
+            "currency": "EUR",
+            "initial_cash": account["initial_cash"],
+            "cash": account["cash"],
+            "positions": positions,
+            "invested_value": invested_cost,
+            "equity": account["cash"] + invested_cost,
+            "realised_pnl": account["realised_pnl"],
+            "mode": "paper",
+        }
 
     def execute(self, symbol, side, quantity, price, fee_rate, slippage_rate, max_fraction, minimum):
-        if not symbol.endswith("/EUR"): raise PortfolioError("Only EUR-quoted markets are supported in Sprint 1")
-        if side not in ("buy","sell"): raise PortfolioError("Invalid side")
-        if quantity <= 0 or price <= 0: raise PortfolioError("Quantity and price must be positive")
-        fill = price*(1+slippage_rate if side=="buy" else 1-slippage_rate)
-        gross, fee = quantity*fill, quantity*fill*fee_rate
-        total = gross+fee if side=="buy" else gross-fee
-        if gross < minimum: raise PortfolioError(f"Minimum order value is {minimum:.2f} EUR")
+        if not symbol.endswith("/EUR"):
+            raise PortfolioError("Only EUR-quoted markets are supported in Sprint 1")
+        if side not in ("buy", "sell"):
+            raise PortfolioError("Invalid side")
+        if quantity <= 0 or price <= 0:
+            raise PortfolioError("Quantity and price must be positive")
+        if fee_rate < 0 or slippage_rate < 0 or slippage_rate >= 1:
+            raise PortfolioError("Fee and slippage rates are invalid")
+        if not 0 < max_fraction <= 1:
+            raise PortfolioError("Maximum allocation fraction must be in (0, 1]")
+        fill = price * (1 + slippage_rate if side == "buy" else 1 - slippage_rate)
+        gross, fee = quantity * fill, quantity * fill * fee_rate
+        total = gross + fee if side == "buy" else gross - fee
+        if gross < minimum:
+            raise PortfolioError(f"Minimum order value is {minimum:.2f} EUR")
+
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             account = db.execute("SELECT * FROM account WHERE id=1").fetchone()
             pos = db.execute("SELECT * FROM positions WHERE symbol=?", (symbol,)).fetchone()
             if side == "buy":
-                if gross > account["cash"]*max_fraction: raise PortfolioError("Order exceeds maximum allocation per trade")
-                if total > account["cash"]: raise PortfolioError("Insufficient cash")
+                if gross > account["cash"] * max_fraction:
+                    raise PortfolioError("Order exceeds maximum allocation per trade")
+                if total > account["cash"]:
+                    raise PortfolioError("Insufficient cash")
                 old_qty = pos["quantity"] if pos else 0
-                old_cost = old_qty*pos["average_price"] if pos else 0
-                new_qty = old_qty+quantity
-                avg = (old_cost+gross)/new_qty
-                db.execute("UPDATE account SET cash=cash-? WHERE id=1",(total,))
-                db.execute("INSERT INTO positions VALUES(?,?,?) ON CONFLICT(symbol) DO UPDATE SET quantity=excluded.quantity, average_price=excluded.average_price",(symbol,new_qty,avg))
+                old_cost = old_qty * pos["average_price"] if pos else 0
+                new_qty = old_qty + quantity
+                # Include entry fees in cost basis so realised P/L is net of both legs.
+                average_cost = (old_cost + gross + fee) / new_qty
+                db.execute("UPDATE account SET cash=cash-? WHERE id=1", (total,))
+                db.execute(
+                    "INSERT INTO positions VALUES(?,?,?) "
+                    "ON CONFLICT(symbol) DO UPDATE SET quantity=excluded.quantity, average_price=excluded.average_price",
+                    (symbol, new_qty, average_cost),
+                )
             else:
-                if not pos or quantity > pos["quantity"]+1e-12: raise PortfolioError("Insufficient position to sell")
-                pnl = (fill-pos["average_price"])*quantity-fee
-                remain = pos["quantity"]-quantity
-                db.execute("UPDATE account SET cash=cash+?, realised_pnl=realised_pnl+? WHERE id=1",(total,pnl))
-                if remain <= 1e-12: db.execute("DELETE FROM positions WHERE symbol=?",(symbol,))
-                else: db.execute("UPDATE positions SET quantity=? WHERE symbol=?",(remain,symbol))
+                if not pos or quantity > pos["quantity"] + 1e-12:
+                    raise PortfolioError("Insufficient position to sell")
+                realised_pnl = (fill - pos["average_price"]) * quantity - fee
+                remaining = pos["quantity"] - quantity
+                db.execute(
+                    "UPDATE account SET cash=cash+?, realised_pnl=realised_pnl+? WHERE id=1",
+                    (total, realised_pnl),
+                )
+                if remaining <= 1e-12:
+                    db.execute("DELETE FROM positions WHERE symbol=?", (symbol,))
+                else:
+                    db.execute("UPDATE positions SET quantity=? WHERE symbol=?", (remaining, symbol))
+
             stamp = datetime.now(timezone.utc).isoformat()
-            cur = db.execute("INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at) VALUES(?,?,?,?,?,?,?)",(symbol,side,quantity,fill,fee,total,stamp))
-            return {"id":cur.lastrowid,"symbol":symbol,"side":side,"quantity":quantity,"price":fill,"fee":fee,"total":total,"created_at":stamp,"mode":"paper"}
+            cur = db.execute(
+                "INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at) VALUES(?,?,?,?,?,?,?)",
+                (symbol, side, quantity, fill, fee, total, stamp),
+            )
+            return {
+                "id": cur.lastrowid,
+                "symbol": symbol,
+                "side": side,
+                "quantity": quantity,
+                "price": fill,
+                "fee": fee,
+                "total": total,
+                "created_at": stamp,
+                "mode": "paper",
+            }
 
     def history(self, limit=50):
         with self.connect() as db:
-            return [dict(x) for x in db.execute("SELECT * FROM trades ORDER BY id DESC LIMIT ?",(limit,))]
+            return [dict(x) for x in db.execute("SELECT * FROM trades ORDER BY id DESC LIMIT ?", (limit,))]

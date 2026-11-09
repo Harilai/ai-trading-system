@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     max_order_fraction: float = 0.25
     min_order_value_eur: float = 1.0
     max_data_age_seconds: int = 60
+    agent_control_token: str = ""
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()

@@ -17,7 +17,7 @@ Plataforma modular de trading algorítmico asistido por agentes de IA.
 - **Trading engine:** gestiona órdenes y posiciones.
 - **Dashboard:** presenta cartera, actividad de agentes y rendimiento.
 
-Los agentes se incorporarán por fases. Los mensajes entre agentes usarán esquemas tipados; un LLM nunca podrá saltarse el motor de riesgo.
+Los agentes se incorporarán por fases. Los mensajes entre agentes usarán esquemas tipados; un LLM nunca podrá saltarse el motor de riesgo. Ya existen componentes iniciales independientes para Charts y Risk Manager, todavía no conectados al worker ni al motor de órdenes.
 
 ## Sprint 1 incluye
 
@@ -25,7 +25,7 @@ Los agentes se incorporarán por fases. Los mensajes entre agentes usarán esque
 - Datos públicos de criptomonedas mediante CCXT (Kraken por defecto).
 - Indicadores EMA, SMA, RSI, MACD, Bollinger Bands y ATR.
 - Cartera paper persistida en SQLite.
-- Simulación de compras y ventas con comisión y slippage configurables.
+- Simulación de compras y ventas con comisión y slippage configurables; las comisiones de entrada se incluyen en el coste medio y el P/L realizado es neto de ambas patas.
 - Rechazo de datos ausentes o desactualizados.
 - Restricción inicial a pares cotizados en EUR para evitar conversiones FX incorrectas.
 - Docker Compose y pruebas automatizadas.
@@ -39,7 +39,8 @@ Capital virtual inicial: **20 EUR**, según la decisión acordada para el proyec
 - El fill paper se calcula con ticker público, comisión y slippage configurados.
 - Cartera de una sola cuenta.
 - Agentes LLM, dashboard y backtesting quedan para siguientes sprints.
-- El valor invertido del resumen inicial se calcula al precio medio de entrada; el marcado a mercado y P/L no realizado se incorporarán con el servicio de valoración.
+- El coste de posición incluye las comisiones de entrada; el P/L realizado descuenta tanto las comisiones de entrada como las de salida.
+- El campo `invested_value` representa coste de adquisición, no valor de mercado; el marcado a mercado y el P/L no realizado siguen pendientes.
 
 ## Ejecución local
 
@@ -57,7 +58,9 @@ uvicorn app.main:app --reload
 API: http://localhost:8000  
 Swagger: http://localhost:8000/docs
 
-Tests desde backend/: `pytest`
+Tests desde backend/: `pytest`.
+
+GitHub Actions ejecuta la suite del backend en los pushes y pull requests cubiertos por `.github/workflows/backend-ci.yml`.
 
 ## Docker
 
@@ -84,3 +87,31 @@ Ejemplo de orden simulada: `{"symbol":"BTC/EUR","side":"buy","quantity":0.00005}
 - Paper trading es el único modo disponible.
 - No se almacenan claves API ni se solicitan permisos de retirada.
 - Live trading requerirá una implementación separada, activación explícita, límites independientes y pruebas específicas.
+
+
+## Persistent autonomous agent (foundation)
+
+The persistent-agent foundation adds:
+
+- A SQLite-backed operational state that survives restarts.
+- A durable task queue with leases, retries and recovery of expired running tasks.
+- Separate persistent memory records, validated-knowledge flag and audit events.
+- A continuously running asyncio worker, started with the API process; it remains paused by default.
+- Authenticated supervision endpoints for status, pause, resume, emergency stop, reset and task enqueue.
+- An interchangeable LLM provider protocol and an opt-in OpenAI-compatible adapter. No LLM calls occur by default.
+
+### Configure supervision
+
+Set a long random `AGENT_CONTROL_TOKEN` in the root `.env` file. Agent control endpoints require it in the `X-Agent-Token` header. If the token is unset, these endpoints return 503 and cannot be used. Do not expose the API publicly until HTTPS, authentication, network restrictions and production secret management are configured.
+
+Endpoints:
+- `GET /api/agent/status`
+- `POST /api/agent/resume`
+- `POST /api/agent/pause`
+- `POST /api/agent/emergency-stop`
+- `POST /api/agent/reset-emergency-stop`
+- `POST /api/agent/tasks` (currently only `health_check` tasks are accepted)
+
+The worker starts paused and will not initiate trades. In this phase it only executes a deterministic health-check task. Separate deterministic Charts and Risk Manager components now exist as a first agent layer, but they are not yet orchestrated by the worker or connected to order execution. Market scanning, agent delegation, LLM reasoning triggers and automated trading are not yet implemented. Emergency stop disables the worker; it does not need to cancel broker orders because live execution does not exist.
+
+The persistent memory tables currently store operational observations and audit events. Historical market analysis, strategy knowledge, objectives, outcomes and retrieval policies will be added in later phases. Risk controls remain code/configuration controlled; agents cannot change them.
