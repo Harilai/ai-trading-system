@@ -16,12 +16,17 @@ class FakeTwelveDataTransport:
         self.calls = []
 
     def __call__(self, url, timeout=15):
-        parsed = urlparse(url)
+        request_url = url.full_url if hasattr(url, "full_url") else url
+        request_headers = url.headers if hasattr(url, "headers") else {}
+        parsed = urlparse(request_url)
         params = parse_qs(parsed.query)
         endpoint = parsed.path.rsplit("/", 1)[-1]
         self.calls.append((endpoint, params, timeout))
-        if params.get("apikey") != [self.api_key]:
-            raise AssertionError("API key was not passed through the request")
+        authorization = request_headers.get("Authorization") or request_headers.get("Authorization".lower())
+        if authorization != f"apikey {self.api_key}":
+            raise AssertionError("API key was not passed through the Authorization header")
+        if "apikey" in params:
+            raise AssertionError("API key must not be placed in the URL query string")
         payload = self.responses.get(endpoint)
         if isinstance(payload, Exception):
             raise payload
