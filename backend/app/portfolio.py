@@ -12,6 +12,12 @@ class PortfolioError(ValueError):
 
 class PaperPortfolio:
     def __init__(self, database_path: str, initial_cash: float = 20.0):
+        try:
+            initial_cash = float(initial_cash)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PortfolioError("Initial cash must be a non-negative finite number") from exc
+        if not math.isfinite(initial_cash) or initial_cash < 0:
+            raise PortfolioError("Initial cash must be a non-negative finite number")
         self.path = database_path
         self.lock = RLock()
         Path(database_path).parent.mkdir(parents=True, exist_ok=True)
@@ -199,22 +205,45 @@ class PaperPortfolio:
         stop_loss: float | None = None,
         take_profit: float | None = None,
     ):
+        if not isinstance(symbol, str) or not isinstance(provider_id, str):
+            raise PortfolioError("Symbol and provider identity must be text")
         symbol = symbol.strip().upper()
         provider_id = provider_id.strip()
         instrument_id = instrument_id or f"{provider_id}:spot:{symbol}"
         if not provider_id or not instrument_id:
             raise PortfolioError("Provider and instrument identity are required")
-        side = side.lower()
+        side = side.lower() if isinstance(side, str) else ""
         if not symbol.endswith("/EUR"):
             raise PortfolioError("Only EUR-quoted markets are supported")
         if side not in ("buy", "sell"):
             raise PortfolioError("Invalid side")
+        try:
+            quantity = float(quantity)
+            price = float(price)
+            fee_rate = float(fee_rate)
+            slippage_rate = float(slippage_rate)
+            max_fraction = float(max_fraction)
+            minimum = float(minimum)
+            if stop_loss is not None:
+                stop_loss = float(stop_loss)
+            if take_profit is not None:
+                take_profit = float(take_profit)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PortfolioError("Execution values must be finite numbers") from exc
+        numeric_values = [quantity, price, fee_rate, slippage_rate, max_fraction, minimum]
+        numeric_values.extend(
+            value for value in (stop_loss, take_profit) if value is not None
+        )
+        if not all(math.isfinite(value) for value in numeric_values):
+            raise PortfolioError("Execution values must be finite numbers")
         if quantity <= 0 or price <= 0:
             raise PortfolioError("Quantity and price must be positive")
-        if fee_rate < 0 or slippage_rate < 0 or slippage_rate >= 1:
-            raise PortfolioError("Fee and slippage rates are invalid")
+        if not 0 <= fee_rate < 1 or not 0 <= slippage_rate < 1:
+            raise PortfolioError("Fee and slippage rates must be in [0, 1)")
         if not 0 < max_fraction <= 1:
             raise PortfolioError("Maximum allocation fraction must be in (0, 1]")
+        if minimum < 0:
+            raise PortfolioError("Minimum order value cannot be negative")
         if side == "buy":
             if stop_loss is not None and not 0 < stop_loss < price:
                 raise PortfolioError("Buy stop-loss must be positive and below the reference price")
