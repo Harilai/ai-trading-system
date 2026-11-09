@@ -419,3 +419,106 @@ def test_worker_rejects_non_positive_poll_interval(tmp_path):
     store = AutonomousStore(str(tmp_path / "worker-config.db"))
     with pytest.raises(ValueError, match="poll_interval_seconds"):
         AutonomousAgent(store, poll_interval_seconds=0)
+
+
+
+def test_strategy_research_history_persists_versioned_candidate_evidence(tmp_path):
+    path = str(tmp_path / "strategy-history.db")
+    store = AutonomousStore(path)
+    research = {
+        "method": "chronological_70_30",
+        "cost_model": {"fee_rate_per_side": 0.0026, "slippage_rate_per_side": 0.0005},
+        "promotion_gates": {"must_beat_buy_and_hold": True},
+        "candidates": [
+            {
+                "strategy_id": "ema_12_26",
+                "description": "EMA trend",
+                "eligible": False,
+                "score": None,
+                "validation_failures": ["does_not_beat_buy_and_hold"],
+                "out_of_sample": {"net_return": -0.01, "trades": 4},
+                "walk_forward": {"positive_windows": 1},
+                "cost_sensitivity": {"2.0": {"beats_buy_and_hold": False}},
+            },
+            {
+                "strategy_id": "rsi_14_reversion",
+                "description": "RSI reversion",
+                "eligible": True,
+                "score": 0.12,
+                "validation_failures": [],
+                "out_of_sample": {"net_return": 0.08, "trades": 6},
+                "walk_forward": {"positive_windows": 3},
+            },
+        ],
+    }
+    market = {
+        "symbol": "BTC/EUR",
+        "provider_id": "ccxt:kraken",
+        "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+    }
+
+    assert store.record_strategy_research("task-1", market, "1h", research) == 2
+    # A retry of the same task cannot duplicate the research evidence.
+    assert store.record_strategy_research("task-1", market, "1h", research) == 2
+    rows = store.strategy_history(limit=10)
+    assert len(rows) == 2
+    by_id = {row["strategy_id"]: row for row in rows}
+    rejected = by_id["ema_12_26"]
+    assert rejected["eligible"] is False
+    assert rejected["validation_failures"] == ["does_not_beat_buy_and_hold"]
+    assert rejected["result"]["cost_sensitivity"]["2.0"]["beats_buy_and_hold"] is False
+    promoted = by_id["rsi_14_reversion"]
+    assert promoted["eligible"] is True
+    assert promoted["strategy_version"].startswith("rsi_14_reversion:")
+    assert rejected["instrument_id"] == market["instrument_id"]
+
+    restarted = AutonomousStore(path)
+    assert len(restarted.strategy_history(limit=10)) == 2
+    assert len(restarted.strategy_history(strategy_id="ema_12_26")) == 1
+    assert len(restarted.strategy_history(instrument_id=market["instrument_id"])) == 2
+
+
+def test_strategy_research_history_ignores_invalid_or_empty_research(tmp_path):
+    store = AutonomousStore(str(tmp_path / "empty-strategy-history.db"))
+    market = {"symbol": "BTC/EUR", "provider_id": "ccxt:kraken"}
+    assert store.record_strategy_research("task-1", market, "1h", {}) == 0
+    assert store.record_strategy_research(
+        "task-2", {}, "1h", {"candidates": [{"strategy_id": "ema_12_26"}]}
+    ) == 0
+    assert store.strategy_history() == []
+
+
+def test_market_scan_task_persists_strategy_candidates(tmp_path):
+    import asyncio
+
+    class FakeScout:
+        def scan(self):
+            return {
+                "timeframe": "1h",
+                "analyses": [{
+                    "market": {
+                        "symbol": "BTC/EUR",
+                        "provider_id": "ccxt:kraken",
+                        "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+                    },
+                    "strategy_research": {
+                        "method": "test",
+                        "candidates": [{
+                            "strategy_id": "ema_12_26",
+                            "eligible": False,
+                            "validation_failures": ["insufficient_oos_trades"],
+                        }],
+                    },
+                }],
+            }
+
+    store = AutonomousStore(str(tmp_path / "market-scan-history.db"))
+    worker = AutonomousAgent(store, scout=FakeScout())
+    task = {"id": "scan-task-1", "kind": "market_scan", "payload": {}}
+    result = asyncio.run(worker._execute(task))
+
+    assert result["analysed"] if "analysed" in result else result["analyses"]
+    history = store.strategy_history()
+    assert len(history) == 1
+    assert history[0]["task_id"] == "scan-task-1"
+    assert history[0]["strategy_id"] == "ema_12_26"
