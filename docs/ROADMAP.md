@@ -12,6 +12,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Contabilidad de comisiones en coste base y P/L realizado | Implementado |
 | Validación de datos obsoletos y órdenes | Implementado |
 | Worker persistente, cola, leases y reintentos | Implementado |
+| Programación periódica de decision_cycle sin solapamientos | Implementada; 5 min por defecto, solo con worker habilitado |
 | Recuperación de leases expirados en ejecución | Implementado |
 | API de control autenticada | Implementada; endurecimiento de despliegue pendiente |
 | Scout: descubrimiento de spot EUR por volumen/spread/frescura | Implementado |
