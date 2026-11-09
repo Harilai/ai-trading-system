@@ -74,6 +74,10 @@ def test_decision_cycle_persists_proposal_only_result(tmp_path):
             return {"analyses": [{"market": {"symbol": "BTC/EUR"}}]}
 
     class FakeDecision:
+        action = "hold"
+        proposal = None
+        risk = None
+
         def model_dump(self):
             return {"action": "hold", "rationale": "No validated opportunity"}
 
