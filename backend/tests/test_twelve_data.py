@@ -227,3 +227,45 @@ def test_provider_credit_header_reconciles_daily_usage(tmp_path):
     )
     with pytest.raises(MarketDataError, match="daily safety budget exhausted"):
         other.ticker("MSFT")
+
+
+def test_market_state_returns_exchange_lookup_and_uses_cache(tmp_path):
+    transport = FakeTwelveDataTransport({
+        "market_state": [
+            {
+                "name": "NASDAQ", "code": "XNAS", "country": "United States",
+                "is_market_open": True, "time_to_open": "00:00:00",
+                "time_to_close": "03:12:00", "time_after_open": "03:48:00",
+            },
+            {
+                "name": "NYSE", "code": "XNYS", "country": "United States",
+                "is_market_open": False, "time_to_open": "12:00:00",
+                "time_to_close": "00:00:00", "time_after_open": "00:00:00",
+            },
+        ]
+    })
+    provider = TwelveDataProvider(
+        "test-key", opener=transport, state_path=str(tmp_path / "state.db"),
+        min_request_interval_seconds=0,
+    )
+    first = provider.market_state()
+    second = provider.market_state()
+    assert first["nasdaq"]["is_market_open"] is True
+    assert first["xnas"]["time_to_close"] == "03:12:00"
+    assert first["xnys"]["is_market_open"] is False
+    assert second == first
+    assert len(transport.calls) == 1
+    assert transport.calls[0][0] == "market_state"
+    assert transport.calls[0][1]["country"] == ["United States"]
+
+
+def test_market_state_rejects_unexpected_object_response(tmp_path):
+    transport = FakeTwelveDataTransport({
+        "market_state": {"status": "ok", "data": []},
+    })
+    provider = TwelveDataProvider(
+        "test-key", opener=transport, state_path=str(tmp_path / "state.db"),
+        min_request_interval_seconds=0,
+    )
+    with pytest.raises(MarketDataError, match="invalid response"):
+        provider.market_state()
