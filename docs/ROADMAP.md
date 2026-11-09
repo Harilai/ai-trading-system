@@ -9,7 +9,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Backend FastAPI y paper portfolio SQLite | Implementado |
 | Datos públicos crypto spot vía CCXT | Implementado; solo datos públicos |
 | Datos públicos US equities/ETF vía Twelve Data Basic | Adaptador implementado y probado; API key gratuita opcional; solo datos, sin trading |
-| Investigación técnica y backtesting inicial de acciones/ETF | Pipeline manual de solo lectura implementado; integración con ciclo autónomo pendiente |
+| Investigación técnica y backtesting inicial de acciones/ETF | Pipeline manual y tarea autónoma periódica de solo lectura implementados; sin propuestas ni órdenes |
 | Contratos normalizados de proveedores e instrumentos | Implementado |
 | Identidad de posiciones por `provider_id + instrument_id` | Implementado; migración SQLite incluida |
 | Aislamiento de posiciones con mismo símbolo entre proveedores | Implementado y probado |
@@ -33,7 +33,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Risk Manager conectado obligatoriamente a órdenes paper | Implementado; solo crypto spot EUR |
 | Sniper y generación de propuestas | Pendiente |
 | Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada; ciclo periódico cada 5 min al reanudar worker |
-| Datos de acciones/ETF estadounidenses | Adaptador Twelve Data Basic implementado; integración con Scout/estrategias pendiente |
+| Datos de acciones/ETF estadounidenses | Adaptador Twelve Data Basic y pipeline de investigación autónoma read-only integrados; ejecución sigue deshabilitada |
 | Broker de acciones/ETF y ejecución | Pendiente; requiere broker adapter, elegibilidad y validación |
 | DEX, wallets, blockchain y DeFi | Pendiente; no hay integración ni firma |
 | Futuros, opciones, margin y derivados | Deshabilitados; perfiles y límites específicos pendientes |
@@ -79,7 +79,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 
 - [x] Implementar adaptador de datos Twelve Data Basic para catálogo, cotizaciones y OHLCV de acciones/ETF estadounidenses (sin órdenes).
 - [x] Implementar pipeline manual de investigación de acciones/ETF con frescura, divisa USD, bid/ask, Charts y backtesting 70/30.
-- [ ] Integrar acciones/ETF en el ciclo autónomo con horarios de mercado, cuotas del proveedor, liquidez y calidad de cotización.
+- [x] Integrar investigación de acciones/ETF en el worker con tarea read-only independiente cada 6 horas, muestreo acotado, cuotas persistentes, estado de mercado, liquidez y calidad de cotización.\n- [ ] Integrar acciones/ETF en decisiones del Chief y Risk Manager solo después de validar estrategia, capital, moneda y reglas de cartera específicas; sin ejecución por ahora.
 - [ ] Implementar y validar un adaptador de broker de acciones/ETF, horarios, permisos, datos, mínimos y comisiones.
 - [x] Generalizar el portfolio a claves `provider_id + instrument_id`, con migración de datos legacy y aislamiento de símbolos duplicados.
 - [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución.
