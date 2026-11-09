@@ -70,7 +70,7 @@ def test_decision_cycle_persists_proposal_only_result(tmp_path):
     import asyncio
 
     class FakeScout:
-        def scan(self):
+        def scan(self, include_symbols=None):
             return {"analyses": [{"market": {"symbol": "BTC/EUR"}}]}
 
     class FakeDecision:
@@ -87,11 +87,14 @@ def test_decision_cycle_persists_proposal_only_result(tmp_path):
         def snapshot(self):
             return {"cash": 20}
 
+        def get_trade_by_client_order_id(self, client_order_id):
+            return None
+
     store = AutonomousStore(str(tmp_path / "decision.db"))
     worker = AutonomousAgent(store, scout=FakeScout(), chief=FakeChief(), portfolio=FakePortfolio())
     task = {"id": "decision-test", "kind": "decision_cycle", "payload": {}}
     result = asyncio.run(worker._execute(task))
-    assert result["execution"] == "proposal_only"
+    assert result["execution"] == "no_order"
     assert result["decision"]["action"] == "hold"
     memory = store.overview()["memory"]
     assert memory[0]["category"] == "chief_decision"
