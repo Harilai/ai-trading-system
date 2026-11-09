@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Callable, Sequence
+import math
 
 
 @dataclass(frozen=True)
@@ -173,7 +173,7 @@ class StrategyResearchAgent:
                 sum(value > 0 for value in closed_returns) / len(closed_returns)
                 if closed_returns else 0.0
             ),
-            "profit_factor": profit_factor,
+            "profit_factor": (profit_factor if math.isfinite(profit_factor) else None),
         }
 
     def research(self, candles: Sequence[dict]) -> dict:
