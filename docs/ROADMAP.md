@@ -27,7 +27,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | API de control autenticada | Implementada; endurecimiento de despliegue pendiente |
 | Scout: descubrimiento de spot EUR por volumen/spread/frescura | Implementado |
 | Charts Agent | Implementado |
-| Strategy Research: EMA, RSI, Bollinger, split 70/30 y costes | Implementado como investigación, no aprobación de trading |
+| Strategy Research: EMA, RSI, Bollinger, split 70/30, costes y tres ventanas walk-forward diagnósticas | Implementado como investigación; walk-forward aún no es gate de promoción ni aprobación de trading |
 | Chief: selección de oportunidad y propuesta buy/sell/hold | Implementado con Risk Manager obligatorio |
 | Chief Agent y coordinación de decisiones | Implementado; ciclo ejecuta paper bajo gate de riesgo |
 | Risk Manager conectado obligatoriamente a órdenes paper | Implementado; solo crypto spot EUR |
@@ -51,7 +51,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 - [ ] Añadir pruebas de descubrimiento con tickers ausentes, mercados inactivos, spreads extremos y fallos de proveedor.
 - [ ] Verificar cálculos de indicadores con series de referencia conocidas.
 - [ ] Mejorar backtesting con métricas de retorno, drawdown, profit factor, exposición y sensibilidad a costes.
-- [ ] Añadir validación walk-forward, ventanas múltiples y prevención de sobreajuste.
+- [x] Añadir tres ventanas walk-forward diagnósticas y métricas por ventana.\n- [ ] Usar walk-forward como gate de promoción, con mínimos de operaciones y estabilidad por ventana; prevenir sobreajuste y sesgo de selección.
 - [ ] Persistir versiones de estrategias, resultados y motivos de promoción/rechazo.
 - [ ] Clasificar régimen de mercado y evitar seleccionar una estrategia por una sola ventana.
 
