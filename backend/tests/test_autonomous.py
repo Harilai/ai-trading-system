@@ -90,7 +90,7 @@ def test_decision_cycle_persists_proposal_only_result(tmp_path):
             return FakeDecision()
 
     class FakePortfolio:
-        def snapshot(self):
+        def snapshot(self, valuation_prices=None):
             return {"cash": 20}
 
         def get_trade_by_client_order_id(self, client_order_id):
@@ -147,7 +147,7 @@ def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
             self.order = None
             self.execute_calls = 0
 
-        def snapshot(self):
+        def snapshot(self, valuation_prices=None):
             return {"cash": 20, "equity": 20, "positions": []}
 
         def get_trade_by_client_order_id(self, client_order_id):

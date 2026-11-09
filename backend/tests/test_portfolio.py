@@ -119,3 +119,52 @@ def test_legacy_database_is_migrated_with_protection_and_idempotency_columns(tmp
         trade_columns = {row[1] for row in db.execute("PRAGMA table_info(trades)")}
     assert {"strategy_id", "stop_loss", "take_profit"} <= position_columns
     assert "client_order_id" in trade_columns
+
+
+def test_market_valuation_distinguishes_realised_and_unrealised_pnl(portfolio):
+    portfolio.execute("BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1)
+    snapshot = portfolio.snapshot({"BTC/EUR": 12000})
+    assert snapshot["valuation_complete"] is True
+    assert snapshot["market_value"] == pytest.approx(12)
+    assert snapshot["unrealised_pnl"] == pytest.approx(1.99)
+    assert snapshot["realised_pnl"] == pytest.approx(0)
+
+
+def test_incomplete_valuation_uses_cost_basis_and_flags_incomplete(portfolio):
+    portfolio.execute("BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1)
+    snapshot = portfolio.snapshot({})
+    assert snapshot["valuation_complete"] is False
+    assert snapshot["valuation_source"] == "cost_basis_or_partial"
+
+
+def test_withdrawal_is_limited_to_half_of_net_realised_profit(portfolio):
+    portfolio.execute("BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1)
+    portfolio.execute("BTC/EUR", "sell", 0.001, 11000, 0.001, 0, 1, 1)
+    reserve = portfolio.snapshot()["withdrawable_reserved_profit"]
+    assert reserve == pytest.approx(0.4895)
+    with pytest.raises(PortfolioError, match="50% reserve"):
+        portfolio.request_withdrawal(0.50)
+    request = portfolio.request_withdrawal(0.40)
+    assert request["status"] == "pending"
+    approved = portfolio.approve_withdrawal(request["id"])
+    assert approved["status"] == "approved"
+    assert approved["profit_component"] == pytest.approx(0.40)
+    snapshot = portfolio.snapshot()
+    assert snapshot["withdrawn_profit"] == pytest.approx(0.40)
+    assert snapshot["withdrawable_reserved_profit"] == pytest.approx(0.2895)
+
+
+def test_withdrawal_cannot_use_initial_principal_or_unrealised_gains(portfolio):
+    portfolio.execute("BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1)
+    with pytest.raises(PortfolioError, match="50% reserve"):
+        portfolio.request_withdrawal(1.0)
+
+
+def test_pending_withdrawal_can_be_cancelled_once(portfolio):
+    portfolio.execute("BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1)
+    portfolio.execute("BTC/EUR", "sell", 0.001, 11000, 0.001, 0, 1, 1)
+    request = portfolio.request_withdrawal(0.2)
+    cancelled = portfolio.cancel_withdrawal(request["id"])
+    assert cancelled["status"] == "cancelled"
+    with pytest.raises(PortfolioError, match="not pending"):
+        portfolio.approve_withdrawal(request["id"])

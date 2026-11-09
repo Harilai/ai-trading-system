@@ -15,7 +15,7 @@ class FakeMarketData:
 
 def test_scout_discovers_and_analyses_markets():
     result = ScoutAgent(FakeMarketData()).scan()
-    assert result["universe"] == "active_spot_EUR"
+    assert result["universe"] == "configured_provider_crypto_spot_EUR"
     assert result["discovered"] == 1
     assert result["analysed"] == 1
     assert result["analyses"][0]["analysis"]["symbol"] == "BTC/EUR"

@@ -116,6 +116,7 @@ class ChiefAgent:
 
             proposal = TradeProposal(
                 symbol=symbol,
+                provider_id=str(market.get("provider_id") or "ccxt:kraken"),
                 side="sell",
                 quantity=positions[symbol],
                 reference_price=sell_price,
@@ -140,6 +141,12 @@ class ChiefAgent:
                 evidence={"market": market, "exit_reason": exit_reason},
                 proposal=proposal,
                 risk=risk,
+            )
+
+        if positions and not portfolio.get("valuation_complete", False):
+            return ChiefDecision(
+                rationale="Market valuation is incomplete for one or more open positions; no new entry is allowed",
+                evidence={"open_positions": list(positions)},
             )
 
         opportunities = []
@@ -187,6 +194,7 @@ class ChiefAgent:
 
             proposal = TradeProposal(
                 symbol=symbol,
+                provider_id=str(market.get("provider_id") or "ccxt:kraken"),
                 side="buy",
                 quantity=quantity,
                 reference_price=price,

@@ -7,7 +7,12 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Área | Estado |
 |---|---|
 | Backend FastAPI y paper portfolio SQLite | Implementado |
-| Datos públicos crypto vía CCXT | Implementado |
+| Datos públicos crypto spot vía CCXT | Implementado; solo datos públicos |
+| Contratos normalizados de proveedores e instrumentos | Implementado |
+| Registro de proveedores y capability matrix | Implementado |
+| Descubrimiento multi-provider para adaptadores configurados | Implementado en datos; actualmente un proveedor por defecto |
+| Router de ejecución normalizado | Contrato inicial; ningún adaptador live |
+| Perfiles de riesgo por clase/tipo de mercado | Contratos implementados; solo crypto spot habilitado |
 | Indicadores técnicos | Implementado |
 | Contabilidad de comisiones en coste base y P/L realizado | Implementado |
 | Validación de datos obsoletos y órdenes | Implementado |
@@ -19,13 +24,17 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Charts Agent | Implementado |
 | Strategy Research: EMA, RSI, Bollinger, split 70/30 y costes | Implementado como investigación, no aprobación de trading |
 | Chief: selección de oportunidad y propuesta buy/sell/hold | Implementado con Risk Manager obligatorio |
-| Chief Agent y coordinación de decisiones | Implementado inicialmente; ciclo aún proposal-only |
-| Risk Manager conectado obligatoriamente a órdenes | Pendiente |
+| Chief Agent y coordinación de decisiones | Implementado; ciclo ejecuta paper bajo gate de riesgo |
+| Risk Manager conectado obligatoriamente a órdenes paper | Implementado; solo crypto spot EUR |
 | Sniper y generación de propuestas | Pendiente |
-| Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada; ciclo bajo demanda, no programado |
-| Acciones/ETF y FX | Pendiente |
+| Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada; ciclo periódico cada 5 min al reanudar worker |
+| Acciones/ETF y FX | Pendiente; requiere broker/data adapters y validación |
+| DEX, wallets, blockchain y DeFi | Pendiente; no hay integración ni firma |
+| Futuros, opciones, margin y derivados | Deshabilitados; perfiles y límites específicos pendientes |
 | News/Sentiment con fuentes auditables | Pendiente |
-| Gestor 50/50 de beneficios y retiradas manuales | Pendiente |
+| Valoración a mercado, P/L realizado/no realizado | Implementado en cartera paper; depende de cotización fresca |
+| Reserva 50/50 de beneficio neto realizado | Implementada como cálculo de reserva; política provisional configurable pendiente |
+| Solicitud/aprobación/cancelación manual de retiradas paper | Implementada; limitada a reserva de beneficio realizado |
 | Dashboard | Pendiente |
 | Infraestructura gratuita/Oracle Always Free y despliegue 24/7 | Pendiente |
 | Live trading | No implementado; deshabilitado |
@@ -42,26 +51,32 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 
 ## Prioridad 2 — orquestación segura
 
-- [x] Implementar Chief con contratos tipados y decisiones auditables (sin ejecución automática).
+- [x] Implementar Chief con contratos tipados y decisiones auditables.
+- [x] Programar ciclos periódicos cada 5 minutos cuando el worker está habilitado.
 - [x] Integrar Scout, Charts y Strategy Research en una tarea de decisión bajo demanda; programación recurrente pendiente.
 - [ ] Implementar Sniper para generar propuestas con entrada, stop-loss, take-profit y tamaño.
-- [x] Conectar Risk Manager como puerta obligatoria para propuestas del Chief; la conexión con el motor paper queda pendiente.
+- [x] Conectar Risk Manager como puerta obligatoria para propuestas del Chief y órdenes paper.
 - [x] Añadir idempotencia de órdenes paper mediante `client_order_id` vinculado a la tarea.
 - [ ] Completar estados legales de órdenes, conciliación y recuperación frente a fallos en cada frontera de persistencia.
-- [ ] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
+- [x] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
 - [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
 
 ## Prioridad 3 — contabilidad y control del capital
 
-- [ ] Añadir valoración a mercado y separar coste base, valor actual, P/L realizado y no realizado.
-- [ ] Implementar reserva del 50% de beneficios netos realizados y reinversión del 50%.
-- [ ] Implementar solicitudes manuales de retirada de cualquier importe disponible, con confirmación del propietario.
+- [x] Añadir valoración a mercado y separar coste base, valor actual, P/L realizado y no realizado.
+- [x] Calcular reserva del 50% de beneficios netos realizados y reinversión del 50% (valor por defecto provisional).
+- [x] Implementar solicitudes manuales de retirada limitadas a la reserva de beneficios, con aprobación explícita del propietario.
 - [ ] Calcular mínimos y costes de retirada según proveedor; nunca conceder permisos de retirada a claves de trading.
 - [ ] Recalcular riesgo y capital viable tras una retirada.
 
 ## Prioridad 4 — cobertura y producto
 
-- [ ] Evaluar proveedor de acciones/ETF, horarios, permisos, datos y comisiones.
+- [ ] Implementar y validar un adaptador de broker de acciones/ETF, horarios, permisos, datos, mínimos y comisiones.
+- [ ] Generalizar el portfolio a claves `provider_id + instrument_id` y reconciliación multi-proveedor.
+- [ ] Implementar adaptadores FX, índices y commodities solo tras validar APIs y elegibilidad.
+- [ ] Diseñar wallet read-only y blockchain monitoring antes de añadir firma aislada; no usar seeds en agentes.
+- [ ] Implementar DEX swaps con simulación, gas, slippage, MEV y reconciliación antes de habilitar ejecución.
+- [ ] Mantener margin, futures, options y apalancamiento deshabilitados hasta completar sus perfiles y pruebas independientes.
 - [ ] Añadir FX con tipos y timestamps verificables antes de mezclar divisas.
 - [ ] Añadir News/Sentiment solo con atribución de fuente, frescura y calidad.
 - [ ] Crear dashboard responsive con cartera, posiciones, investigación, decisiones, auditoría y controles.
@@ -78,6 +93,8 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 ## Seguridad no negociable
 
 - Paper trading hasta completar pruebas y revisión separada de live execution.
+- Un provider solo se considera disponible si está registrado, sus capacidades están declaradas y se han probado; no inferir ejecución desde datos públicos.
+- Las capacidades no implementadas (balances, órdenes, cancelación, partial fills, reconciliación, withdrawals, signing) deben permanecer false.
 - Live trading deshabilitado por defecto y nunca activable por agentes o LLM.
 - Ningún agente puede cambiar sus propios límites de riesgo.
 - No incluir claves de exchange/broker en Git, logs ni frontend.

@@ -330,9 +330,17 @@ class AutonomousAgent:
                 self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
                 return result
 
-            portfolio = await asyncio.to_thread(self.portfolio.snapshot)
-            held_symbols = [position["symbol"] for position in portfolio.get("positions", [])]
+            unvalued_portfolio = await asyncio.to_thread(self.portfolio.snapshot)
+            held_symbols = [position["symbol"] for position in unvalued_portfolio.get("positions", [])]
             scan = await asyncio.to_thread(self.scout.scan, held_symbols)
+            valuation_prices = {}
+            for item in scan.get("analyses", []):
+                market = item.get("market", {})
+                symbol = str(market.get("symbol", "")).upper()
+                price = market.get("bid") or market.get("last")
+                if symbol in held_symbols and price is not None and float(price) > 0:
+                    valuation_prices[symbol] = float(price)
+            portfolio = await asyncio.to_thread(self.portfolio.snapshot, valuation_prices)
             decision = self.chief.decide(scan, portfolio)
             order = None
             execution = "no_order"

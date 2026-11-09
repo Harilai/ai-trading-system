@@ -2,14 +2,20 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from .config import settings
 from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
-from .market_data import CcxtMarketData, MarketDataError
+from .market_data import MarketDataError
+from .providers.ccxt_spot import CcxtSpotProvider
+from .providers.registry import ProviderRegistry
 from .scout import ScoutAgent
 from .strategy_research import StrategyResearchAgent
 from .chief import ChiefAgent
 from .portfolio import PaperPortfolio, PortfolioError
 
 app = FastAPI(title="AI Trading System", version="0.1.0", description="Paper trading only; live execution is not implemented.")
-market = CcxtMarketData(settings.exchange_id)
+market = ProviderRegistry()
+for configured_provider in settings.market_data_provider_ids.split(','):
+    provider_id = configured_provider.strip().lower()
+    if provider_id:
+        market.register(CcxtSpotProvider(provider_id))
 portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 
 class OrderRequest(BaseModel):
@@ -17,26 +23,66 @@ class OrderRequest(BaseModel):
     side: str
     quantity: float = Field(gt=0)
 
+@app.get("/api/providers")
+def providers():
+    return market.describe()
+
+
+@app.get("/api/risk-profiles")
+def risk_profiles():
+    from .risk_profiles import RISK_PROFILES
+    return {
+        name.value: {**profile, "controls": list(profile["controls"])}
+        for name, profile in RISK_PROFILES.items()
+    }
+
+
+@app.get("/api/markets")
+def markets():
+    instruments, failures = market.discover_markets()
+    return {
+        "discovered": len(instruments),
+        "instruments": [
+            {
+                "instrument_id": item.instrument_id,
+                "provider_id": item.provider_id,
+                "symbol": item.symbol,
+                "asset_class": item.asset_class.value,
+                "market_type": item.market_type.value,
+                "base": item.base,
+                "quote": item.quote,
+                "active": item.active,
+                "minimum_amount": item.min_amount,
+                "minimum_cost": item.min_cost,
+                "maker_fee": item.maker_fee,
+                "taker_fee": item.taker_fee,
+            }
+            for item in instruments
+        ],
+        "provider_failures": failures,
+    }
+
+
 @app.get("/api/health")
 def health():
     return {"status":"ok","mode":"paper","live_trading_enabled":False}
 
 @app.get("/api/market/{symbol:path}/ticker")
-def ticker(symbol: str):
-    try: return market.ticker(symbol.upper())
+def ticker(symbol: str, provider_id: str | None = None):
+    try: return market.ticker(symbol.upper(), provider_id)
     except MarketDataError as exc: raise HTTPException(502,str(exc)) from exc
 
 @app.get("/api/market/{symbol:path}/ohlcv")
-def candles(symbol: str, timeframe: str="1h", limit: int=Query(100,ge=30,le=500)):
+def candles(symbol: str, timeframe: str="1h", limit: int=Query(100,ge=30,le=500), provider_id: str | None = None):
     try:
-        rows=market.ohlcv(symbol.upper(),timeframe,limit)
+        rows=market.ohlcv(symbol.upper(),timeframe,limit,provider_id=provider_id)
         return {"symbol":symbol.upper(),"timeframe":timeframe,"candles":[{"timestamp":r[0],"open":r[1],"high":r[2],"low":r[3],"close":r[4],"volume":r[5]} for r in rows]}
     except MarketDataError as exc: raise HTTPException(502,str(exc)) from exc
 
 @app.get("/api/market/{symbol:path}/indicators")
-def indicators(symbol: str, timeframe: str="1h", limit: int=Query(100,ge=50,le=500)):
+def indicators(symbol: str, timeframe: str="1h", limit: int=Query(100,ge=50,le=500), provider_id: str | None = None):
     try:
-        rows=market.ohlcv(symbol.upper(),timeframe,limit)
+        rows=market.ohlcv(symbol.upper(),timeframe,limit,provider_id=provider_id)
         closes=[r[4] for r in rows]
         bars=[{"high":r[2],"low":r[3],"close":r[4]} for r in rows]
         return {"symbol":symbol.upper(),"timeframe":timeframe,"as_of_ms":rows[-1][0],
@@ -45,7 +91,17 @@ def indicators(symbol: str, timeframe: str="1h", limit: int=Query(100,ge=50,le=5
     except (MarketDataError,ValueError) as exc: raise HTTPException(502,str(exc)) from exc
 
 @app.get("/api/portfolio")
-def get_portfolio(): return portfolio.snapshot()
+def get_portfolio():
+    base = portfolio.snapshot()
+    prices = {}
+    for position in base["positions"]:
+        try:
+            quote = market.ticker(position["symbol"])
+            if quote["last"] is not None and not market.is_stale(quote, settings.max_data_age_seconds):
+                prices[position["symbol"]] = float(quote["last"])
+        except MarketDataError:
+            continue
+    return portfolio.snapshot(prices)
 
 @app.get("/api/trades")
 def trades(limit: int=Query(50,ge=1,le=200)): return portfolio.history(limit)

@@ -1,7 +1,9 @@
+import math
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock
+from uuid import uuid4
 
 
 class PortfolioError(ValueError):
@@ -16,7 +18,8 @@ class PaperPortfolio:
         with self.connect() as db:
             db.execute(
                 "CREATE TABLE IF NOT EXISTS account ("
-                "id INTEGER PRIMARY KEY CHECK(id=1), initial_cash REAL, cash REAL, realised_pnl REAL DEFAULT 0)"
+                "id INTEGER PRIMARY KEY CHECK(id=1), initial_cash REAL, cash REAL, "
+                "realised_pnl REAL DEFAULT 0, withdrawn_profit REAL DEFAULT 0)"
             )
             db.execute(
                 "CREATE TABLE IF NOT EXISTS positions ("
@@ -28,16 +31,23 @@ class PaperPortfolio:
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, side TEXT, quantity REAL, "
                 "price REAL, fee REAL, total REAL, created_at TEXT, client_order_id TEXT)"
             )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS withdrawal_requests ("
+                "id TEXT PRIMARY KEY, amount REAL NOT NULL, status TEXT NOT NULL, "
+                "profit_component REAL NOT NULL DEFAULT 0, requested_at TEXT NOT NULL, decided_at TEXT)"
+            )
             self._ensure_column(db, "positions", "strategy_id", "TEXT")
             self._ensure_column(db, "positions", "stop_loss", "REAL")
             self._ensure_column(db, "positions", "take_profit", "REAL")
             self._ensure_column(db, "trades", "client_order_id", "TEXT")
+            self._ensure_column(db, "account", "withdrawn_profit", "REAL NOT NULL DEFAULT 0")
             db.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_client_order_id "
                 "ON trades(client_order_id) WHERE client_order_id IS NOT NULL"
             )
             db.execute(
-                "INSERT OR IGNORE INTO account(id,initial_cash,cash,realised_pnl) VALUES(1,?,?,0)",
+                "INSERT OR IGNORE INTO account(id,initial_cash,cash,realised_pnl,withdrawn_profit) "
+                "VALUES(1,?,?,0,0)",
                 (initial_cash, initial_cash),
             )
 
@@ -52,25 +62,64 @@ class PaperPortfolio:
         db.row_factory = sqlite3.Row
         return db
 
-    def snapshot(self):
+    def snapshot(self, valuation_prices: dict[str, float] | None = None):
         with self.connect() as db:
             account = db.execute("SELECT * FROM account WHERE id=1").fetchone()
             positions = [
                 dict(row)
                 for row in db.execute("SELECT * FROM positions ORDER BY symbol")
             ]
-        invested_cost = sum(
-            position["quantity"] * position["average_price"]
-            for position in positions
+
+        cost_basis_value = 0.0
+        market_value = 0.0
+        unrealised_pnl = 0.0
+        valuation_complete = valuation_prices is not None or not positions
+        for position in positions:
+            symbol = position["symbol"]
+            cost_basis = float(position["average_price"])
+            quantity = float(position["quantity"])
+            cost_basis_value += quantity * cost_basis
+            current_price = None
+            if valuation_prices is not None:
+                supplied = valuation_prices.get(symbol)
+                if supplied is not None and math.isfinite(float(supplied)) and float(supplied) > 0:
+                    current_price = float(supplied)
+            if current_price is None:
+                valuation_complete = False
+                current_price = cost_basis
+            position_market_value = quantity * current_price
+            position_unrealised = (current_price - cost_basis) * quantity
+            market_value += position_market_value
+            unrealised_pnl += position_unrealised
+            position["market_price"] = current_price
+            position["market_value"] = position_market_value
+            position["unrealised_pnl"] = position_unrealised
+
+        cash = float(account["cash"])
+        net_realised_profit = max(
+            0.0,
+            float(account["realised_pnl"]) - float(account["withdrawn_profit"]),
         )
+        withdrawal_reserve = net_realised_profit * 0.5
+        reinvestment_reserve = net_realised_profit * 0.5
         return {
             "currency": "EUR",
             "initial_cash": account["initial_cash"],
-            "cash": account["cash"],
+            "cash": cash,
             "positions": positions,
-            "invested_value": invested_cost,
-            "equity": account["cash"] + invested_cost,
+            "invested_value": cost_basis_value,
+            "market_value": market_value,
+            "unrealised_pnl": unrealised_pnl,
+            "equity": cash + market_value,
+            "valuation_complete": valuation_complete,
+            "valuation_source": "market" if valuation_prices is not None and valuation_complete else "cost_basis_or_partial",
             "realised_pnl": account["realised_pnl"],
+            "net_realised_profit_available": net_realised_profit,
+            "withdrawn_profit": account["withdrawn_profit"],
+            "withdrawal_reserve": withdrawal_reserve,
+            "reinvestment_reserve": reinvestment_reserve,
+            "withdrawable_reserved_profit": min(cash, withdrawal_reserve),
+            "available_cash_for_manual_withdrawal": cash,
             "mode": "paper",
         }
 
@@ -159,10 +208,7 @@ class PaperPortfolio:
                 effective_target = take_profit if take_profit is not None else (
                     position["take_profit"] if position else None
                 )
-                db.execute(
-                    "UPDATE account SET cash=cash-? WHERE id=1",
-                    (total,),
-                )
+                db.execute("UPDATE account SET cash=cash-? WHERE id=1", (total,))
                 db.execute(
                     "INSERT INTO positions(symbol,quantity,average_price,strategy_id,stop_loss,take_profit) "
                     "VALUES(?,?,?,?,?,?) "
@@ -170,14 +216,7 @@ class PaperPortfolio:
                     "quantity=excluded.quantity, average_price=excluded.average_price, "
                     "strategy_id=excluded.strategy_id, stop_loss=excluded.stop_loss, "
                     "take_profit=excluded.take_profit",
-                    (
-                        symbol,
-                        new_quantity,
-                        average_cost,
-                        effective_strategy,
-                        effective_stop,
-                        effective_target,
-                    ),
+                    (symbol, new_quantity, average_cost, effective_strategy, effective_stop, effective_target),
                 )
             else:
                 if not position or quantity > position["quantity"] + 1e-12:
@@ -191,10 +230,7 @@ class PaperPortfolio:
                 if remaining <= 1e-12:
                     db.execute("DELETE FROM positions WHERE symbol=?", (symbol,))
                 else:
-                    db.execute(
-                        "UPDATE positions SET quantity=? WHERE symbol=?",
-                        (remaining, symbol),
-                    )
+                    db.execute("UPDATE positions SET quantity=? WHERE symbol=?", (remaining, symbol))
 
             stamp = datetime.now(timezone.utc).isoformat()
             cursor = db.execute(
@@ -215,6 +251,94 @@ class PaperPortfolio:
                 "mode": "paper",
                 "idempotent_replay": False,
             }
+
+    def request_withdrawal(self, amount: float) -> dict:
+        if not math.isfinite(float(amount)) or amount <= 0:
+            raise PortfolioError("Withdrawal amount must be a positive finite number")
+        request_id = str(uuid4())
+        stamp = datetime.now(timezone.utc).isoformat()
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            account = db.execute("SELECT cash, realised_pnl, withdrawn_profit FROM account WHERE id=1").fetchone()
+            realised_profit = max(0.0, float(account["realised_pnl"]) - float(account["withdrawn_profit"]))
+            withdrawable_reserve = min(float(account["cash"]), realised_profit * 0.5)
+            if amount > withdrawable_reserve + 1e-9:
+                raise PortfolioError("Withdrawal exceeds the 50% reserve of net realised profits; principal and unrealised gains are protected")
+            db.execute(
+                "INSERT INTO withdrawal_requests(id,amount,status,requested_at) VALUES(?,?,'pending',?)",
+                (request_id, float(amount), stamp),
+            )
+        return {"id": request_id, "amount": float(amount), "status": "pending", "requested_at": stamp}
+
+    def approve_withdrawal(self, request_id: str) -> dict:
+        stamp = datetime.now(timezone.utc).isoformat()
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            request = db.execute(
+                "SELECT * FROM withdrawal_requests WHERE id=?",
+                (request_id,),
+            ).fetchone()
+            if request is None:
+                raise PortfolioError("Withdrawal request not found")
+            if request["status"] != "pending":
+                raise PortfolioError("Withdrawal request is not pending")
+            account = db.execute("SELECT * FROM account WHERE id=1").fetchone()
+            amount = float(request["amount"])
+            if amount > account["cash"] + 1e-9:
+                raise PortfolioError("Available cash changed; withdrawal cannot be approved")
+            profit_available = max(
+                0.0,
+                float(account["realised_pnl"]) - float(account["withdrawn_profit"]),
+            )
+            withdrawable_reserve = min(float(account["cash"]), profit_available * 0.5)
+            if amount > withdrawable_reserve + 1e-9:
+                raise PortfolioError("Withdrawal exceeds the available profit reserve")
+            profit_component = amount
+            db.execute(
+                "UPDATE account SET cash=cash-?, withdrawn_profit=withdrawn_profit+? WHERE id=1",
+                (amount, profit_component),
+            )
+            db.execute(
+                "UPDATE withdrawal_requests SET status='approved', profit_component=?, decided_at=? WHERE id=?",
+                (profit_component, stamp, request_id),
+            )
+            result = dict(request)
+            result.update({
+                "status": "approved",
+                "profit_component": profit_component,
+                "decided_at": stamp,
+            })
+            return result
+
+    def cancel_withdrawal(self, request_id: str) -> dict:
+        stamp = datetime.now(timezone.utc).isoformat()
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            request = db.execute(
+                "SELECT * FROM withdrawal_requests WHERE id=?",
+                (request_id,),
+            ).fetchone()
+            if request is None:
+                raise PortfolioError("Withdrawal request not found")
+            if request["status"] != "pending":
+                raise PortfolioError("Only pending withdrawal requests can be cancelled")
+            db.execute(
+                "UPDATE withdrawal_requests SET status='cancelled', decided_at=? WHERE id=?",
+                (stamp, request_id),
+            )
+            result = dict(request)
+            result.update({"status": "cancelled", "decided_at": stamp})
+            return result
+
+    def withdrawal_history(self, limit: int = 50):
+        with self.connect() as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT * FROM withdrawal_requests ORDER BY requested_at DESC LIMIT ?",
+                    (limit,),
+                )
+            ]
 
     def history(self, limit=50):
         with self.connect() as db:

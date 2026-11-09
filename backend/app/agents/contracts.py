@@ -13,6 +13,9 @@ class MarketAnalysis(BaseModel):
 
 class TradeProposal(BaseModel):
     symbol: str
+    provider_id: str = "ccxt:kraken"
+    asset_class: Literal["crypto", "forex", "equity", "etf", "index", "commodity", "future", "option", "defi", "tokenized"] = "crypto"
+    market_type: Literal["spot", "margin", "futures", "options", "forex", "onchain"] = "spot"
     side: Literal["buy", "sell"]
     quantity: float = Field(gt=0)
     reference_price: float = Field(gt=0)
