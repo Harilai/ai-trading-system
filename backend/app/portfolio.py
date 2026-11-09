@@ -38,7 +38,7 @@ class PaperPortfolio:
                 "CREATE TABLE IF NOT EXISTS withdrawal_requests ("
                 "id TEXT PRIMARY KEY, amount REAL NOT NULL, status TEXT NOT NULL, "
                 "profit_component REAL NOT NULL DEFAULT 0, "
-                "principal_component REAL NOT NULL DEFAULT 0, requested_at TEXT NOT NULL, decided_at TEXT)"
+                "non_reserved_component REAL NOT NULL DEFAULT 0, requested_at TEXT NOT NULL, decided_at TEXT)"
             )
             self._migrate_positions(db)
             self._ensure_column(db, "trades", "client_order_id", "TEXT")
@@ -46,7 +46,7 @@ class PaperPortfolio:
             self._ensure_column(db, "trades", "instrument_id", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(db, "account", "withdrawn_profit", "REAL NOT NULL DEFAULT 0")
             self._ensure_column(
-                db, "withdrawal_requests", "principal_component", "REAL NOT NULL DEFAULT 0"
+                db, "withdrawal_requests", "non_reserved_component", "REAL NOT NULL DEFAULT 0"
             )
             db.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_client_order_id "
@@ -364,21 +364,21 @@ class PaperPortfolio:
                 total_realised_profit * 0.5 - float(account["withdrawn_profit"]),
             )
             profit_component = min(amount, withdrawal_reserve)
-            principal_component = amount - profit_component
+            non_reserved_component = amount - profit_component
             db.execute(
                 "UPDATE account SET cash=cash-?, withdrawn_profit=withdrawn_profit+? WHERE id=1",
                 (amount, profit_component),
             )
             db.execute(
                 "UPDATE withdrawal_requests SET status='approved', profit_component=?, "
-                "principal_component=?, decided_at=? WHERE id=?",
-                (profit_component, principal_component, stamp, request_id),
+                "non_reserved_component=?, decided_at=? WHERE id=?",
+                (profit_component, non_reserved_component, stamp, request_id),
             )
             result = dict(request)
             result.update({
                 "status": "approved",
                 "profit_component": profit_component,
-                "principal_component": principal_component,
+                "non_reserved_component": non_reserved_component,
                 "decided_at": stamp,
             })
             return result
