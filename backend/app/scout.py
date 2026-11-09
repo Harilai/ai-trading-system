@@ -20,6 +20,7 @@ class ScoutAgent:
         timeframe: str = "1h",
         candle_limit: int = 250,
         strategy_research: StrategyResearchAgent | None = None,
+        max_ticker_age_seconds: int = 60,
     ):
         if max_symbols < 1:
             raise ValueError("max_symbols must be positive")
@@ -29,14 +30,40 @@ class ScoutAgent:
         self.timeframe = timeframe
         self.candle_limit = candle_limit
         self.strategy_research = strategy_research or StrategyResearchAgent()
+        self.max_ticker_age_seconds = max_ticker_age_seconds
 
-    def scan(self) -> dict[str, Any]:
+    def scan(self, include_symbols: list[str] | None = None) -> dict[str, Any]:
+        rejected: list[dict[str, str]] = []
         candidates = self.market_data.discover_spot_symbols(
             quote="EUR",
             limit=self.max_symbols,
         )
+        known_symbols = {item["symbol"].upper() for item in candidates}
+        for symbol in include_symbols or []:
+            normalized = symbol.strip().upper()
+            if not normalized.endswith("/EUR") or normalized in known_symbols:
+                continue
+            try:
+                ticker = self.market_data.ticker(normalized)
+                if self.market_data.is_stale(ticker, self.max_ticker_age_seconds):
+                    continue
+                last = ticker.get("last")
+                if last is None or float(last) <= 0:
+                    continue
+                candidates.append({
+                    "symbol": normalized,
+                    "last": float(last),
+                    "bid": float(ticker.get("bid") or last),
+                    "ask": float(ticker.get("ask") or last),
+                    "spread_fraction": 0.0,
+                    "quote_volume_24h": 0.0,
+                    "ticker_timestamp_ms": int(ticker["timestamp"]),
+                    "included_open_position": True,
+                })
+                known_symbols.add(normalized)
+            except (MarketDataError, ValueError, TypeError, KeyError):
+                rejected.append({"symbol": normalized, "reason": "Unable to refresh held position ticker"})
         analyses: list[dict[str, Any]] = []
-        rejected: list[dict[str, str]] = []
 
         for candidate in candidates:
             symbol = candidate["symbol"]
