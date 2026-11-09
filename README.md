@@ -82,6 +82,36 @@ docker compose logs -f api
 
 El contenedor se ejecuta como usuario no privilegiado, con sistema de archivos raíz de solo lectura, capacidades Linux eliminadas y volumen persistente para SQLite. El puerto se publica solo en `127.0.0.1`; no queda expuesto directamente a Internet. Para administrar una instancia remota, usa un túnel SSH (`ssh -L 8000:127.0.0.1:8000 usuario@servidor`) o configura un reverse proxy TLS independiente y restringido.
 
+
+## Copias de seguridad y restauración SQLite
+
+La utilidad `app.backup` usa la API de backup online de SQLite, verifica `PRAGMA integrity_check` y escribe el destino de forma atómica. Incluye los commits del WAL. Haz copias de ambas bases: cartera/worker (`trading.db`) y estado/cuotas de Twelve Data (`twelve_data_state.sqlite3`).
+
+Desde la carpeta `backend`:
+
+```bash
+python -m app.backup backup --source ../data/trading.db --destination ../data/backups/trading.db
+python -m app.backup backup --source ../data/twelve_data_state.sqlite3 --destination ../data/backups/twelve_data_state.sqlite3
+```
+
+En Docker:
+
+```bash
+docker compose exec -T api python -m app.backup backup --source /app/data/trading.db --destination /app/data/backups/trading.db
+docker compose exec -T api python -m app.backup backup --source /app/data/twelve_data_state.sqlite3 --destination /app/data/backups/twelve_data_state.sqlite3
+```
+
+Para restaurar, detén primero la API para evitar escrituras concurrentes. La restauración valida el backup y crea automáticamente una copia de seguridad del fichero actual antes de sustituirlo:
+
+```bash
+docker compose stop api
+docker compose run --rm --no-deps api python -m app.backup restore --source /app/data/backups/trading.db --destination /app/data/trading.db
+docker compose run --rm --no-deps api python -m app.backup restore --source /app/data/backups/twelve_data_state.sqlite3 --destination /app/data/twelve_data_state.sqlite3
+docker compose up -d api
+```
+
+La utilidad es manual; no configura por sí sola una programación automática ni una copia fuera del volumen del servidor. Conserva periódicamente una copia externa y comprueba que puedes restaurarla.
+
 ## Endpoints principales
 
 - `GET /api/providers` — proveedores configurados y capability matrix. Twelve Data aparece si `TWELVE_DATA_API_KEY` está configurada.
