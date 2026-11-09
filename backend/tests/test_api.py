@@ -195,6 +195,8 @@ def test_agent_task_request_accepts_read_only_equity_research_kind():
     task = TaskRequest(kind="equity_research", payload={"max_instruments": 3})
     assert task.kind == "equity_research"
     assert task.payload["max_instruments"] == 3
+    backup_task = TaskRequest(kind="database_backup")
+    assert backup_task.kind == "database_backup"
 
 
 
