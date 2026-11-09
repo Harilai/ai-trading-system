@@ -2,20 +2,54 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 from .config import settings
 from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
-from .market_data import CcxtMarketData, MarketDataError
+from .market_data import MarketDataError
+from .providers.ccxt_spot import CcxtSpotProvider
+from .providers.registry import ProviderRegistry
 from .scout import ScoutAgent
 from .strategy_research import StrategyResearchAgent
 from .chief import ChiefAgent
 from .portfolio import PaperPortfolio, PortfolioError
 
 app = FastAPI(title="AI Trading System", version="0.1.0", description="Paper trading only; live execution is not implemented.")
-market = CcxtMarketData(settings.exchange_id)
+market = ProviderRegistry()
+market.register(CcxtSpotProvider(settings.exchange_id))
 portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 
 class OrderRequest(BaseModel):
     symbol: str = Field(min_length=3)
     side: str
     quantity: float = Field(gt=0)
+
+@app.get("/api/providers")
+def providers():
+    return market.describe()
+
+
+@app.get("/api/markets")
+def markets():
+    instruments, failures = market.discover_markets()
+    return {
+        "discovered": len(instruments),
+        "instruments": [
+            {
+                "instrument_id": item.instrument_id,
+                "provider_id": item.provider_id,
+                "symbol": item.symbol,
+                "asset_class": item.asset_class.value,
+                "market_type": item.market_type.value,
+                "base": item.base,
+                "quote": item.quote,
+                "active": item.active,
+                "minimum_amount": item.min_amount,
+                "minimum_cost": item.min_cost,
+                "maker_fee": item.maker_fee,
+                "taker_fee": item.taker_fee,
+            }
+            for item in instruments
+        ],
+        "provider_failures": failures,
+    }
+
 
 @app.get("/api/health")
 def health():
