@@ -72,3 +72,10 @@ def test_equity_research_endpoint_is_read_only_and_requires_configured_provider(
 def test_equity_research_endpoint_validates_scan_bounds():
     response = client.get("/api/research/equities?max_instruments=100")
     assert response.status_code == 422
+
+
+def test_agent_task_request_accepts_read_only_equity_research_kind():
+    from app.agent_api import TaskRequest
+    task = TaskRequest(kind="equity_research", payload={"max_instruments": 3})
+    assert task.kind == "equity_research"
+    assert task.payload["max_instruments"] == 3
