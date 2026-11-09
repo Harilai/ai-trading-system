@@ -218,10 +218,11 @@ class AutonomousStore:
 
 
 class AutonomousAgent:
-    """Persistent worker shell. Only safe, deterministic maintenance tasks execute in this phase."""
+    """Persistent worker for deterministic maintenance and market-analysis tasks."""
 
-    def __init__(self, store: AutonomousStore):
+    def __init__(self, store: AutonomousStore, scout=None):
         self.store = store
+        self.scout = scout
         self._task: asyncio.Task | None = None
         self._stopping = asyncio.Event()
 
@@ -260,5 +261,11 @@ class AutonomousAgent:
             state = self.store.state()
             result = {"agent_enabled": bool(state["enabled"]), "live_trading": False}
             self.store.remember("operational_observation", {"task_id": task["id"], **result})
+            return result
+        if task["kind"] == "market_scan":
+            if self.scout is None:
+                raise RuntimeError("Market scanner is not configured")
+            result = await asyncio.to_thread(self.scout.scan)
+            self.store.remember("market_scan", {"task_id": task["id"], **result}, validated=True)
             return result
         raise ValueError(f"Unsupported task kind in this phase: {task['kind']}")
