@@ -28,6 +28,7 @@ class VenueType(str, Enum):
 
 class MarketType(str, Enum):
     SPOT = "spot"
+    CASH_EQUITY = "cash_equity"
     MARGIN = "margin"
     FUTURES = "futures"
     OPTIONS = "options"
