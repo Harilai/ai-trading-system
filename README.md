@@ -10,6 +10,7 @@ La rama integrada contiene actualmente:
 - Capa de integración universal: contratos normalizados de proveedor, instrumentos, clases de activo, tipos de mercado y registro/capability matrix.
 - Adaptador inicial de datos públicos CEX crypto spot mediante CCXT (Kraken por defecto; lista configurable de proveedores CCXT).
 - Adaptador opcional de datos de acciones y ETF estadounidenses mediante Twelve Data Basic, activado únicamente al configurar una API key gratuita.
+- Pipeline separado de investigación de acciones/ETF con filtros de divisa, frescura, bid/ask y backtesting cronológico; endpoint manual de solo lectura `/api/research/equities`.
 - Descubrimiento y enrutamiento de datos por proveedor; endpoints `/api/providers`, `/api/markets` y `/api/risk-profiles`.
 - Indicadores EMA, SMA, RSI, MACD, Bollinger Bands y ATR.
 - Simulación de compras y ventas con comisiones y slippage configurables.
@@ -21,7 +22,7 @@ La rama integrada contiene actualmente:
 - Charts Agent determinista.
 - Strategy Research Agent con tres estrategias candidatas long-only (EMA 12/26, RSI(14) y Bollinger(20,2)), backtesting cronológico 70/30, ejecución simulada en la apertura de la vela siguiente y costes configurables.
 
-**Límite funcional actual:** el `decision_cycle` puede ejecutar compras/ventas paper solo cuando el Risk Manager aprueba la propuesta. La capa universal es una arquitectura extensible, no soporte universal ya operativo: actualmente solo está implementado el adaptador de datos públicos crypto spot vía CCXT. No hay adaptadores de ejecución para brokers, DEX, wallets, forex, índices, materias primas, futuros, opciones ni DeFi. Twelve Data aporta datos de acciones/ETF de EE. UU., pero no ejecución ni conexión con brokers; el ciclo autónomo de selección/órdenes sigue limitado a crypto spot EUR. La cartera paper ya identifica cada posición mediante `provider_id + instrument_id`, por lo que puede mantener el mismo símbolo en proveedores distintos. La migración SQLite conserva las posiciones antiguas asignándolas al proveedor histórico `ccxt:kraken`. No hay trading real ni permisos privados de proveedor.
+**Límite funcional actual:** el `decision_cycle` puede ejecutar compras/ventas paper solo cuando el Risk Manager aprueba la propuesta. La capa universal es una arquitectura extensible, no soporte universal ya operativo: actualmente solo está implementado el adaptador de datos públicos crypto spot vía CCXT. No hay adaptadores de ejecución para brokers, DEX, wallets, forex, índices, materias primas, futuros, opciones ni DeFi. Twelve Data aporta datos de acciones/ETF de EE. UU., pero no ejecución ni conexión con brokers; el ciclo autónomo de selección/órdenes sigue limitado a crypto spot EUR. La investigación de acciones/ETF se ejecuta manualmente y no crea propuestas ni órdenes. La cartera paper ya identifica cada posición mediante `provider_id + instrument_id`, por lo que puede mantener el mismo símbolo en proveedores distintos. La migración SQLite conserva las posiciones antiguas asignándolas al proveedor histórico `ccxt:kraken`. No hay trading real ni permisos privados de proveedor.
 
 ## Capital y divisa
 
@@ -76,6 +77,7 @@ docker compose logs -f api
 
 - `GET /api/providers` — proveedores configurados y capability matrix. Twelve Data aparece si `TWELVE_DATA_API_KEY` está configurada.
 - `GET /api/markets` — puede incluir el catálogo de acciones/ETF de EE. UU. de Twelve Data.
+- `GET /api/research/equities?max_instruments=5&timeframe=1day` — investigación manual de acciones/ETF; requiere `TWELVE_DATA_API_KEY`, está limitada a 1–10 instrumentos y nunca ejecuta operaciones.
 - `GET /api/markets` — instrumentos detectados y restricciones conocidas.
 - `GET /api/risk-profiles` — perfiles de riesgo y estado habilitado/deshabilitado.
 - `GET /api/health`
