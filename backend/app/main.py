@@ -12,7 +12,10 @@ from .portfolio import PaperPortfolio, PortfolioError
 
 app = FastAPI(title="AI Trading System", version="0.1.0", description="Paper trading only; live execution is not implemented.")
 market = ProviderRegistry()
-market.register(CcxtSpotProvider(settings.exchange_id))
+for configured_provider in settings.market_data_provider_ids.split(','):
+    provider_id = configured_provider.strip().lower()
+    if provider_id:
+        market.register(CcxtSpotProvider(provider_id))
 portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 
 class OrderRequest(BaseModel):
