@@ -168,3 +168,82 @@ def test_pending_withdrawal_can_be_cancelled_once(portfolio):
     assert cancelled["status"] == "cancelled"
     with pytest.raises(PortfolioError, match="not pending"):
         portfolio.approve_withdrawal(request["id"])
+
+
+def test_same_symbol_from_two_providers_has_independent_positions(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "multi-provider.db"), 100)
+    portfolio.execute(
+        "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
+        provider_id="ccxt:kraken",
+        instrument_id="ccxt:kraken:spot:BTC/EUR",
+    )
+    portfolio.execute(
+        "BTC/EUR", "buy", 0.001, 12000, 0.001, 0, 1, 1,
+        provider_id="ccxt:coinbase",
+        instrument_id="ccxt:coinbase:spot:BTC/EUR",
+    )
+    positions = portfolio.snapshot()["positions"]
+    assert len(positions) == 2
+    assert {p["provider_id"] for p in positions} == {"ccxt:kraken", "ccxt:coinbase"}
+    assert {p["average_price"] for p in positions} == pytest.approx({10010, 12012})
+
+
+def test_sell_only_reduces_the_matching_provider_instrument(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "multi-provider-sell.db"), 100)
+    portfolio.execute(
+        "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
+        provider_id="ccxt:kraken",
+        instrument_id="ccxt:kraken:spot:BTC/EUR",
+    )
+    portfolio.execute(
+        "BTC/EUR", "buy", 0.001, 12000, 0.001, 0, 1, 1,
+        provider_id="ccxt:coinbase",
+        instrument_id="ccxt:coinbase:spot:BTC/EUR",
+    )
+    portfolio.execute(
+        "BTC/EUR", "sell", 0.001, 11000, 0.001, 0, 1, 1,
+        provider_id="ccxt:kraken",
+        instrument_id="ccxt:kraken:spot:BTC/EUR",
+    )
+    positions = portfolio.snapshot()["positions"]
+    assert len(positions) == 1
+    assert positions[0]["provider_id"] == "ccxt:coinbase"
+    assert positions[0]["average_price"] == pytest.approx(12012)
+
+
+def test_market_valuation_uses_provider_instrument_key_without_symbol_collision(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "multi-provider-valuation.db"), 100)
+    portfolio.execute(
+        "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
+        provider_id="ccxt:kraken",
+        instrument_id="ccxt:kraken:spot:BTC/EUR",
+    )
+    portfolio.execute(
+        "BTC/EUR", "buy", 0.001, 12000, 0.001, 0, 1, 1,
+        provider_id="ccxt:coinbase",
+        instrument_id="ccxt:coinbase:spot:BTC/EUR",
+    )
+    snapshot = portfolio.snapshot({
+        "ccxt:kraken:spot:BTC/EUR": 11000,
+        "ccxt:coinbase:spot:BTC/EUR": 13000,
+    })
+    assert snapshot["valuation_complete"] is True
+    assert snapshot["market_value"] == pytest.approx(24)
+    assert snapshot["unrealised_pnl"] == pytest.approx(1.978)
+
+
+def test_legacy_position_migrates_to_default_ccxt_provider(tmp_path):
+    path = str(tmp_path / "legacy-position.db")
+    import sqlite3
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE positions (symbol TEXT PRIMARY KEY, quantity REAL, average_price REAL)")
+        db.execute("INSERT INTO positions VALUES('BTC/EUR', 0.001, 10010)")
+        db.execute("CREATE TABLE trades (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, side TEXT, quantity REAL, price REAL, fee REAL, total REAL, created_at TEXT)")
+        db.execute("CREATE TABLE account (id INTEGER PRIMARY KEY CHECK(id=1), initial_cash REAL, cash REAL, realised_pnl REAL DEFAULT 0)")
+        db.execute("INSERT INTO account VALUES(1, 20, 10, 0)")
+    portfolio = PaperPortfolio(path, 20)
+    position = portfolio.snapshot()["positions"][0]
+    assert position["provider_id"] == "ccxt:kraken"
+    assert position["instrument_id"] == "ccxt:kraken:spot:BTC/EUR"
+    assert position["symbol"] == "BTC/EUR"
+    assert portfolio.snapshot()["cash"] == pytest.approx(10)
