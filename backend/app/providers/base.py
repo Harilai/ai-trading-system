@@ -113,3 +113,35 @@ class ExecutionProvider(Protocol):
     def get_balances(self) -> dict: ...
     def get_positions(self) -> list[dict]: ...
     def reconcile(self) -> dict: ...
+
+
+@dataclass(frozen=True)
+class WalletBalance:
+    chain_id: str
+    address: str
+    asset: str
+    quantity: float
+    token_address: str | None = None
+    block_number: int | None = None
+
+
+@runtime_checkable
+class ReadOnlyWalletProvider(Protocol):
+    """Public-address access only; never accepts seed phrases or private keys."""
+
+    provider_id: str
+
+    def get_public_balances(self, address: str) -> list[WalletBalance]: ...
+    def discover_tokens(self, address: str) -> list[dict[str, Any]]: ...
+    def transactions(self, address: str, limit: int = 100) -> list[dict[str, Any]]: ...
+    def estimate_gas(self, transaction: dict[str, Any]) -> dict[str, Any]: ...
+    def simulate_transaction(self, transaction: dict[str, Any]) -> dict[str, Any]: ...
+
+
+@runtime_checkable
+class IsolatedTransactionSigner(Protocol):
+    """Signing must live outside AI agents and require an owner authorization."""
+
+    signer_id: str
+
+    def sign_transaction(self, transaction: dict[str, Any], owner_authorization_id: str) -> str: ...
