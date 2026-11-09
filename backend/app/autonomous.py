@@ -30,6 +30,7 @@ class AutonomousStore:
                 last_heartbeat TEXT,
                 last_decision_enqueued_at TEXT,
                 last_equity_research_enqueued_at TEXT,
+                last_database_backup_enqueued_at TEXT,
                 updated_at TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS agent_tasks (
@@ -68,6 +69,8 @@ class AutonomousStore:
                 db.execute('ALTER TABLE agent_state ADD COLUMN last_decision_enqueued_at TEXT')
             if 'last_equity_research_enqueued_at' not in columns:
                 db.execute('ALTER TABLE agent_state ADD COLUMN last_equity_research_enqueued_at TEXT')
+            if 'last_database_backup_enqueued_at' not in columns:
+                db.execute('ALTER TABLE agent_state ADD COLUMN last_database_backup_enqueued_at TEXT')
         # Recover expired work on startup as well as during the worker loop.
         self.recover_expired_tasks()
 
@@ -168,6 +171,56 @@ class AutonomousStore:
             )
         self.audit("scheduled_equity_research_enqueued", {"task_id": task_id})
         return {"id": task_id, "kind": "equity_research", "status": "pending", "due_at": now_text}
+
+    def schedule_database_backup(
+        self,
+        interval_seconds: int = 86400,
+        retention_days: int = 7,
+    ) -> dict[str, Any] | None:
+        """Schedule backups even while trading is paused; never overlap backup tasks."""
+        if interval_seconds < 3600:
+            raise ValueError("Database backup interval must be at least 3600 seconds")
+        if not 1 <= retention_days <= 90:
+            raise ValueError("Backup retention must be between 1 and 90 days")
+        now = utcnow()
+        now_text = now.isoformat()
+        task_id = str(uuid4())
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            state = db.execute(
+                "SELECT last_database_backup_enqueued_at FROM agent_state WHERE id=1"
+            ).fetchone()
+            active = db.execute(
+                "SELECT id FROM agent_tasks WHERE kind='database_backup' "
+                "AND status IN ('pending','running') LIMIT 1"
+            ).fetchone()
+            if active:
+                return None
+            last = state["last_database_backup_enqueued_at"]
+            if last and now - datetime.fromisoformat(last) < timedelta(seconds=interval_seconds):
+                return None
+            db.execute(
+                "INSERT INTO agent_tasks(id,kind,payload,status,due_at,created_at,updated_at) "
+                "VALUES(?,'database_backup',?,'pending',?,?,?)",
+                (
+                    task_id,
+                    json.dumps({"trigger": "scheduler", "retention_days": retention_days}),
+                    now_text,
+                    now_text,
+                    now_text,
+                ),
+            )
+            db.execute(
+                "UPDATE agent_state SET last_database_backup_enqueued_at=?, updated_at=? WHERE id=1",
+                (now_text, now_text),
+            )
+        self.audit("scheduled_database_backup_enqueued", {"task_id": task_id})
+        return {
+            "id": task_id,
+            "kind": "database_backup",
+            "status": "pending",
+            "due_at": now_text,
+        }
 
     def state(self) -> dict[str, Any]:
         with self.connect() as db:
