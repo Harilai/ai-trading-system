@@ -68,11 +68,20 @@ class ScoutAgent:
         for candidate in candidates:
             symbol = candidate["symbol"]
             try:
-                rows = self.market_data.ohlcv(
-                    symbol,
-                    timeframe=self.timeframe,
-                    limit=self.candle_limit,
-                )
+                provider_id = candidate.get("provider_id")
+                try:
+                    rows = self.market_data.ohlcv(
+                        symbol,
+                        timeframe=self.timeframe,
+                        limit=self.candle_limit,
+                        provider_id=provider_id,
+                    )
+                except TypeError:
+                    rows = self.market_data.ohlcv(
+                        symbol,
+                        timeframe=self.timeframe,
+                        limit=self.candle_limit,
+                    )
                 candles = [
                     {
                         "timestamp": row[0],
@@ -104,7 +113,7 @@ class ScoutAgent:
                 rejected.append({"symbol": symbol, "reason": str(exc)})
 
         return {
-            "universe": "active_spot_EUR",
+            "universe": "configured_provider_crypto_spot_EUR",
             "timeframe": self.timeframe,
             "discovered": len(candidates),
             "analysed": len(analyses),
