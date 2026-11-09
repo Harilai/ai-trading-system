@@ -142,6 +142,12 @@ class ChiefAgent:
                 risk=risk,
             )
 
+        if positions and not portfolio.get("valuation_complete", False):
+            return ChiefDecision(
+                rationale="Market valuation is incomplete for one or more open positions; no new entry is allowed",
+                evidence={"open_positions": list(positions)},
+            )
+
         opportunities = []
         for item in scan.get("analyses", []):
             research = item.get("strategy_research", {})
