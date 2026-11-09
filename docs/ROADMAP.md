@@ -47,7 +47,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 
 ## Prioridad 1 — calidad de datos y estrategia
 
-- [ ] Ampliar el universo de mercado sin exceder límites de rate ni filtros de liquidez.
+- [x] Rotar de forma persistente el muestreo estratificado del catálogo de acciones/ETF para cubrir progresivamente el universo sin exceder cuotas.
 - [ ] Añadir pruebas de descubrimiento con tickers ausentes, mercados inactivos, spreads extremos y fallos de proveedor.
 - [x] Rechazar OHLCV no finito, volúmenes negativos, timestamps duplicados/desordenados y velas OHLC inconsistentes antes del backtest.\n- [x] Verificar SMA, EMA, RSI, MACD, Bollinger y ATR con series de referencia; rechazar valores no finitos y parámetros inválidos.
 - [x] Añadir benchmark buy-and-hold OOS con la misma fracción de exposición y retorno excedente por estrategia.\n- [x] Añadir escenarios de sensibilidad de comisiones y slippage a 1,5x y 2x para estrategia y benchmark; mostrar el impacto sin alterar los gates de promoción.
