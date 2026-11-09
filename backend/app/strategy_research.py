@@ -166,6 +166,13 @@ class StrategyResearchAgent:
             normalized.append(row)
 
         split = int(len(normalized) * 0.7)
+        benchmark = self._backtest(
+            normalized,
+            lambda closes, index, in_position: True,
+            0,
+            split,
+            len(normalized),
+        )
         results = []
         walk_forward_boundaries = [
             (int(len(normalized) * 0.4), int(len(normalized) * 0.6)),
@@ -215,6 +222,8 @@ class StrategyResearchAgent:
                     "description": description,
                     "in_sample": in_sample,
                     "out_of_sample": out_sample,
+                    "benchmark_excess_return": out_sample["net_return"] - benchmark["net_return"],
+                    "beats_buy_and_hold": out_sample["net_return"] > benchmark["net_return"],
                     "walk_forward": walk_forward,
                     "eligible": eligible,
                     "score": score,
@@ -230,6 +239,11 @@ class StrategyResearchAgent:
                 "fee_rate_per_side": self.fee_rate,
                 "slippage_rate_per_side": self.slippage_rate,
                 "max_position_fraction": self.max_position_fraction,
+            },
+            "benchmark": {
+                "name": "buy_and_hold",
+                "out_of_sample": benchmark,
+                "position_fraction": self.max_position_fraction,
             },
             "candidate_count": len(results),
             "eligible_count": len(eligible_results),
