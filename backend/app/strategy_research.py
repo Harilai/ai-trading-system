@@ -90,6 +90,17 @@ class StrategyResearchAgent:
         self.max_position_fraction = max_position_fraction
 
     @staticmethod
+    def _passes_cost_stress(cost_sensitivity: dict, multiplier: str = "1.5") -> bool:
+        scenario = cost_sensitivity.get(multiplier)
+        if not isinstance(scenario, dict) or not scenario.get("available"):
+            return False
+        stressed_result = scenario.get("out_of_sample") or {}
+        return (
+            stressed_result.get("net_return", 0.0) > 0
+            and scenario.get("beats_buy_and_hold") is True
+        )
+
+    @staticmethod
     def _specs():
         return [
             ("ema_12_26", "Long-only EMA 12/26 trend filter", _ema_signal, 26),
@@ -318,6 +329,8 @@ class StrategyResearchAgent:
                 validation_failures.append("walk_forward_drawdown_exceeded")
             if benchmark_excess_return <= 0:
                 validation_failures.append("does_not_beat_buy_and_hold")
+            if not self._passes_cost_stress(cost_sensitivity, "1.5"):
+                validation_failures.append("fails_1_5x_cost_stress")
             eligible = not validation_failures
             score = (
                 benchmark_excess_return
@@ -360,6 +373,7 @@ class StrategyResearchAgent:
                 "minimum_positive_walk_forward_windows": self.minimum_positive_walk_forward_windows,
                 "maximum_drawdown": self.maximum_oos_drawdown,
                 "must_beat_buy_and_hold": True,
+                "must_remain_profitable_and_beat_buy_and_hold_at_1_5x_costs": True,
             },
             "benchmark": {
                 "name": "buy_and_hold",
