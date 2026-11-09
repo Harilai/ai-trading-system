@@ -63,7 +63,7 @@ class StrategyResearchAgent:
         slippage_rate: float = 0.0005,
         minimum_oos_trades: int = 3,
         minimum_walk_forward_trades: int = 1,
-        minimum_walk_forward_bars: int = 60,
+        minimum_walk_forward_bars: int = 40,
         minimum_positive_walk_forward_windows: int = 2,
         maximum_oos_drawdown: float = 0.25,
         max_position_fraction: float = 0.25,
