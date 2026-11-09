@@ -216,3 +216,48 @@ def test_cost_stress_is_declared_as_a_mandatory_promotion_gate():
             and stress["out_of_sample"]["net_return"] > 0
             and stress["beats_buy_and_hold"]
         )
+
+
+
+def test_market_regime_detects_directional_trend_and_range():
+    upward = [100.0 + index for index in range(120)]
+    downward = list(reversed(upward))
+    ranging = [100.0 + 5.0 * math.sin(index * math.pi / 5) for index in range(120)]
+
+    up_result = StrategyResearchAgent().research(candles_from_closes(upward))
+    down_result = StrategyResearchAgent().research(candles_from_closes(downward))
+    range_result = StrategyResearchAgent().research(candles_from_closes(ranging))
+
+    assert up_result["market_regime"]["structure"] == "trending_up"
+    assert down_result["market_regime"]["structure"] == "trending_down"
+    assert range_result["market_regime"]["structure"] == "range"
+    assert all(
+        result["market_regime"]["status"] == "available"
+        for result in (up_result, down_result, range_result)
+    )
+
+
+def test_market_regime_volatility_percentile_is_tie_aware_and_detects_spikes():
+    stable = [100.0 * (1.001 ** index) for index in range(140)]
+    stable_result = StrategyResearchAgent().research(candles_from_closes(stable))
+    assert stable_result["market_regime"]["volatility"] == "low"
+    assert stable_result["market_regime"]["volatility_percentile"] <= 0.8
+
+    volatile = list(stable)
+    price = volatile[-1]
+    for index in range(20):
+        price *= 1.08 if index % 2 == 0 else 0.92
+        volatile.append(price)
+    volatile_result = StrategyResearchAgent().research(candles_from_closes(volatile))
+    assert volatile_result["market_regime"]["volatility"] == "high"
+    assert volatile_result["market_regime"]["volatility_percentile"] >= 0.8
+
+
+def test_market_regime_is_diagnostic_and_does_not_bypass_promotion_gates():
+    closes = [100.0 + index * 0.01 for index in range(180)]
+    result = StrategyResearchAgent().research(candles_from_closes(closes))
+
+    assert result["market_regime"]["status"] == "available"
+    assert "market_regime" not in result["promotion_gates"]
+    assert result["execution"] == "research_only"
+    assert result["eligible_count"] == 0
