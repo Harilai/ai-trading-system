@@ -101,7 +101,7 @@ El contenedor se ejecuta como usuario no privilegiado, con sistema de archivos r
 - `POST /api/orders` — solo paper; exige `X-Agent-Token` válido (`AGENT_CONTROL_TOKEN`), aprobación del Risk Manager y stop-loss explícito en compras; admite `provider_id`, `instrument_id`, `strategy_id` y niveles protectores.
 - `GET /api/agent/status` — requiere `X-Agent-Token`.
 - `POST /api/agent/resume`, `/pause`, `/emergency-stop`, `/reset-emergency-stop`.
-- `POST /api/agent/tasks` — acepta `health_check`, `market_scan`, `equity_research` (solo lectura) y `decision_cycle`, y `database_backup`; este último crea un backup SQLite verificado sin habilitar trading.
+- `POST /api/agent/tasks` — acepta `health_check`, `market_scan`, `equity_research` (solo lectura), `decision_cycle` y `database_backup`; este último crea un backup SQLite verificado sin habilitar trading.
 
 ## Supervisión del worker
 
