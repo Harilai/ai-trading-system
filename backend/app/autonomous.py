@@ -339,6 +339,7 @@ class AutonomousStore:
                 "walk_forward": candidate.get("walk_forward"),
                 "cost_sensitivity": candidate.get("cost_sensitivity"),
                 "score": candidate.get("score"),
+                "market_regime": research.get("market_regime"),
             }
             rows.append((
                 task_id, provider_id, instrument_id, symbol, str(timeframe or "unknown"),
