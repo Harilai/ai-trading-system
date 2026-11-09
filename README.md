@@ -17,7 +17,7 @@ La rama integrada contiene actualmente:
 - Charts Agent determinista.
 - Strategy Research Agent con tres estrategias candidatas long-only (EMA 12/26, RSI(14) y Bollinger(20,2)), backtesting cronológico 70/30, ejecución simulada en la apertura de la vela siguiente y costes configurables.
 
-**Límite funcional actual:** el sistema ya puede producir y auditar propuestas buy/sell/hold con aprobación o rechazo del Risk Manager, pero el `decision_cycle` es todavía proposal-only: no ejecuta automáticamente órdenes paper ni gestiona stops/posiciones. Tampoco existe aún un ciclo de programación continua. No hay trading real, acciones/ETF, dashboard ni despliegue 24/7.
+**Límite funcional actual:** el `decision_cycle` ya puede ejecutar compras/ventas paper solo cuando el Risk Manager aprueba la propuesta. Las posiciones conservan estrategia, stop-loss y take-profit; el worker vuelve a incluir posiciones abiertas para comprobar salidas y utiliza un identificador idempotente para evitar órdenes duplicadas tras reinicios. El ciclo todavía se encola bajo demanda: no hay programación periódica, dashboard, acciones/ETF ni trading real. No hay trading real, acciones/ETF, dashboard ni despliegue 24/7.
 
 ## Capital y divisa
 
@@ -79,7 +79,7 @@ docker compose logs -f api
 - `POST /api/orders` — solo paper.
 - `GET /api/agent/status` — requiere `X-Agent-Token`.
 - `POST /api/agent/resume`, `/pause`, `/emergency-stop`, `/reset-emergency-stop`.
-- `POST /api/agent/tasks` — acepta `health_check`, `market_scan` y `decision_cycle`.
+- `POST /api/agent/tasks` — acepta `health_check`, `market_scan` y `decision_cycle`; este último puede ejecutar una orden paper aprobada.
 
 ## Supervisión del worker
 
