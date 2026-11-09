@@ -419,3 +419,49 @@ def test_worker_rejects_non_positive_poll_interval(tmp_path):
     store = AutonomousStore(str(tmp_path / "worker-config.db"))
     with pytest.raises(ValueError, match="poll_interval_seconds"):
         AutonomousAgent(store, poll_interval_seconds=0)
+
+
+
+def test_database_backup_is_scheduled_while_agent_is_paused(tmp_path):
+    store = AutonomousStore(str(tmp_path / "backup-scheduler.db"))
+
+    scheduled = store.schedule_database_backup(interval_seconds=3600, retention_days=7)
+
+    assert scheduled["kind"] == "database_backup"
+    assert store.state()["enabled"] == 0
+    assert store.claim_due_task(allowed_kinds=["health_check"]) is None
+    task = store.claim_due_task(allowed_kinds=["database_backup"])
+    assert task["id"] == scheduled["id"]
+    assert task["payload"]["retention_days"] == 7
+    assert store.schedule_database_backup(interval_seconds=3600, retention_days=7) is None
+
+
+def test_database_backup_scheduler_validates_interval_and_retention(tmp_path):
+    store = AutonomousStore(str(tmp_path / "backup-validation.db"))
+    with pytest.raises(ValueError, match="at least 3600"):
+        store.schedule_database_backup(interval_seconds=60)
+    with pytest.raises(ValueError, match="retention"):
+        store.schedule_database_backup(retention_days=0)
+
+
+def test_worker_executes_database_backup_task(tmp_path):
+    import asyncio
+    import sqlite3
+
+    database = str(tmp_path / "worker-backup.db")
+    store = AutonomousStore(database)
+    with sqlite3.connect(database) as db:
+        db.execute("CREATE TABLE backup_probe (value TEXT)")
+        db.execute("INSERT INTO backup_probe VALUES('persisted')")
+
+    worker = AutonomousAgent(store)
+    result = asyncio.run(worker._execute({
+        "id": "backup-test-task",
+        "kind": "database_backup",
+        "payload": {"retention_days": 7},
+    }))
+
+    assert result["integrity"] == "ok"
+    assert result["size_bytes"] > 0
+    with sqlite3.connect(result["path"]) as db:
+        assert db.execute("SELECT value FROM backup_probe").fetchone()[0] == "persisted"
