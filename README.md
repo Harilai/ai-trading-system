@@ -20,7 +20,7 @@ La rama integrada contiene actualmente:
 - API de supervisión autenticada: estado, pausa, reanudación, parada de emergencia y encolado de tareas.
 - Scout que descubre mercados spot cotizados en EUR, filtra por liquidez, spread y frescura de ticker.
 - Charts Agent determinista.
-- Strategy Research Agent con tres estrategias candidatas long-only (EMA 12/26, RSI(14) y Bollinger(20,2)), backtesting cronológico 70/30, validación de OHLCV finito y cronológico, benchmark buy-and-hold OOS con la misma exposición, tres ventanas walk-forward con gates de promoción, escenarios de estrés de comisiones/slippage a 1,5x y 2x, ejecución simulada en la apertura de la vela siguiente y costes configurables. La selección todavía usa el criterio OOS 70/30; las ventanas walk-forward se muestran como evidencia adicional y no son aún un gate de promoción.
+- Strategy Research Agent con tres estrategias candidatas long-only (EMA 12/26, RSI(14) y Bollinger(20,2)), backtesting cronológico 70/30, validación de OHLCV finito y cronológico, benchmark buy-and-hold OOS con la misma exposición, tres ventanas walk-forward con gates de promoción, escenarios de estrés de comisiones/slippage a 1,5x y 2x, ejecución simulada en la apertura de la vela siguiente y costes configurables. La promoción exige al menos 3 operaciones OOS, tres ventanas walk-forward con al menos 40 velas evaluables y una operación por ventana, dos ventanas positivas como mínimo, retorno medio walk-forward positivo, drawdown dentro del límite y superar buy-and-hold neto de costes. Los escenarios de estrés 1,5x y 2x se reportan como diagnóstico adicional.
 
 **Límite funcional actual:** el `decision_cycle` puede ejecutar compras/ventas paper solo cuando el Risk Manager aprueba la propuesta. La capa universal es una arquitectura extensible, no soporte universal ya operativo: actualmente solo está implementado el adaptador de datos públicos crypto spot vía CCXT. No hay adaptadores de ejecución para brokers, DEX, wallets, forex, índices, materias primas, futuros, opciones ni DeFi. Twelve Data aporta datos de acciones/ETF de EE. UU., pero no ejecución ni conexión con brokers; el ciclo autónomo de selección/órdenes sigue limitado a crypto spot EUR. La investigación de acciones/ETF también puede ejecutarse como tarea autónoma de solo lectura cada 6 horas por defecto cuando el worker está habilitado y Twelve Data está configurado; no crea propuestas ni órdenes. La cartera paper ya identifica cada posición mediante `provider_id + instrument_id`, por lo que puede mantener el mismo símbolo en proveedores distintos. La migración SQLite conserva las posiciones antiguas asignándolas al proveedor histórico `ccxt:kraken`. No hay trading real ni permisos privados de proveedor.
 
@@ -75,10 +75,12 @@ La integración conserva su caché y estado de cuota en `data/twelve_data_state.
 
 ```bash
 cp .env.example .env
-# Edita .env y añade TWELVE_DATA_API_KEY
+# Configura AGENT_CONTROL_TOKEN y, opcionalmente, TWELVE_DATA_API_KEY
 docker compose up --build -d
 docker compose logs -f api
 ```
+
+El contenedor se ejecuta como usuario no privilegiado, con sistema de archivos raíz de solo lectura, capacidades Linux eliminadas y volumen persistente para SQLite. El puerto se publica solo en `127.0.0.1`; no queda expuesto directamente a Internet. Para administrar una instancia remota, usa un túnel SSH (`ssh -L 8000:127.0.0.1:8000 usuario@servidor`) o configura un reverse proxy TLS independiente y restringido.
 
 ## Endpoints principales
 
@@ -94,7 +96,7 @@ docker compose logs -f api
 - `GET /api/portfolio`
 - `GET /api/trades`
 - `GET /api/agent/withdrawals` — requiere `X-Agent-Token`.
-- `POST /api/agent/withdrawals` — solicita retirada paper de la reserva de beneficio.
+- `POST /api/agent/withdrawals` — solicita retirada paper de cualquier efectivo disponible; se desglosa la parte de beneficio reservado y la parte no reservada.
 - `POST /api/agent/withdrawals/{id}/approve` y `/cancel` — aprobación/cancelación manual con token.
 - `POST /api/orders` — solo paper; exige `X-Agent-Token` válido (`AGENT_CONTROL_TOKEN`), aprobación del Risk Manager y stop-loss explícito en compras; admite `provider_id`, `instrument_id`, `strategy_id` y niveles protectores.
 - `GET /api/agent/status` — requiere `X-Agent-Token`.
@@ -103,7 +105,7 @@ docker compose logs -f api
 
 ## Supervisión del worker
 
-Configura un secreto largo y aleatorio en `.env` como `AGENT_CONTROL_TOKEN`. Los endpoints de control y el endpoint manual de órdenes paper requieren ese valor en la cabecera `X-Agent-Token`. Si no está configurado, permanecen deshabilitados y devuelven 503. Las compras manuales necesitan stop-loss y pasan por el mismo Risk Manager determinista que las decisiones autónomas.
+Configura un secreto largo y aleatorio en `.env` como `AGENT_CONTROL_TOKEN` y ajusta `MAX_STOP_DISTANCE_FRACTION` si procede (por defecto 0,05). Los endpoints de control y el endpoint manual de órdenes paper requieren ese valor en la cabecera `X-Agent-Token`. Si no está configurado, permanecen deshabilitados y devuelven 503. Las compras manuales necesitan stop-loss y pasan por el mismo Risk Manager determinista que las decisiones autónomas.
 
 El worker se inicia pausado. Al reanudarlo explícitamente, programa un `decision_cycle` cada 5 minutos por defecto (`DECISION_CYCLE_INTERVAL_SECONDS`), sin solapar tareas pendientes/en ejecución. Si Twelve Data está configurado, también programa una tarea `equity_research` independiente cada 6 horas (`EQUITY_RESEARCH_INTERVAL_SECONDS`, mínimo 1 hora). Esta tarea muestrea el catálogo, analiza acciones/ETF y persiste el resultado en la memoria/auditoría del agente; nunca genera órdenes. La cuota de Twelve Data se protege con límites persistentes. Cada ciclo puede ejecutar órdenes paper si el Chief genera una propuesta y el Risk Manager la aprueba. También se pueden encolar análisis manuales. Las salidas stop-loss/take-profit se comprueban en cada ciclo, no continuamente entre ciclos. La contabilidad separa P/L realizado y no realizado; la reserva provisional destina el 50% del beneficio neto realizado a retirada y el 50% a reinversión. Las retiradas paper requieren solicitud y aprobación manual y pueden usar cualquier efectivo disponible, incluido principal y beneficio; la contabilidad identifica cuánto procede de la reserva de beneficio y cuánto de capital no reservado. Las solicitudes pendientes reservan efectivo para evitar compromisos duplicados. No se liquidan posiciones automáticamente: si el efectivo no basta, primero habría que autorizar una venta paper controlada. No expongas la API a Internet sin HTTPS, autenticación, restricciones de red, rate limiting y gestión segura de secretos.
 
