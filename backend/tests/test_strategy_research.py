@@ -32,6 +32,7 @@ def test_research_returns_chronological_out_of_sample_results():
     assert len(result["candidates"]) == 3
     assert all("out_of_sample" in item for item in result["candidates"])
     assert result["execution"] == "research_only"
+    assert result["cost_model"]["max_position_fraction"] == pytest.approx(0.25)
 
 
 def test_research_rejects_invalid_candle_prices():
@@ -46,3 +47,8 @@ def test_research_does_not_select_strategy_without_enough_oos_trades():
     result = StrategyResearchAgent(minimum_oos_trades=10).research(candles_from_closes(closes))
     assert result["recommended_strategy"] is None
     assert result["eligible_count"] == 0
+
+
+def test_research_rejects_invalid_position_fraction():
+    with pytest.raises(ValueError, match="max_position_fraction"):
+        StrategyResearchAgent(max_position_fraction=1.5)
