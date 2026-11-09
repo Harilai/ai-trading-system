@@ -102,3 +102,51 @@ def test_chief_exits_on_persisted_take_profit():
     assert decision.action == "sell"
     assert "take-profit" in decision.proposal.rationale
     assert decision.risk.accepted is True
+
+
+def test_risk_manager_rejects_futures_and_forex_until_profile_authorised():
+    from app.agents.contracts import RiskContext, TradeProposal
+    from app.agents.risk import RiskManager
+
+    context = RiskContext(
+        equity_eur=1000,
+        available_cash_eur=1000,
+        positions={},
+    )
+    for asset_class, market_type in [("crypto", "futures"), ("forex", "forex"), ("equity", "spot"), ("defi", "onchain")]:
+        proposal = TradeProposal(
+            symbol="BTC/EUR",
+            asset_class=asset_class,
+            market_type=market_type,
+            side="buy",
+            quantity=0.01,
+            reference_price=100,
+            stop_loss=98,
+            rationale="Risk profile must remain disabled by default",
+        )
+        decision = RiskManager().evaluate(proposal, context)
+        assert decision.accepted is False
+        assert "Risk profile disabled" in decision.reason
+
+
+def test_risk_manager_accepts_only_enabled_crypto_spot_profile():
+    from app.agents.contracts import RiskContext, TradeProposal
+    from app.agents.risk import RiskManager
+
+    proposal = TradeProposal(
+        symbol="BTC/EUR",
+        provider_id="ccxt:kraken",
+        asset_class="crypto",
+        market_type="spot",
+        side="buy",
+        quantity=0.01,
+        reference_price=100,
+        stop_loss=98,
+        take_profit=104,
+        rationale="Validated spot trade with protective exit levels",
+    )
+    decision = RiskManager().evaluate(
+        proposal,
+        RiskContext(equity_eur=1000, available_cash_eur=1000),
+    )
+    assert decision.accepted is True
