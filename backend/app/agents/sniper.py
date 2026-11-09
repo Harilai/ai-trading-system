@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from typing import Any
+import math
 
-from .agents.contracts import TradeProposal
+from .contracts import TradeProposal
 
 
 class SniperAgent:
@@ -48,9 +49,14 @@ class SniperAgent:
         if not candidate.get("eligible") or not candidate.get("current_entry_signal"):
             return None
         score = candidate.get("score")
-        if not isinstance(score, (int, float)):
+        if not isinstance(score, (int, float)) or not math.isfinite(float(score)):
             return None
-        if equity <= 0 or available_cash <= 0:
+        if (
+            not math.isfinite(float(equity))
+            or not math.isfinite(float(available_cash))
+            or equity <= 0
+            or available_cash <= 0
+        ):
             return None
 
         symbol = str(market.get("symbol") or "").strip().upper()
@@ -58,7 +64,12 @@ class SniperAgent:
             return None
         price = float(market.get("ask") or market.get("last") or analysis.get("close") or 0)
         atr_value = float(analysis.get("indicators", {}).get("atr_14", 0) or 0)
-        if price <= 0 or atr_value <= 0:
+        if (
+            not math.isfinite(price)
+            or not math.isfinite(atr_value)
+            or price <= 0
+            or atr_value <= 0
+        ):
             return None
 
         stop_distance = self.atr_stop_multiple * atr_value
