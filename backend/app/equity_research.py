@@ -119,10 +119,11 @@ class EquityEtfResearchAgent:
             except MarketDataError as exc:
                 market_state_error = str(exc)
 
-        # Stage 1: bounded quote screening. Only this small pool incurs quote calls.
+        # Deduplicate and filter the catalog first, then sample evenly across its
+        # full ordering. This avoids repeatedly spending quota on the first alphabetic
+        # page returned by the provider while keeping quote calls strictly bounded.
+        eligible_universe = []
         for instrument in instruments:
-            if considered >= self.max_quote_candidates:
-                break
             if instrument.asset_class not in asset_classes:
                 continue
             if instrument.quote != "USD":
@@ -131,6 +132,22 @@ class EquityEtfResearchAgent:
             if instrument.instrument_id in seen:
                 continue
             seen.add(instrument.instrument_id)
+            eligible_universe.append(instrument)
+
+        if len(eligible_universe) <= self.max_quote_candidates:
+            quote_sample = eligible_universe
+        elif self.max_quote_candidates == 1:
+            quote_sample = [eligible_universe[len(eligible_universe) // 2]]
+        else:
+            last = len(eligible_universe) - 1
+            sample_indexes = {
+                round(index * last / (self.max_quote_candidates - 1))
+                for index in range(self.max_quote_candidates)
+            }
+            quote_sample = [eligible_universe[index] for index in sorted(sample_indexes)]
+
+        # Stage 1: bounded quote screening over a catalog-wide stratified sample.
+        for instrument in quote_sample:
             considered += 1
             try:
                 quote = self.provider.ticker(instrument.symbol)
@@ -242,10 +259,12 @@ class EquityEtfResearchAgent:
             "timeframe": self.timeframe,
             "discovered": len(instruments),
             "considered": considered,
+            "eligible_universe": len(eligible_universe),
+            "quote_sampled": len(quote_sample),
             "quote_candidates": len(candidates),
             "ranked": len(ranked_candidates),
             "analysed": len(analyses),
-            "selection_method": "bounded_quote_screen_volume_60_freshness_25_spread_15",
+            "selection_method": "catalog_wide_stratified_quote_sample_then_volume_60_freshness_25_spread_15",
             "analyses": analyses,
             "rejected": rejected,
             "execution": "disabled_research_only",
