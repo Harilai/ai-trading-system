@@ -63,6 +63,7 @@ class StrategyResearchAgent:
         slippage_rate: float = 0.0005,
         minimum_oos_trades: int = 3,
         maximum_oos_drawdown: float = 0.25,
+        max_position_fraction: float = 0.25,
     ):
         if not 0 <= fee_rate < 1 or not 0 <= slippage_rate < 1:
             raise ValueError("Fee and slippage rates must be in [0, 1)")
@@ -72,6 +73,9 @@ class StrategyResearchAgent:
         self.slippage_rate = slippage_rate
         self.minimum_oos_trades = minimum_oos_trades
         self.maximum_oos_drawdown = maximum_oos_drawdown
+        if not 0 < max_position_fraction <= 1:
+            raise ValueError("max_position_fraction must be in (0, 1]")
+        self.max_position_fraction = max_position_fraction
 
     @staticmethod
     def _specs():
@@ -101,13 +105,13 @@ class StrategyResearchAgent:
             if units > 0 and not desired:
                 proceeds = units * execution_price * sell_multiplier
                 closed_returns.append(proceeds / entry_equity - 1.0)
-                cash = proceeds
+                cash += proceeds
                 units = 0.0
                 entry_equity = 0.0
             elif units == 0 and desired:
-                entry_equity = cash
-                units = cash * buy_multiplier / execution_price
-                cash = 0.0
+                entry_equity = cash * self.max_position_fraction
+                units = entry_equity * buy_multiplier / execution_price
+                cash -= entry_equity
 
             marked = cash + units * float(candles[index + 1]["close"])
             equity_curve.append(marked)
@@ -116,7 +120,7 @@ class StrategyResearchAgent:
             final_price = float(candles[end - 1]["close"])
             proceeds = units * final_price * sell_multiplier
             closed_returns.append(proceeds / entry_equity - 1.0)
-            cash = proceeds
+            cash += proceeds
             units = 0.0
         equity_curve.append(cash)
         peak = equity_curve[0]
@@ -192,6 +196,7 @@ class StrategyResearchAgent:
             "cost_model": {
                 "fee_rate_per_side": self.fee_rate,
                 "slippage_rate_per_side": self.slippage_rate,
+                "max_position_fraction": self.max_position_fraction,
             },
             "candidate_count": len(results),
             "eligible_count": len(eligible_results),
