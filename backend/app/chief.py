@@ -131,7 +131,7 @@ class ChiefAgent:
                 provider_id=str(market.get("provider_id") or position.get("provider_id") or "ccxt:kraken"),
                 instrument_id=str(market.get("instrument_id") or position.get("instrument_id") or identity),
                 side="sell",
-                quantity=positions[symbol],
+                quantity=positions[identity],
                 reference_price=sell_price,
                 rationale=exit_reason,
                 source_agent="chief",
@@ -176,9 +176,11 @@ class ChiefAgent:
             market = item.get("market", {})
             symbol = str(market.get("symbol", "")).upper()
             score = candidate.get("score")
+            provider_id = str(market.get("provider_id") or "ccxt:kraken")
+            identity = self._instrument_identity(provider_id, market.get("instrument_id"), symbol)
             if (
                 not symbol.endswith("/EUR")
-                or symbol in positions
+                or identity in positions
                 or not isinstance(score, (int, float))
             ):
                 continue
