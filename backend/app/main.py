@@ -20,6 +20,8 @@ portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 
 class OrderRequest(BaseModel):
     symbol: str = Field(min_length=3)
+    provider_id: str = "ccxt:kraken"
+    instrument_id: str | None = None
     side: str
     quantity: float = Field(gt=0)
 
@@ -96,9 +98,11 @@ def get_portfolio():
     prices = {}
     for position in base["positions"]:
         try:
-            quote = market.ticker(position["symbol"])
+            provider_id = position.get("provider_id", "ccxt:kraken")
+            instrument_id = position.get("instrument_id") or f"{provider_id}:spot:{position['symbol']}"
+            quote = market.ticker(position["symbol"], provider_id)
             if quote["last"] is not None and not market.is_stale(quote, settings.max_data_age_seconds):
-                prices[position["symbol"]] = float(quote["last"])
+                prices[instrument_id] = float(quote["last"])
         except MarketDataError:
             continue
     return portfolio.snapshot(prices)
@@ -111,11 +115,12 @@ def paper_order(order: OrderRequest):
     symbol=order.symbol.strip().upper()
     if not symbol.endswith("/EUR"): raise HTTPException(422,"Only EUR-quoted pairs (for example BTC/EUR) are enabled in Sprint 1")
     try:
-        quote=market.ticker(symbol)
+        quote=market.ticker(symbol, order.provider_id)
         if quote["last"] is None or market.is_stale(quote,settings.max_data_age_seconds):
             raise HTTPException(503,"Missing or stale market data; order rejected")
         return portfolio.execute(symbol,order.side.lower(),order.quantity,float(quote["last"]),
-            settings.fee_rate,settings.slippage_rate,settings.max_order_fraction,settings.min_order_value_eur)
+            settings.fee_rate,settings.slippage_rate,settings.max_order_fraction,settings.min_order_value_eur,
+            provider_id=order.provider_id, instrument_id=order.instrument_id)
     except PortfolioError as exc: raise HTTPException(422,str(exc)) from exc
     except MarketDataError as exc: raise HTTPException(502,str(exc)) from exc
 
