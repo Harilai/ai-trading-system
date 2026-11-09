@@ -279,7 +279,8 @@ def test_scheduler_respects_interval_and_enqueues_again_after_due_time(tmp_path)
     store = AutonomousStore(str(tmp_path / "schedule.db"))
     store.set_enabled(True)
     first = store.schedule_decision_cycle(300)
-    store.finish_task(first["id"], {"execution": "no_order"})
+    claimed = store.claim_due_task()
+    store.finish_task(claimed["id"], {"execution": "no_order"})
 
     assert store.schedule_decision_cycle(300) is None
     with store.connect() as db:
