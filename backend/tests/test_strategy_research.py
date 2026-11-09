@@ -27,10 +27,19 @@ def test_research_requires_sufficient_history():
 def test_research_returns_chronological_out_of_sample_results():
     closes = [100 + index * 0.05 + 4 * math.sin(index / 5) for index in range(240)]
     result = StrategyResearchAgent(minimum_oos_trades=1).research(candles_from_closes(closes))
-    assert result["method"] == "chronological_70_30_next_bar_open_fills"
+    assert result["method"] == "chronological_70_30_plus_three_walk_forward_diagnostics_next_bar_open_fills"
     assert result["candidate_count"] == 3
     assert len(result["candidates"]) == 3
     assert all("out_of_sample" in item for item in result["candidates"])
+    assert all(item["walk_forward"]["window_count"] == 3 for item in result["candidates"])
+    assert all(
+        [window["window"] for window in item["walk_forward"]["windows"]] == [1, 2, 3]
+        for item in result["candidates"]
+    )
+    assert all(
+        item["walk_forward"]["method"] == "three_expanding-history_out_of_sample_windows"
+        for item in result["candidates"]
+    )
     assert result["execution"] == "research_only"
     assert all(isinstance(item["current_entry_signal"], bool) for item in result["candidates"])
     assert all(isinstance(item["current_hold_signal"], bool) for item in result["candidates"])
@@ -54,3 +63,15 @@ def test_research_does_not_select_strategy_without_enough_oos_trades():
 def test_research_rejects_invalid_position_fraction():
     with pytest.raises(ValueError, match="max_position_fraction"):
         StrategyResearchAgent(max_position_fraction=1.5)
+
+
+
+def test_walk_forward_windows_are_chronological_and_do_not_overlap():
+    closes = [100 + index * 0.1 + 3 * math.sin(index / 7) for index in range(300)]
+    result = StrategyResearchAgent(minimum_oos_trades=1).research(candles_from_closes(closes))
+    windows = result["candidates"][0]["walk_forward"]["windows"]
+    assert len(windows) == 3
+    assert windows[0]["end_index"] == windows[1]["start_index"]
+    assert windows[1]["end_index"] == windows[2]["start_index"]
+    assert windows[0]["start_index"] < windows[1]["start_index"] < windows[2]["start_index"]
+    assert all("net_return" in window and "max_drawdown" in window for window in windows)
