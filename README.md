@@ -84,3 +84,31 @@ Ejemplo de orden simulada: `{"symbol":"BTC/EUR","side":"buy","quantity":0.00005}
 - Paper trading es el único modo disponible.
 - No se almacenan claves API ni se solicitan permisos de retirada.
 - Live trading requerirá una implementación separada, activación explícita, límites independientes y pruebas específicas.
+
+
+## Persistent autonomous agent (foundation)
+
+The persistent-agent foundation adds:
+
+- A SQLite-backed operational state that survives restarts.
+- A durable task queue with leases, retries and recovery of expired running tasks.
+- Separate persistent memory records, validated-knowledge flag and audit events.
+- A continuously running asyncio worker, started with the API process; it remains paused by default.
+- Authenticated supervision endpoints for status, pause, resume, emergency stop, reset and task enqueue.
+- An interchangeable LLM provider protocol and an opt-in OpenAI-compatible adapter. No LLM calls occur by default.
+
+### Configure supervision
+
+Set a long random `AGENT_CONTROL_TOKEN` in the root `.env` file. Agent control endpoints require it in the `X-Agent-Token` header. If the token is unset, these endpoints return 503 and cannot be used. Do not expose the API publicly until HTTPS, authentication, network restrictions and production secret management are configured.
+
+Endpoints:
+- `GET /api/agent/status`
+- `POST /api/agent/resume`
+- `POST /api/agent/pause`
+- `POST /api/agent/emergency-stop`
+- `POST /api/agent/reset-emergency-stop`
+- `POST /api/agent/tasks` (currently only `health_check` tasks are accepted)
+
+The worker starts paused and will not initiate trades. In this phase it only executes a deterministic health-check task. Market scanning, agent delegation, LLM reasoning triggers and automated trading are not yet implemented. Emergency stop disables the worker; it does not need to cancel broker orders because live execution does not exist.
+
+The persistent memory tables currently store operational observations and audit events. Historical market analysis, strategy knowledge, objectives, outcomes and retrieval policies will be added in later phases. Risk controls remain code/configuration controlled; agents cannot change them.
