@@ -185,7 +185,7 @@ def test_same_symbol_from_two_providers_has_independent_positions(tmp_path):
     positions = portfolio.snapshot()["positions"]
     assert len(positions) == 2
     assert {p["provider_id"] for p in positions} == {"ccxt:kraken", "ccxt:coinbase"}
-    assert {p["average_price"] for p in positions} == pytest.approx({10010, 12012})
+    assert sorted(p["average_price"] for p in positions) == pytest.approx([10010, 12012])
 
 
 def test_sell_only_reduces_the_matching_provider_instrument(tmp_path):
