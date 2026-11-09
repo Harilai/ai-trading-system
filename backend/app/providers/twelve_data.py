@@ -306,6 +306,7 @@ class TwelveDataProvider:
                     metadata={
                         "name": item.get("name"),
                         "exchange": item.get("exchange"),
+                        "mic_code": item.get("mic_code"),
                         "country": item.get("country"),
                         "instrument_type": item.get("type"),
                         "data_scope": "US",
@@ -328,7 +329,8 @@ class TwelveDataProvider:
                     active=True,
                     metadata={
                         "name": item.get("name"),
-                        "exchange": item.get("exchange") or item.get("mic_code"),
+                        "exchange": item.get("exchange"),
+                        "mic_code": item.get("mic_code"),
                         "country": item.get("country") or "United States",
                         "fund_family": item.get("fund_family"),
                         "fund_type": item.get("fund_type"),
