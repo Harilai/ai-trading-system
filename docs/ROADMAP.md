@@ -96,7 +96,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 
 - [ ] Evaluar Oracle Cloud Always Free y alternativas en el momento del despliegue; no asumir disponibilidad permanente.
 - [ ] Mantener operación sin APIs de inferencia de pago; LLM local opcional y lógica determinista como fallback.
-- [x] Añadir liveness y readiness con verificación SQLite y heartbeat del worker, integrado en el healthcheck Docker.\n- [ ] Añadir backups y restore probado.
+- [x] Añadir liveness y readiness con verificación SQLite y heartbeat del worker, integrado en el healthcheck Docker.\n- [x] Añadir backup SQLite online con integrity_check, restauración con copia previa y servicio Docker aislado de backup diario con retención local de 14 días; copia off-host sigue pendiente.
 - [x] Proteger el endpoint manual de órdenes paper con token y gate obligatorio del Risk Manager; compras con stop-loss explícito.\n- [x] Ejecutar Docker como usuario no root, rootfs read-only, eliminar capacidades y enlazar el puerto a localhost por defecto.\n- [ ] Configurar TLS/reverse proxy para acceso remoto; no exponer directamente el puerto API.
 - [ ] Medir disponibilidad real antes de afirmar que funciona 24/7.
 
