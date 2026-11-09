@@ -20,10 +20,16 @@ class NormalizedOrder:
 
 
 class ExecutionRouter:
-    """Provider-neutral validation and routing; live submission is opt-in per adapter."""
+    """Provider-neutral validation and routing; live execution is disabled by default."""
 
-    def __init__(self, providers: dict[str, ExecutionProvider] | None = None):
+    def __init__(
+        self,
+        providers: dict[str, ExecutionProvider] | None = None,
+        *,
+        live_enabled: bool = False,
+    ):
         self.providers = providers or {}
+        self.live_enabled = live_enabled
 
     def register(self, provider: ExecutionProvider) -> None:
         if provider.provider_id in self.providers:
@@ -34,6 +40,8 @@ class ExecutionRouter:
         provider = self.providers.get(provider_id)
         if provider is None:
             raise ValueError(f"No execution adapter configured for {provider_id}")
+        if instrument.provider_id != provider_id or order.provider_id != provider_id:
+            raise ValueError("Provider identity mismatch")
         caps = provider.capabilities()
         if not caps.order_management:
             raise ValueError(f"{provider_id} does not expose validated order management")
@@ -45,11 +53,22 @@ class ExecutionRouter:
             raise ValueError("Stop orders are not supported by this provider")
         return provider.validate_order(instrument, order.__dict__)
 
-    def submit(self, provider_id: str, instrument: MarketInstrument, order: NormalizedOrder, client_order_id: str):
-        provider = self.providers[provider_id]
+    def submit(
+        self,
+        provider_id: str,
+        instrument: MarketInstrument,
+        order: NormalizedOrder,
+        client_order_id: str,
+        *,
+        risk_decision: Any,
+    ):
+        if not self.live_enabled:
+            raise ValueError("Live execution is disabled")
+        if not getattr(risk_decision, "accepted", False):
+            raise ValueError("A positive Risk Manager approval is required before execution")
+        if not client_order_id:
+            raise ValueError("A stable client_order_id is mandatory")
         validation = self.validate(provider_id, instrument, order)
         if not validation.get("accepted"):
             raise ValueError(validation.get("reason", "Provider rejected order validation"))
-        if not client_order_id:
-            raise ValueError("A stable client_order_id is mandatory")
-        return provider.submit_order(order.__dict__, client_order_id)
+        return self.providers[provider_id].submit_order(order.__dict__, client_order_id)
