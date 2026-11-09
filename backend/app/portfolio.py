@@ -259,9 +259,11 @@ class PaperPortfolio:
         stamp = datetime.now(timezone.utc).isoformat()
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            account = db.execute("SELECT cash FROM account WHERE id=1").fetchone()
-            if amount > account["cash"] + 1e-9:
-                raise PortfolioError("Withdrawal exceeds available cash; invested positions are not liquidated automatically")
+            account = db.execute("SELECT cash, realised_pnl, withdrawn_profit FROM account WHERE id=1").fetchone()
+            realised_profit = max(0.0, float(account["realised_pnl"]) - float(account["withdrawn_profit"]))
+            withdrawable_reserve = min(float(account["cash"]), realised_profit * 0.5)
+            if amount > withdrawable_reserve + 1e-9:
+                raise PortfolioError("Withdrawal exceeds the 50% reserve of net realised profits; principal and unrealised gains are protected")
             db.execute(
                 "INSERT INTO withdrawal_requests(id,amount,status,requested_at) VALUES(?,?,'pending',?)",
                 (request_id, float(amount), stamp),
@@ -288,7 +290,10 @@ class PaperPortfolio:
                 0.0,
                 float(account["realised_pnl"]) - float(account["withdrawn_profit"]),
             )
-            profit_component = min(amount, profit_available)
+            withdrawable_reserve = min(float(account["cash"]), profit_available * 0.5)
+            if amount > withdrawable_reserve + 1e-9:
+                raise PortfolioError("Withdrawal exceeds the available profit reserve")
+            profit_component = amount
             db.execute(
                 "UPDATE account SET cash=cash-?, withdrawn_profit=withdrawn_profit+? WHERE id=1",
                 (amount, profit_component),
