@@ -1,8 +1,10 @@
 import hmac
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from .config import settings
 from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
@@ -44,6 +46,12 @@ class OrderRequest(BaseModel):
     stop_loss: float | None = Field(default=None, gt=0)
     take_profit: float | None = Field(default=None, gt=0)
     strategy_id: str | None = None
+
+@app.get("/dashboard", include_in_schema=False)
+def dashboard():
+    dashboard_file = Path(__file__).with_name("dashboard.html")
+    return FileResponse(dashboard_file, media_type="text/html")
+
 
 @app.get("/api/providers")
 def providers():
