@@ -31,7 +31,9 @@ class ChartsAgent:
             as_of_ms=timestamp,
             close=closes[-1],
             indicators={
+                "ema_12": ema(closes, 12),
                 "ema_20": ema(closes, 20),
+                "ema_26": ema(closes, 26),
                 "ema_50": ema(closes, 50),
                 "sma_20": sma(closes, 20),
                 "rsi_14": rsi(closes, 14),
