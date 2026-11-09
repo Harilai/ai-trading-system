@@ -4,6 +4,7 @@ from typing import Any
 
 from .agents.charts import ChartsAgent
 from .agents.contracts import MarketAnalysis
+from .strategy_research import StrategyResearchAgent
 
 
 class ScoutAgent:
@@ -16,7 +17,8 @@ class ScoutAgent:
         *,
         max_symbols: int = 5,
         timeframe: str = "1h",
-        candle_limit: int = 100,
+        candle_limit: int = 250,
+        strategy_research: StrategyResearchAgent | None = None,
     ):
         if max_symbols < 1:
             raise ValueError("max_symbols must be positive")
@@ -25,6 +27,7 @@ class ScoutAgent:
         self.max_symbols = max_symbols
         self.timeframe = timeframe
         self.candle_limit = candle_limit
+        self.strategy_research = strategy_research or StrategyResearchAgent()
 
     def scan(self) -> dict[str, Any]:
         candidates = self.market_data.discover_spot_symbols(
@@ -58,10 +61,15 @@ class ScoutAgent:
                     self.timeframe,
                     candles,
                 )
+                try:
+                    research = self.strategy_research.research(candles)
+                except ValueError as exc:
+                    research = {"status": "insufficient_or_invalid_history", "reason": str(exc)}
                 analyses.append(
                     {
                         "market": candidate,
                         "analysis": analysis.model_dump(),
+                        "strategy_research": research,
                     }
                 )
             except (ValueError, KeyError, TypeError) as exc:
