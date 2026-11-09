@@ -62,16 +62,28 @@ class StrategyResearchAgent:
         fee_rate: float = 0.0026,
         slippage_rate: float = 0.0005,
         minimum_oos_trades: int = 3,
+        minimum_walk_forward_trades: int = 1,
+        minimum_walk_forward_bars: int = 60,
+        minimum_positive_walk_forward_windows: int = 2,
         maximum_oos_drawdown: float = 0.25,
         max_position_fraction: float = 0.25,
     ):
         if not 0 <= fee_rate < 1 or not 0 <= slippage_rate < 1:
             raise ValueError("Fee and slippage rates must be in [0, 1)")
-        if minimum_oos_trades < 1 or not 0 < maximum_oos_drawdown < 1:
+        if (
+            minimum_oos_trades < 1
+            or minimum_walk_forward_trades < 1
+            or minimum_walk_forward_bars < 2
+            or not 1 <= minimum_positive_walk_forward_windows <= 3
+            or not 0 < maximum_oos_drawdown < 1
+        ):
             raise ValueError("Invalid strategy validation limits")
         self.fee_rate = fee_rate
         self.slippage_rate = slippage_rate
         self.minimum_oos_trades = minimum_oos_trades
+        self.minimum_walk_forward_trades = minimum_walk_forward_trades
+        self.minimum_walk_forward_bars = minimum_walk_forward_bars
+        self.minimum_positive_walk_forward_windows = minimum_positive_walk_forward_windows
         self.maximum_oos_drawdown = maximum_oos_drawdown
         if not 0 < max_position_fraction <= 1:
             raise ValueError("max_position_fraction must be in (0, 1]")
@@ -198,6 +210,7 @@ class StrategyResearchAgent:
                     "window": index + 1,
                     "start_index": start,
                     "end_index": end,
+                    "evaluation_bars": max(0, end - max(warmup, start) - 1),
                     **self._backtest(normalized, signal, warmup, start, end),
                 }
                 for index, (start, end) in enumerate(walk_forward_boundaries)
@@ -216,13 +229,39 @@ class StrategyResearchAgent:
                 ),
                 "windows": walk_forward_windows,
             }
-            eligible = (
-                out_sample["trades"] >= self.minimum_oos_trades
-                and out_sample["net_return"] > 0
-                and out_sample["max_drawdown"] <= self.maximum_oos_drawdown
-            )
+            benchmark_excess_return = out_sample["net_return"] - benchmark["net_return"]
+            validation_failures = []
+            if out_sample["trades"] < self.minimum_oos_trades:
+                validation_failures.append("insufficient_oos_trades")
+            if out_sample["net_return"] <= 0:
+                validation_failures.append("non_positive_oos_return")
+            if out_sample["max_drawdown"] > self.maximum_oos_drawdown:
+                validation_failures.append("oos_drawdown_exceeded")
+            if len(walk_forward_windows) != 3:
+                validation_failures.append("incomplete_walk_forward_windows")
+            if any(
+                window["evaluation_bars"] < self.minimum_walk_forward_bars
+                for window in walk_forward_windows
+            ):
+                validation_failures.append("insufficient_walk_forward_history")
+            if any(
+                window["trades"] < self.minimum_walk_forward_trades
+                for window in walk_forward_windows
+            ):
+                validation_failures.append("insufficient_walk_forward_trades")
+            if walk_forward["positive_windows"] < self.minimum_positive_walk_forward_windows:
+                validation_failures.append("insufficient_positive_walk_forward_windows")
+            if walk_forward["mean_net_return"] <= 0:
+                validation_failures.append("non_positive_walk_forward_mean")
+            if walk_forward["max_drawdown"] > self.maximum_oos_drawdown:
+                validation_failures.append("walk_forward_drawdown_exceeded")
+            if benchmark_excess_return <= 0:
+                validation_failures.append("does_not_beat_buy_and_hold")
+            eligible = not validation_failures
             score = (
-                out_sample["net_return"] - 0.5 * out_sample["max_drawdown"]
+                benchmark_excess_return
+                + out_sample["net_return"]
+                - 0.5 * max(out_sample["max_drawdown"], walk_forward["max_drawdown"])
                 if eligible else None
             )
             current_index = len(normalized) - 1
@@ -233,10 +272,11 @@ class StrategyResearchAgent:
                     "description": description,
                     "in_sample": in_sample,
                     "out_of_sample": out_sample,
-                    "benchmark_excess_return": out_sample["net_return"] - benchmark["net_return"],
-                    "beats_buy_and_hold": out_sample["net_return"] > benchmark["net_return"],
+                    "benchmark_excess_return": benchmark_excess_return,
+                    "beats_buy_and_hold": benchmark_excess_return > 0,
                     "walk_forward": walk_forward,
                     "eligible": eligible,
+                    "validation_failures": validation_failures,
                     "score": score,
                     "current_entry_signal": signal(current_closes, current_index, False),
                     "current_hold_signal": signal(current_closes, current_index, True),
@@ -250,6 +290,14 @@ class StrategyResearchAgent:
                 "fee_rate_per_side": self.fee_rate,
                 "slippage_rate_per_side": self.slippage_rate,
                 "max_position_fraction": self.max_position_fraction,
+            },
+            "promotion_gates": {
+                "minimum_oos_trades": self.minimum_oos_trades,
+                "minimum_walk_forward_trades_per_window": self.minimum_walk_forward_trades,
+                "minimum_walk_forward_bars_per_window": self.minimum_walk_forward_bars,
+                "minimum_positive_walk_forward_windows": self.minimum_positive_walk_forward_windows,
+                "maximum_drawdown": self.maximum_oos_drawdown,
+                "must_beat_buy_and_hold": True,
             },
             "benchmark": {
                 "name": "buy_and_hold",
