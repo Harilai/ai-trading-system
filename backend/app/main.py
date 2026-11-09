@@ -48,6 +48,7 @@ def markets():
             {
                 "instrument_id": item.instrument_id,
                 "provider_id": item.provider_id,
+                "instrument_id": item.instrument_id,
                 "symbol": item.symbol,
                 "asset_class": item.asset_class.value,
                 "market_type": item.market_type.value,
