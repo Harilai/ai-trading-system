@@ -166,5 +166,5 @@ def test_pending_withdrawal_can_be_cancelled_once(portfolio):
     request = portfolio.request_withdrawal(0.2)
     cancelled = portfolio.cancel_withdrawal(request["id"])
     assert cancelled["status"] == "cancelled"
-    with pytest.raises(PortfolioError, match="Only pending"):
+    with pytest.raises(PortfolioError, match="not pending"):
         portfolio.approve_withdrawal(request["id"])
