@@ -60,13 +60,8 @@ class AutonomousStore:
             INSERT OR IGNORE INTO agent_state(id, enabled, emergency_stop, updated_at)
             VALUES(1, 0, 0, CURRENT_TIMESTAMP);
             """)
-            # Tasks left running by a process crash are made eligible for retry.
-            now = utcnow().isoformat()
-            db.execute(
-                "UPDATE agent_tasks SET status='pending', lease_until=NULL, updated_at=? "
-                "WHERE status='running' AND (lease_until IS NULL OR lease_until < ?)",
-                (now, now),
-            )
+        # Recover expired work on startup as well as during the worker loop.
+        self.recover_expired_tasks()
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=15)
@@ -79,6 +74,20 @@ class AutonomousStore:
                 "INSERT INTO agent_audit(action,details,created_at) VALUES(?,?,?)",
                 (action, json.dumps(details or {}, ensure_ascii=False), utcnow().isoformat()),
             )
+
+    def recover_expired_tasks(self) -> int:
+        """Return expired leases to the queue; safe to call repeatedly."""
+        now = utcnow().isoformat()
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            recovered = db.execute(
+                "UPDATE agent_tasks SET status='pending', lease_until=NULL, updated_at=? "
+                "WHERE status='running' AND (lease_until IS NULL OR lease_until < ?)",
+                (now, now),
+            ).rowcount
+        if recovered:
+            self.audit("expired_tasks_recovered", {"count": recovered})
+        return recovered
 
     def state(self) -> dict[str, Any]:
         with self.connect() as db:
@@ -113,10 +122,11 @@ class AutonomousStore:
         return self.state()
 
     def heartbeat(self) -> None:
+        now = utcnow().isoformat()
         with self.connect() as db:
             db.execute(
                 "UPDATE agent_state SET last_heartbeat=?, updated_at=? WHERE id=1",
-                (utcnow().isoformat(), utcnow().isoformat()),
+                (now, now),
             )
 
     def enqueue(self, kind: str, payload: dict[str, Any], due_at: datetime | None = None) -> dict[str, Any]:
@@ -160,7 +170,8 @@ class AutonomousStore:
         now = utcnow().isoformat()
         with self.connect() as db:
             db.execute(
-                "UPDATE agent_tasks SET status='completed', result=?, lease_until=NULL, updated_at=? WHERE id=?",
+                "UPDATE agent_tasks SET status='completed', result=?, lease_until=NULL, updated_at=? "
+                "WHERE id=? AND status='running'",
                 (json.dumps(result, ensure_ascii=False), now, task_id),
             )
         self.audit("task_completed", {"task_id": task_id, "result": result})
@@ -171,7 +182,8 @@ class AutonomousStore:
         due = (now + timedelta(seconds=min(300, 15 * 2 ** (task["attempts"] - 1)))).isoformat()
         with self.connect() as db:
             db.execute(
-                "UPDATE agent_tasks SET status=?, due_at=?, error=?, lease_until=NULL, updated_at=? WHERE id=?",
+                "UPDATE agent_tasks SET status=?, due_at=?, error=?, lease_until=NULL, updated_at=? "
+                "WHERE id=? AND status='running'",
                 ("pending" if retry else "failed", due, error[:2000], now.isoformat(), task["id"]),
             )
         self.audit("task_retry_scheduled" if retry else "task_failed",
@@ -226,6 +238,8 @@ class AutonomousAgent:
 
     async def _run(self) -> None:
         while not self._stopping.is_set():
+            # A live process must also reclaim leases that expire after startup.
+            self.store.recover_expired_tasks()
             state = self.store.state()
             self.store.heartbeat()
             if state["enabled"] and not state["emergency_stop"]:
