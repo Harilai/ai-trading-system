@@ -158,3 +158,32 @@ def test_ccxt_provider_discovery_skips_malformed_tickers():
 
     assert [item["symbol"] for item in results] == ["BTC/EUR"]
     assert results[0]["provider_id"] == "ccxt:fake"
+
+
+
+def test_registry_discovery_continues_when_one_provider_fails():
+    class HealthyDiscoveryProvider(FakeProvider):
+        def discover_spot_symbols(self, quote, limit, max_spread_fraction, min_quote_volume):
+            return [{
+                "symbol": "BTC/EUR",
+                "provider_id": self.provider_id,
+                "instrument_id": f"{self.provider_id}:spot:BTC/EUR",
+                "quote_volume_24h": 5000,
+            }]
+
+    class FailingDiscoveryProvider(FakeProvider):
+        def discover_spot_symbols(self, quote, limit, max_spread_fraction, min_quote_volume):
+            raise RuntimeError("temporary exchange outage")
+
+    registry = ProviderRegistry()
+    registry.register(FailingDiscoveryProvider("unavailable"))
+    registry.register(HealthyDiscoveryProvider("healthy"))
+
+    results = registry.discover_spot_symbols()
+
+    assert len(results) == 1
+    assert results[0]["provider_id"] == "healthy"
+    assert registry.last_discovery_failures == [{
+        "provider_id": "unavailable",
+        "reason": "temporary exchange outage",
+    }]
