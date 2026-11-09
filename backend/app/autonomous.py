@@ -331,15 +331,28 @@ class AutonomousAgent:
                 return result
 
             unvalued_portfolio = await asyncio.to_thread(self.portfolio.snapshot)
-            held_symbols = [position["symbol"] for position in unvalued_portfolio.get("positions", [])]
-            scan = await asyncio.to_thread(self.scout.scan, held_symbols)
+            held_positions = [
+                {
+                    "symbol": position["symbol"],
+                    "provider_id": position.get("provider_id", "ccxt:kraken"),
+                    "instrument_id": position.get("instrument_id"),
+                }
+                for position in unvalued_portfolio.get("positions", [])
+            ]
+            held_instruments = {
+                item["instrument_id"] or f"{item['provider_id']}:spot:{item['symbol']}"
+                for item in held_positions
+            }
+            scan = await asyncio.to_thread(self.scout.scan, held_positions)
             valuation_prices = {}
             for item in scan.get("analyses", []):
                 market = item.get("market", {})
                 symbol = str(market.get("symbol", "")).upper()
+                provider_id = str(market.get("provider_id") or "ccxt:kraken")
+                instrument_id = str(market.get("instrument_id") or f"{provider_id}:spot:{symbol}")
                 price = market.get("bid") or market.get("last")
-                if symbol in held_symbols and price is not None and float(price) > 0:
-                    valuation_prices[symbol] = float(price)
+                if instrument_id in held_instruments and price is not None and float(price) > 0:
+                    valuation_prices[instrument_id] = float(price)
             portfolio = await asyncio.to_thread(self.portfolio.snapshot, valuation_prices)
             decision = self.chief.decide(scan, portfolio)
             order = None
@@ -362,6 +375,8 @@ class AutonomousAgent:
                     settings.max_order_fraction,
                     settings.min_order_value_eur,
                     client_order_id=task["id"],
+                    provider_id=proposal.provider_id,
+                    instrument_id=proposal.instrument_id,
                     strategy_id=decision.strategy_id if proposal.side == "buy" else None,
                     stop_loss=proposal.stop_loss,
                     take_profit=proposal.take_profit,

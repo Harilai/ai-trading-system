@@ -37,7 +37,7 @@ class RiskManager:
             )
 
         # Spot-only phase: a sell can only reduce an existing long position.
-        held_quantity = context.positions.get(symbol, 0.0)
+        held_quantity = context.positions.get(proposal.instrument_id or symbol, context.positions.get(symbol, 0.0))
         if proposal.quantity > held_quantity:
             return RiskDecision(accepted=False, reason="Sell quantity exceeds the existing position; shorting is disabled")
         return RiskDecision(

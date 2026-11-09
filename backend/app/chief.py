@@ -11,6 +11,8 @@ from .agents.risk import RiskManager
 class ChiefDecision(BaseModel):
     action: Literal["hold", "buy", "sell"] = "hold"
     symbol: str | None = None
+    provider_id: str | None = None
+    instrument_id: str | None = None
     strategy_id: str | None = None
     rationale: str
     evidence: dict[str, Any] = Field(default_factory=dict)
@@ -51,6 +53,10 @@ class ChiefAgent:
         self.minimum_order_value_eur = minimum_order_value_eur
 
     @staticmethod
+    def _instrument_identity(provider_id: str, instrument_id: str | None, symbol: str) -> str:
+        return instrument_id or f"{provider_id}:spot:{symbol.upper()}"
+
+    @staticmethod
     def _candidate_for(item: dict[str, Any], strategy_id: str | None = None):
         research = item.get("strategy_research", {})
         wanted = strategy_id or research.get("recommended_strategy")
@@ -65,13 +71,15 @@ class ChiefAgent:
         )
 
     def decide(self, scan: dict[str, Any], portfolio: dict[str, Any]) -> ChiefDecision:
-        portfolio_positions = {
-            position["symbol"].upper(): position
-            for position in portfolio.get("positions", [])
-        }
+        portfolio_positions = {}
+        for position in portfolio.get("positions", []):
+            symbol = position["symbol"].upper()
+            provider_id = position.get("provider_id") or "ccxt:kraken"
+            identity = self._instrument_identity(provider_id, position.get("instrument_id"), symbol)
+            portfolio_positions[identity] = position
         positions = {
-            symbol: float(position["quantity"])
-            for symbol, position in portfolio_positions.items()
+            identity: float(position["quantity"])
+            for identity, position in portfolio_positions.items()
         }
         equity = float(portfolio.get("equity", 0))
         cash = float(portfolio.get("cash", 0))
@@ -86,14 +94,18 @@ class ChiefAgent:
             estimated_fee_rate=self.estimated_fee_rate,
             positions=positions,
         )
-        scan_by_symbol = {
-            str(item.get("market", {}).get("symbol", "")).upper(): item
-            for item in scan.get("analyses", [])
-        }
+        scan_by_identity = {}
+        for item in scan.get("analyses", []):
+            market = item.get("market", {})
+            symbol = str(market.get("symbol", "")).upper()
+            provider_id = market.get("provider_id") or "ccxt:kraken"
+            identity = self._instrument_identity(provider_id, market.get("instrument_id"), symbol)
+            scan_by_identity[identity] = item
 
         # Manage existing positions before considering new entries.
-        for symbol, position in portfolio_positions.items():
-            item = scan_by_symbol.get(symbol)
+        for identity, position in portfolio_positions.items():
+            symbol = position["symbol"].upper()
+            item = scan_by_identity.get(identity)
             if item is None:
                 continue
             market = item.get("market", {})
@@ -116,9 +128,10 @@ class ChiefAgent:
 
             proposal = TradeProposal(
                 symbol=symbol,
-                provider_id=str(market.get("provider_id") or "ccxt:kraken"),
+                provider_id=str(market.get("provider_id") or position.get("provider_id") or "ccxt:kraken"),
+                instrument_id=str(market.get("instrument_id") or position.get("instrument_id") or identity),
                 side="sell",
-                quantity=positions[symbol],
+                quantity=positions[identity],
                 reference_price=sell_price,
                 rationale=exit_reason,
                 source_agent="chief",
@@ -128,6 +141,8 @@ class ChiefAgent:
                 return ChiefDecision(
                     action="sell",
                     symbol=symbol,
+                    provider_id=proposal.provider_id,
+                    instrument_id=proposal.instrument_id,
                     strategy_id=position.get("strategy_id"),
                     rationale=f"Position exit: {exit_reason}; Risk Manager approved",
                     evidence={"market": market, "stop_loss": stop_loss, "take_profit": take_profit},
@@ -136,6 +151,8 @@ class ChiefAgent:
                 )
             return ChiefDecision(
                 symbol=symbol,
+                provider_id=proposal.provider_id,
+                instrument_id=proposal.instrument_id,
                 strategy_id=position.get("strategy_id"),
                 rationale="Position exit proposal rejected by Risk Manager",
                 evidence={"market": market, "exit_reason": exit_reason},
@@ -159,9 +176,11 @@ class ChiefAgent:
             market = item.get("market", {})
             symbol = str(market.get("symbol", "")).upper()
             score = candidate.get("score")
+            provider_id = str(market.get("provider_id") or "ccxt:kraken")
+            identity = self._instrument_identity(provider_id, market.get("instrument_id"), symbol)
             if (
                 not symbol.endswith("/EUR")
-                or symbol in positions
+                or identity in positions
                 or not isinstance(score, (int, float))
             ):
                 continue
@@ -195,6 +214,7 @@ class ChiefAgent:
             proposal = TradeProposal(
                 symbol=symbol,
                 provider_id=str(market.get("provider_id") or "ccxt:kraken"),
+                instrument_id=str(market.get("instrument_id") or self._instrument_identity(str(market.get("provider_id") or "ccxt:kraken"), None, symbol)),
                 side="buy",
                 quantity=quantity,
                 reference_price=price,
@@ -208,6 +228,8 @@ class ChiefAgent:
                 return ChiefDecision(
                     action="buy",
                     symbol=symbol,
+                    provider_id=proposal.provider_id,
+                    instrument_id=proposal.instrument_id,
                     strategy_id=strategy_id,
                     rationale="Best validated entry opportunity passed deterministic risk checks",
                     evidence={
@@ -222,6 +244,8 @@ class ChiefAgent:
                 )
             return ChiefDecision(
                 symbol=symbol,
+                provider_id=proposal.provider_id,
+                instrument_id=proposal.instrument_id,
                 strategy_id=strategy_id,
                 rationale="Entry proposal rejected by Risk Manager",
                 evidence={"score": score},

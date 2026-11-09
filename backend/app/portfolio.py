@@ -23,8 +23,11 @@ class PaperPortfolio:
             )
             db.execute(
                 "CREATE TABLE IF NOT EXISTS positions ("
-                "symbol TEXT PRIMARY KEY, quantity REAL, average_price REAL, "
-                "strategy_id TEXT, stop_loss REAL, take_profit REAL)"
+                "provider_id TEXT NOT NULL DEFAULT 'ccxt:kraken', "
+                "instrument_id TEXT NOT NULL DEFAULT '', symbol TEXT NOT NULL, "
+                "quantity REAL, average_price REAL, strategy_id TEXT, "
+                "stop_loss REAL, take_profit REAL, "
+                "PRIMARY KEY(provider_id, instrument_id))"
             )
             db.execute(
                 "CREATE TABLE IF NOT EXISTS trades ("
@@ -36,10 +39,10 @@ class PaperPortfolio:
                 "id TEXT PRIMARY KEY, amount REAL NOT NULL, status TEXT NOT NULL, "
                 "profit_component REAL NOT NULL DEFAULT 0, requested_at TEXT NOT NULL, decided_at TEXT)"
             )
-            self._ensure_column(db, "positions", "strategy_id", "TEXT")
-            self._ensure_column(db, "positions", "stop_loss", "REAL")
-            self._ensure_column(db, "positions", "take_profit", "REAL")
+            self._migrate_positions(db)
             self._ensure_column(db, "trades", "client_order_id", "TEXT")
+            self._ensure_column(db, "trades", "provider_id", "TEXT NOT NULL DEFAULT 'ccxt:kraken'")
+            self._ensure_column(db, "trades", "instrument_id", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(db, "account", "withdrawn_profit", "REAL NOT NULL DEFAULT 0")
             db.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_trades_client_order_id "
@@ -50,6 +53,33 @@ class PaperPortfolio:
                 "VALUES(1,?,?,0,0)",
                 (initial_cash, initial_cash),
             )
+
+    @staticmethod
+    def _migrate_positions(db) -> None:
+        columns = {row["name"]: row for row in db.execute("PRAGMA table_info(positions)")}
+        primary_key = {name for name, row in columns.items() if row["pk"]}
+        if {"provider_id", "instrument_id"} <= columns.keys() and primary_key == {"provider_id", "instrument_id"}:
+            return
+        db.execute(
+            "CREATE TABLE positions_provider_scoped ("
+            "provider_id TEXT NOT NULL DEFAULT 'ccxt:kraken', "
+            "instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, quantity REAL, "
+            "average_price REAL, strategy_id TEXT, stop_loss REAL, take_profit REAL, "
+            "PRIMARY KEY(provider_id, instrument_id))"
+        )
+        if columns:
+            db.execute(
+                "INSERT INTO positions_provider_scoped "
+                "(provider_id,instrument_id,symbol,quantity,average_price,strategy_id,stop_loss,take_profit) "
+                "SELECT 'ccxt:kraken','ccxt:kraken:spot:' || UPPER(symbol),UPPER(symbol),"
+                "quantity,average_price,"
+                + ("strategy_id" if "strategy_id" in columns else "NULL") + ","
+                + ("stop_loss" if "stop_loss" in columns else "NULL") + ","
+                + ("take_profit" if "take_profit" in columns else "NULL")
+                + " FROM positions"
+            )
+            db.execute("DROP TABLE positions")
+        db.execute("ALTER TABLE positions_provider_scoped RENAME TO positions")
 
     @staticmethod
     def _ensure_column(db, table: str, column: str, declaration: str) -> None:
@@ -67,7 +97,7 @@ class PaperPortfolio:
             account = db.execute("SELECT * FROM account WHERE id=1").fetchone()
             positions = [
                 dict(row)
-                for row in db.execute("SELECT * FROM positions ORDER BY symbol")
+                for row in db.execute("SELECT * FROM positions ORDER BY provider_id, instrument_id")
             ]
 
         cost_basis_value = 0.0
@@ -76,12 +106,18 @@ class PaperPortfolio:
         valuation_complete = valuation_prices is not None or not positions
         for position in positions:
             symbol = position["symbol"]
+            instrument_id = position["instrument_id"]
+            provider_id = position["provider_id"]
             cost_basis = float(position["average_price"])
             quantity = float(position["quantity"])
             cost_basis_value += quantity * cost_basis
             current_price = None
             if valuation_prices is not None:
-                supplied = valuation_prices.get(symbol)
+                supplied = valuation_prices.get(instrument_id)
+                if supplied is None:
+                    supplied = valuation_prices.get(f"{provider_id}|{symbol}")
+                if supplied is None:
+                    supplied = valuation_prices.get(symbol)
                 if supplied is not None and math.isfinite(float(supplied)) and float(supplied) > 0:
                     current_price = float(supplied)
             if current_price is None:
@@ -145,11 +181,17 @@ class PaperPortfolio:
         minimum,
         *,
         client_order_id: str | None = None,
+        provider_id: str = "ccxt:kraken",
+        instrument_id: str | None = None,
         strategy_id: str | None = None,
         stop_loss: float | None = None,
         take_profit: float | None = None,
     ):
         symbol = symbol.strip().upper()
+        provider_id = provider_id.strip()
+        instrument_id = instrument_id or f"{provider_id}:spot:{symbol}"
+        if not provider_id or not instrument_id:
+            raise PortfolioError("Provider and instrument identity are required")
         side = side.lower()
         if not symbol.endswith("/EUR"):
             raise PortfolioError("Only EUR-quoted markets are supported")
@@ -188,8 +230,8 @@ class PaperPortfolio:
 
             account = db.execute("SELECT * FROM account WHERE id=1").fetchone()
             position = db.execute(
-                "SELECT * FROM positions WHERE symbol=?",
-                (symbol,),
+                "SELECT * FROM positions WHERE provider_id=? AND instrument_id=?",
+                (provider_id, instrument_id),
             ).fetchone()
 
             if side == "buy":
@@ -210,13 +252,13 @@ class PaperPortfolio:
                 )
                 db.execute("UPDATE account SET cash=cash-? WHERE id=1", (total,))
                 db.execute(
-                    "INSERT INTO positions(symbol,quantity,average_price,strategy_id,stop_loss,take_profit) "
-                    "VALUES(?,?,?,?,?,?) "
-                    "ON CONFLICT(symbol) DO UPDATE SET "
-                    "quantity=excluded.quantity, average_price=excluded.average_price, "
+                    "INSERT INTO positions(provider_id,instrument_id,symbol,quantity,average_price,strategy_id,stop_loss,take_profit) "
+                    "VALUES(?,?,?,?,?,?,?,?) "
+                    "ON CONFLICT(provider_id,instrument_id) DO UPDATE SET "
+                    "symbol=excluded.symbol, quantity=excluded.quantity, average_price=excluded.average_price, "
                     "strategy_id=excluded.strategy_id, stop_loss=excluded.stop_loss, "
                     "take_profit=excluded.take_profit",
-                    (symbol, new_quantity, average_cost, effective_strategy, effective_stop, effective_target),
+                    (provider_id, instrument_id, symbol, new_quantity, average_cost, effective_strategy, effective_stop, effective_target),
                 )
             else:
                 if not position or quantity > position["quantity"] + 1e-12:
@@ -228,19 +270,21 @@ class PaperPortfolio:
                     (total, realised_pnl),
                 )
                 if remaining <= 1e-12:
-                    db.execute("DELETE FROM positions WHERE symbol=?", (symbol,))
+                    db.execute("DELETE FROM positions WHERE provider_id=? AND instrument_id=?", (provider_id, instrument_id))
                 else:
-                    db.execute("UPDATE positions SET quantity=? WHERE symbol=?", (remaining, symbol))
+                    db.execute("UPDATE positions SET quantity=? WHERE provider_id=? AND instrument_id=?", (remaining, provider_id, instrument_id))
 
             stamp = datetime.now(timezone.utc).isoformat()
             cursor = db.execute(
-                "INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at,client_order_id) "
-                "VALUES(?,?,?,?,?,?,?,?)",
-                (symbol, side, quantity, fill, fee, total, stamp, client_order_id),
+                "INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at,client_order_id,provider_id,instrument_id) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (symbol, side, quantity, fill, fee, total, stamp, client_order_id, provider_id, instrument_id),
             )
             return {
                 "id": cursor.lastrowid,
                 "symbol": symbol,
+                "provider_id": provider_id,
+                "instrument_id": instrument_id,
                 "side": side,
                 "quantity": quantity,
                 "price": fill,

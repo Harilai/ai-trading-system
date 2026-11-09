@@ -220,7 +220,11 @@ def test_end_to_end_paper_buy_then_stop_loss_exit(tmp_path):
                         },
                     }]
                 }
-            assert include_symbols == ["BTC/EUR"]
+            assert include_symbols == [{
+                "symbol": "BTC/EUR",
+                "provider_id": "ccxt:kraken",
+                "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+            }]
             return {
                 "analyses": [{
                     "market": {

@@ -43,13 +43,26 @@ class ScoutAgent:
                 "symbol": failure["provider_id"],
                 "reason": "Provider discovery failed: " + failure["reason"],
             })
-        known_symbols = {item["symbol"].upper() for item in candidates}
-        for symbol in include_symbols or []:
-            normalized = symbol.strip().upper()
-            if not normalized.endswith("/EUR") or normalized in known_symbols:
+        known_instruments = {
+            item.get("instrument_id") or f"{item.get('provider_id', 'ccxt:kraken')}:spot:{item['symbol'].upper()}"
+            for item in candidates
+        }
+        for held in include_symbols or []:
+            if isinstance(held, dict):
+                normalized = str(held.get("symbol", "")).strip().upper()
+                provider_id = str(held.get("provider_id") or "ccxt:kraken")
+                instrument_id = str(held.get("instrument_id") or f"{provider_id}:spot:{normalized}")
+            else:
+                normalized = str(held).strip().upper()
+                provider_id = "ccxt:kraken"
+                instrument_id = f"{provider_id}:spot:{normalized}"
+            if not normalized.endswith("/EUR") or instrument_id in known_instruments:
                 continue
             try:
-                ticker = self.market_data.ticker(normalized)
+                try:
+                    ticker = self.market_data.ticker(normalized, provider_id=provider_id)
+                except TypeError:
+                    ticker = self.market_data.ticker(normalized)
                 if self.market_data.is_stale(ticker, self.max_ticker_age_seconds):
                     continue
                 last = ticker.get("last")
@@ -57,6 +70,8 @@ class ScoutAgent:
                     continue
                 candidates.append({
                     "symbol": normalized,
+                    "provider_id": provider_id,
+                    "instrument_id": instrument_id,
                     "last": float(last),
                     "bid": float(ticker.get("bid") or last),
                     "ask": float(ticker.get("ask") or last),
@@ -65,7 +80,7 @@ class ScoutAgent:
                     "ticker_timestamp_ms": int(ticker["timestamp"]),
                     "included_open_position": True,
                 })
-                known_symbols.add(normalized)
+                known_instruments.add(instrument_id)
             except (MarketDataError, ValueError, TypeError, KeyError):
                 rejected.append({"symbol": normalized, "reason": "Unable to refresh held position ticker"})
         analyses: list[dict[str, Any]] = []
