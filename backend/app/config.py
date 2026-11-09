@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     database_path: str = "data/trading.db"
     initial_cash_eur: float = 20.0
     exchange_id: str = "kraken"
+    market_data_provider_ids: str = "kraken"
     fee_rate: float = 0.0026
     slippage_rate: float = 0.0005
     max_order_fraction: float = 0.25
