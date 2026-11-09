@@ -60,7 +60,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 - [x] Implementar Chief con contratos tipados y decisiones auditables.
 - [x] Programar ciclos periódicos cada 5 minutos cuando el worker está habilitado.
 - [x] Integrar Scout, Charts y Strategy Research en una tarea de decisión bajo demanda; programación recurrente pendiente.
-- [ ] Implementar Sniper para generar propuestas con entrada, stop-loss, take-profit y tamaño.
+- [x] Implementar Sniper determinista separado para proponer entrada, stop-loss, take-profit y tamaño según ATR, presupuesto de riesgo, asignación máxima, efectivo y costes; Risk Manager sigue siendo el gate obligatorio.
 - [x] Conectar Risk Manager como puerta obligatoria para propuestas del Chief y órdenes paper.
 - [x] Añadir idempotencia de órdenes paper mediante `client_order_id` vinculado a la tarea.
 - [ ] Completar estados legales de órdenes, conciliación y recuperación frente a fallos en cada frontera de persistencia.
