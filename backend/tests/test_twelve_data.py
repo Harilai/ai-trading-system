@@ -30,8 +30,8 @@ class FakeTwelveDataTransport:
         return io.BytesIO(json.dumps(payload).encode("utf-8"))
 
 
-def test_twelve_data_capabilities_are_market_data_only():
-    provider = TwelveDataProvider("test-key", opener=FakeTwelveDataTransport({}))
+def test_twelve_data_capabilities_are_market_data_only(tmp_path):
+    provider = TwelveDataProvider("test-key", opener=FakeTwelveDataTransport({}), state_path=str(tmp_path / "state.db"), min_request_interval_seconds=0)
     caps = provider.capabilities()
     assert caps.provider_id == "twelve_data"
     assert caps.asset_classes == (AssetClass.EQUITY, AssetClass.ETF)
@@ -44,12 +44,12 @@ def test_twelve_data_capabilities_are_market_data_only():
     assert caps.supports_wallet_signing is False
 
 
-def test_twelve_data_requires_an_api_key():
+def test_twelve_data_requires_an_api_key(tmp_path):
     with pytest.raises(ValueError, match="API key is required"):
         TwelveDataProvider("")
 
 
-def test_discovery_returns_us_equities_and_etfs_with_distinct_asset_classes():
+def test_discovery_returns_us_equities_and_etfs_with_distinct_asset_classes(tmp_path):
     transport = FakeTwelveDataTransport({
         "stocks": {
             "data": [{
@@ -69,7 +69,7 @@ def test_discovery_returns_us_equities_and_etfs_with_distinct_asset_classes():
             "status": "ok",
         },
     })
-    provider = TwelveDataProvider("test-key", opener=transport)
+    provider = TwelveDataProvider("test-key", opener=transport, state_path=str(tmp_path / "state.db"), min_request_interval_seconds=0)
     instruments = provider.discover_markets()
     assert len(instruments) == 2
     equity, etf = instruments
@@ -86,7 +86,7 @@ def test_discovery_returns_us_equities_and_etfs_with_distinct_asset_classes():
     assert transport.calls[1][1]["country"] == ["United States"]
 
 
-def test_discovery_can_be_limited_to_one_asset_class():
+def test_discovery_can_be_limited_to_one_asset_class(tmp_path):
     transport = FakeTwelveDataTransport({
         "stocks": {"data": [{"symbol": "MSFT", "currency": "USD"}], "status": "ok"},
     })
@@ -96,7 +96,7 @@ def test_discovery_can_be_limited_to_one_asset_class():
     assert [call[0] for call in transport.calls] == ["stocks"]
 
 
-def test_ticker_preserves_missing_bid_ask_instead_of_fabricating_spread():
+def test_ticker_preserves_missing_bid_ask_instead_of_fabricating_spread(tmp_path):
     transport = FakeTwelveDataTransport({
         "quote": {
             "symbol": "AAPL", "close": "212.50", "timestamp": 1_800_000_000,
@@ -112,7 +112,7 @@ def test_ticker_preserves_missing_bid_ask_instead_of_fabricating_spread():
     assert quote["baseVolume"] == 1_000_000
 
 
-def test_ohlcv_converts_exchange_local_timestamps_to_utc_epoch():
+def test_ohlcv_converts_exchange_local_timestamps_to_utc_epoch(tmp_path):
     transport = FakeTwelveDataTransport({
         "time_series": {
             "meta": {"exchange_timezone": "America/New_York"},
@@ -133,11 +133,66 @@ def test_ohlcv_converts_exchange_local_timestamps_to_utc_epoch():
     assert transport.calls[0][1]["outputsize"] == ["2"]
 
 
-def test_provider_errors_are_reported_without_exposing_api_key():
+def test_provider_errors_are_reported_without_exposing_api_key(tmp_path):
     transport = FakeTwelveDataTransport({
         "quote": {"status": "error", "message": "Invalid API key"},
     }, api_key="secret-value")
-    provider = TwelveDataProvider("secret-value", opener=transport)
+    provider = TwelveDataProvider("secret-value", opener=transport, state_path=str(tmp_path / "state.db"), min_request_interval_seconds=0)
     with pytest.raises(MarketDataError, match="Invalid API key") as error:
         provider.ticker("AAPL")
     assert "secret-value" not in str(error.value)
+
+
+def test_response_cache_avoids_duplicate_quote_requests(tmp_path):
+    transport = FakeTwelveDataTransport({
+        "quote": {
+            "symbol": "AAPL", "close": "212.50", "timestamp": 1_800_000_000,
+            "bid": "212.40", "ask": "212.60",
+        }
+    })
+    provider = TwelveDataProvider(
+        "test-key", opener=transport, state_path=str(tmp_path / "state.db"),
+        min_request_interval_seconds=0,
+    )
+    first = provider.ticker("AAPL")
+    second = provider.ticker("AAPL")
+    assert first == second
+    assert len(transport.calls) == 1
+
+
+def test_daily_credit_budget_is_persisted_and_blocks_excess_calls(tmp_path):
+    state_path = str(tmp_path / "state.db")
+    first_transport = FakeTwelveDataTransport({
+        "quote": {"symbol": "AAPL", "close": "212.50", "timestamp": 1_800_000_000},
+    })
+    first = TwelveDataProvider(
+        "test-key", opener=first_transport, state_path=state_path,
+        daily_credit_budget=1, min_request_interval_seconds=0,
+    )
+    first.ticker("AAPL")
+
+    second_transport = FakeTwelveDataTransport({
+        "quote": {"symbol": "MSFT", "close": "500", "timestamp": 1_800_000_000},
+    })
+    second = TwelveDataProvider(
+        "test-key", opener=second_transport, state_path=state_path,
+        daily_credit_budget=1, min_request_interval_seconds=0,
+    )
+    with pytest.raises(MarketDataError, match="daily safety budget exhausted"):
+        second.ticker("MSFT")
+    assert second_transport.calls == []
+
+
+def test_rate_limiter_waits_for_reserved_slot(tmp_path):
+    delays = []
+    transport = FakeTwelveDataTransport({
+        "quote": {"symbol": "AAPL", "close": "212.50", "timestamp": 1_800_000_000},
+    })
+    provider = TwelveDataProvider(
+        "test-key", opener=transport, state_path=str(tmp_path / "state.db"),
+        min_request_interval_seconds=7.5, sleeper=delays.append,
+    )
+    provider.ticker("AAPL")
+    provider.ticker("MSFT")
+    assert len(delays) == 1
+    assert delays[0] > 0
