@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     fee_rate: float = 0.0026
     slippage_rate: float = 0.0005
     max_order_fraction: float = 0.25
+    max_stop_distance_fraction: float = Field(default=0.05, gt=0, le=1)
     min_order_value_eur: float = 1.0
     max_data_age_seconds: int = 60
     agent_control_token: str = ""

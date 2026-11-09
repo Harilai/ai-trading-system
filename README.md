@@ -96,14 +96,14 @@ docker compose logs -f api
 - `GET /api/agent/withdrawals` — requiere `X-Agent-Token`.
 - `POST /api/agent/withdrawals` — solicita retirada paper de la reserva de beneficio.
 - `POST /api/agent/withdrawals/{id}/approve` y `/cancel` — aprobación/cancelación manual con token.
-- `POST /api/orders` — solo paper; admite `provider_id` e `instrument_id`.
+- `POST /api/orders` — solo paper; exige `X-Agent-Token` válido (`AGENT_CONTROL_TOKEN`), aprobación del Risk Manager y stop-loss explícito en compras; admite `provider_id`, `instrument_id`, `strategy_id` y niveles protectores.
 - `GET /api/agent/status` — requiere `X-Agent-Token`.
 - `POST /api/agent/resume`, `/pause`, `/emergency-stop`, `/reset-emergency-stop`.
 - `POST /api/agent/tasks` — acepta `health_check`, `market_scan`, `equity_research` (solo lectura) y `decision_cycle`; este último puede ejecutar una orden paper aprobada.
 
 ## Supervisión del worker
 
-Configura un secreto largo y aleatorio en `.env` como `AGENT_CONTROL_TOKEN`. Los endpoints de control requieren ese valor en la cabecera `X-Agent-Token`. Si no está configurado, los controles devuelven 503.
+Configura un secreto largo y aleatorio en `.env` como `AGENT_CONTROL_TOKEN`. Los endpoints de control y el endpoint manual de órdenes paper requieren ese valor en la cabecera `X-Agent-Token`. Si no está configurado, permanecen deshabilitados y devuelven 503. Las compras manuales necesitan stop-loss y pasan por el mismo Risk Manager determinista que las decisiones autónomas.
 
 El worker se inicia pausado. Al reanudarlo explícitamente, programa un `decision_cycle` cada 5 minutos por defecto (`DECISION_CYCLE_INTERVAL_SECONDS`), sin solapar tareas pendientes/en ejecución. Si Twelve Data está configurado, también programa una tarea `equity_research` independiente cada 6 horas (`EQUITY_RESEARCH_INTERVAL_SECONDS`, mínimo 1 hora). Esta tarea muestrea el catálogo, analiza acciones/ETF y persiste el resultado en la memoria/auditoría del agente; nunca genera órdenes. La cuota de Twelve Data se protege con límites persistentes. Cada ciclo puede ejecutar órdenes paper si el Chief genera una propuesta y el Risk Manager la aprueba. También se pueden encolar análisis manuales. Las salidas stop-loss/take-profit se comprueban en cada ciclo, no continuamente entre ciclos. La contabilidad separa P/L realizado y no realizado; la reserva provisional destina el 50% del beneficio neto realizado a retirada y el 50% a reinversión. Las retiradas paper requieren solicitud y aprobación manual y pueden usar cualquier efectivo disponible, incluido principal y beneficio; la contabilidad identifica cuánto procede de la reserva de beneficio y cuánto de capital no reservado. Las solicitudes pendientes reservan efectivo para evitar compromisos duplicados. No se liquidan posiciones automáticamente: si el efectivo no basta, primero habría que autorizar una venta paper controlada. No expongas la API a Internet sin HTTPS, autenticación, restricciones de red, rate limiting y gestión segura de secretos.
 

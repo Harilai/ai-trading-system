@@ -82,7 +82,12 @@ class ChiefAgent:
             for identity, position in portfolio_positions.items()
         }
         equity = float(portfolio.get("equity", 0))
-        cash = float(portfolio.get("cash", 0))
+        cash = float(
+            portfolio.get(
+                "available_cash_for_manual_withdrawal",
+                portfolio.get("cash", 0),
+            )
+        )
         if equity <= 0 or cash < 0:
             return ChiefDecision(rationale="Portfolio equity or cash is invalid; no trade proposed")
 

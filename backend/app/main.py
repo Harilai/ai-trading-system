@@ -1,4 +1,7 @@
-from fastapi import FastAPI, HTTPException, Query
+import hmac
+from typing import Literal
+
+from fastapi import FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 from .config import settings
 from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
@@ -10,6 +13,8 @@ from .providers.registry import ProviderRegistry
 from .scout import ScoutAgent
 from .strategy_research import StrategyResearchAgent
 from .chief import ChiefAgent
+from .agents.contracts import RiskContext, TradeProposal
+from .agents.risk import RiskManager
 from .portfolio import PaperPortfolio, PortfolioError
 
 app = FastAPI(title="AI Trading System", version="0.1.0", description="Paper trading only; live execution is not implemented.")
@@ -31,8 +36,11 @@ class OrderRequest(BaseModel):
     symbol: str = Field(min_length=3)
     provider_id: str = "ccxt:kraken"
     instrument_id: str | None = None
-    side: str
+    side: Literal["buy", "sell"]
     quantity: float = Field(gt=0)
+    stop_loss: float | None = Field(default=None, gt=0)
+    take_profit: float | None = Field(default=None, gt=0)
+    strategy_id: str | None = None
 
 @app.get("/api/providers")
 def providers():
@@ -143,19 +151,84 @@ def get_portfolio():
 @app.get("/api/trades")
 def trades(limit: int=Query(50,ge=1,le=200)): return portfolio.history(limit)
 
-@app.post("/api/orders",status_code=201)
-def paper_order(order: OrderRequest):
-    symbol=order.symbol.strip().upper()
-    if not symbol.endswith("/EUR"): raise HTTPException(422,"Only EUR-quoted pairs (for example BTC/EUR) are enabled in Sprint 1")
+def require_order_control_token(token: str | None) -> None:
+    if not settings.agent_control_token:
+        raise HTTPException(503, "Paper order API disabled: configure AGENT_CONTROL_TOKEN")
+    if token is None or not hmac.compare_digest(token, settings.agent_control_token):
+        raise HTTPException(401, "Invalid paper order control token")
+
+
+@app.post("/api/orders", status_code=201)
+def paper_order(
+    order: OrderRequest,
+    x_agent_token: str | None = Header(default=None),
+):
+    symbol = order.symbol.strip().upper()
+    if not symbol.endswith("/EUR"):
+        raise HTTPException(
+            422,
+            "Only EUR-quoted pairs (for example BTC/EUR) are enabled in Sprint 1",
+        )
+    if order.side == "buy" and order.stop_loss is None:
+        raise HTTPException(422, "A buy order requires an explicit stop_loss")
+    require_order_control_token(x_agent_token)
+
     try:
-        quote=market.ticker(symbol, order.provider_id)
-        if quote["last"] is None or market.is_stale(quote,settings.max_data_age_seconds):
-            raise HTTPException(503,"Missing or stale market data; order rejected")
-        return portfolio.execute(symbol,order.side.lower(),order.quantity,float(quote["last"]),
-            settings.fee_rate,settings.slippage_rate,settings.max_order_fraction,settings.min_order_value_eur,
-            provider_id=order.provider_id, instrument_id=order.instrument_id)
-    except PortfolioError as exc: raise HTTPException(422,str(exc)) from exc
-    except MarketDataError as exc: raise HTTPException(502,str(exc)) from exc
+        quote = market.ticker(symbol, order.provider_id)
+        if quote["last"] is None or market.is_stale(quote, settings.max_data_age_seconds):
+            raise HTTPException(503, "Missing or stale market data; order rejected")
+        reference_price = float(quote["last"])
+        instrument_id = order.instrument_id or f"{order.provider_id}:spot:{symbol}"
+
+        snapshot = portfolio.snapshot()
+        positions = {
+            position["instrument_id"]: float(position["quantity"])
+            for position in snapshot["positions"]
+            if position.get("instrument_id")
+        }
+        context = RiskContext(
+            equity_eur=float(snapshot["equity"]),
+            available_cash_eur=float(snapshot["available_cash_for_manual_withdrawal"]),
+            max_order_fraction=settings.max_order_fraction,
+            max_stop_distance_fraction=settings.max_stop_distance_fraction,
+            estimated_fee_rate=settings.fee_rate,
+            positions=positions,
+        )
+        proposal = TradeProposal(
+            symbol=symbol,
+            provider_id=order.provider_id,
+            instrument_id=instrument_id,
+            side=order.side,
+            quantity=order.quantity,
+            reference_price=reference_price,
+            stop_loss=order.stop_loss,
+            take_profit=order.take_profit,
+            rationale="Owner-submitted paper order evaluated by deterministic Risk Manager",
+            source_agent="manual_owner",
+        )
+        risk = RiskManager().evaluate(proposal, context)
+        if not risk.accepted:
+            raise HTTPException(422, f"Risk Manager rejected order: {risk.reason}")
+
+        return portfolio.execute(
+            symbol,
+            order.side,
+            order.quantity,
+            reference_price,
+            settings.fee_rate,
+            settings.slippage_rate,
+            settings.max_order_fraction,
+            settings.min_order_value_eur,
+            provider_id=order.provider_id,
+            instrument_id=instrument_id,
+            strategy_id=order.strategy_id,
+            stop_loss=order.stop_loss,
+            take_profit=order.take_profit,
+        )
+    except PortfolioError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except MarketDataError as exc:
+        raise HTTPException(502, str(exc)) from exc
 
 
 from contextlib import asynccontextmanager

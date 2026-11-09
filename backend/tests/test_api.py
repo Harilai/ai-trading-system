@@ -8,6 +8,11 @@ from app.portfolio import PaperPortfolio
 client = TestClient(app)
 
 
+def configure_order_auth(monkeypatch):
+    monkeypatch.setattr("app.main.settings.agent_control_token", "test-control-token")
+    return {"X-Agent-Token": "test-control-token"}
+
+
 def test_health_is_paper_only():
     response = client.get("/api/health")
     assert response.status_code == 200
@@ -27,7 +32,51 @@ def test_order_rejects_non_eur_pair_before_market_request(monkeypatch):
     assert response.status_code == 422
 
 
+def test_order_api_requires_control_token(monkeypatch):
+    monkeypatch.setattr("app.main.settings.agent_control_token", "test-control-token")
+    response = client.post(
+        "/api/orders",
+        json={
+            "symbol": "BTC/EUR",
+            "side": "buy",
+            "quantity": 0.0004,
+            "stop_loss": 9800,
+        },
+    )
+    assert response.status_code == 401
+
+
+def test_order_api_is_disabled_without_control_token(monkeypatch):
+    monkeypatch.setattr("app.main.settings.agent_control_token", "")
+    response = client.post(
+        "/api/orders",
+        json={
+            "symbol": "BTC/EUR",
+            "side": "buy",
+            "quantity": 0.0004,
+            "stop_loss": 9800,
+        },
+        headers={"X-Agent-Token": "anything"},
+    )
+    assert response.status_code == 503
+
+
+def test_buy_order_requires_stop_loss_before_market_request(monkeypatch):
+    def unexpected_ticker(_symbol, provider_id=None):
+        raise AssertionError("A buy without stop-loss must be rejected before data access")
+
+    monkeypatch.setattr("app.main.market.ticker", unexpected_ticker)
+    response = client.post(
+        "/api/orders",
+        json={"symbol": "BTC/EUR", "side": "buy", "quantity": 0.0004},
+        headers=configure_order_auth(monkeypatch),
+    )
+    assert response.status_code == 422
+    assert "stop_loss" in response.json()["detail"]
+
+
 def test_order_rejects_stale_market_data(monkeypatch, tmp_path):
+    headers = configure_order_auth(monkeypatch)
     monkeypatch.setattr(
         "app.main.portfolio",
         PaperPortfolio(str(tmp_path / "paper.db"), initial_cash=20),
@@ -35,14 +84,80 @@ def test_order_rejects_stale_market_data(monkeypatch, tmp_path):
     stale_timestamp = int(datetime(2020, 1, 1, tzinfo=timezone.utc).timestamp() * 1000)
     monkeypatch.setattr(
         "app.main.market.ticker",
-        lambda symbol, provider_id=None: {"symbol": symbol, "last": 10000, "timestamp": stale_timestamp},
+        lambda symbol, provider_id=None: {
+            "symbol": symbol, "last": 10000, "timestamp": stale_timestamp,
+        },
     )
     response = client.post(
         "/api/orders",
-        json={"symbol": "BTC/EUR", "side": "buy", "quantity": 0.0001},
+        json={
+            "symbol": "BTC/EUR",
+            "side": "buy",
+            "quantity": 0.0001,
+            "stop_loss": 9800,
+        },
+        headers=headers,
     )
     assert response.status_code == 503
     assert "stale" in response.json()["detail"].lower()
+
+
+def test_manual_buy_passes_risk_manager_and_persists_protection(monkeypatch, tmp_path):
+    headers = configure_order_auth(monkeypatch)
+    paper = PaperPortfolio(str(tmp_path / "paper.db"), initial_cash=20)
+    monkeypatch.setattr("app.main.portfolio", paper)
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+    monkeypatch.setattr(
+        "app.main.market.ticker",
+        lambda symbol, provider_id=None: {
+            "symbol": symbol, "last": 10000, "timestamp": timestamp,
+        },
+    )
+
+    response = client.post(
+        "/api/orders",
+        json={
+            "symbol": "BTC/EUR",
+            "side": "buy",
+            "quantity": 0.0004,
+            "stop_loss": 9800,
+            "take_profit": 10500,
+            "strategy_id": "manual_test",
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 201
+    position = paper.snapshot()["positions"][0]
+    assert position["stop_loss"] == 9800
+    assert position["take_profit"] == 10500
+    assert position["strategy_id"] == "manual_test"
+
+
+def test_manual_buy_is_rejected_when_stop_distance_exceeds_risk_limit(monkeypatch, tmp_path):
+    headers = configure_order_auth(monkeypatch)
+    paper = PaperPortfolio(str(tmp_path / "paper.db"), initial_cash=20)
+    monkeypatch.setattr("app.main.portfolio", paper)
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+    monkeypatch.setattr(
+        "app.main.market.ticker",
+        lambda symbol, provider_id=None: {
+            "symbol": symbol, "last": 10000, "timestamp": timestamp,
+        },
+    )
+    response = client.post(
+        "/api/orders",
+        json={
+            "symbol": "BTC/EUR",
+            "side": "buy",
+            "quantity": 0.0004,
+            "stop_loss": 9000,
+        },
+        headers=headers,
+    )
+    assert response.status_code == 422
+    assert "Risk Manager rejected" in response.json()["detail"]
+    assert paper.snapshot()["positions"] == []
 
 
 def test_order_rejects_non_positive_quantity_before_market_request(monkeypatch):
@@ -76,6 +191,7 @@ def test_equity_research_endpoint_validates_scan_bounds():
 
 def test_agent_task_request_accepts_read_only_equity_research_kind():
     from app.agent_api import TaskRequest
+
     task = TaskRequest(kind="equity_research", payload={"max_instruments": 3})
     assert task.kind == "equity_research"
     assert task.payload["max_instruments"] == 3
