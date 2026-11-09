@@ -9,7 +9,7 @@ La rama integrada contiene actualmente:
 - Backend FastAPI y cartera simulada persistida en SQLite.
 - Capa de integración universal: contratos normalizados de proveedor, instrumentos, clases de activo, tipos de mercado y registro/capability matrix.
 - Adaptador inicial de datos públicos CEX crypto spot mediante CCXT (Kraken por defecto; lista configurable de proveedores CCXT).
-- Adaptador opcional de datos de acciones y ETF estadounidenses mediante Twelve Data Basic, activado únicamente al configurar una API key gratuita.
+- Adaptador opcional de datos de acciones y ETF estadounidenses mediante Twelve Data Basic, activado únicamente al configurar una API key gratuita; incorpora caché SQLite persistente, límite diario conservador y separación mínima entre peticiones.
 - Pipeline separado de investigación de acciones/ETF con filtros de divisa, frescura, bid/ask y backtesting cronológico; endpoint manual de solo lectura `/api/research/equities`.
 - Descubrimiento y enrutamiento de datos por proveedor; endpoints `/api/providers`, `/api/markets` y `/api/risk-profiles`.
 - Indicadores EMA, SMA, RSI, MACD, Bollinger Bands y ATR.
@@ -65,10 +65,17 @@ Tests desde `backend/`:
 pytest -q
 ```
 
+## Configuración de credenciales
+
+Crea el archivo `.env` en la raíz del repositorio, junto a `docker-compose.yml`, copiando `.env.example`. Añade la clave nueva de Twelve Data en `TWELVE_DATA_API_KEY=`. El archivo está excluido por Git y no debe subirse al repositorio. La configuración carga ese archivo tanto al ejecutar desde la raíz como desde `backend/`; Docker Compose lo inyecta mediante `env_file`.
+
+La integración conserva su caché y estado de cuota en `data/twelve_data_state.sqlite3` (dentro del volumen persistente de Docker). Por defecto limita el ritmo a una petición cada 7,5 segundos y aplica un presupuesto de seguridad de 750 unidades de petición estimadas por día, dejando margen respecto al límite publicado de 800 créditos. El coste real en créditos puede depender del endpoint; la caché evita repetir llamadas idénticas mientras los datos siguen vigentes.
+
 ## Docker
 
 ```bash
 cp .env.example .env
+# Edita .env y añade TWELVE_DATA_API_KEY
 docker compose up --build -d
 docker compose logs -f api
 ```
