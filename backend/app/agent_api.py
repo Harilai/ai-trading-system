@@ -16,7 +16,7 @@ def require_control_token(token: str | None) -> None:
 
 
 class TaskRequest(BaseModel):
-    kind: str = Field(pattern="^health_check$")
+    kind: str = Field(pattern="^(health_check|market_scan)$")
     payload: dict = Field(default_factory=dict)
 
 
