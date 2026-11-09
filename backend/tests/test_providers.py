@@ -1,0 +1,102 @@
+from app.providers.base import (
+    AssetClass,
+    MarketInstrument,
+    MarketType,
+    ProviderCapabilities,
+    VenueType,
+)
+from app.providers.registry import ProviderRegistry, ProviderRegistryError
+
+
+class FakeProvider:
+    def __init__(self, provider_id, symbol="BTC/EUR"):
+        self.provider_id = provider_id
+        self.symbol = symbol
+
+    def capabilities(self):
+        return ProviderCapabilities(
+            provider_id=self.provider_id,
+            venue_type=VenueType.CEX,
+            asset_classes=(AssetClass.CRYPTO,),
+            market_types=(MarketType.SPOT,),
+            public_market_data=True,
+        )
+
+    def discover_markets(self, asset_classes=None):
+        return [
+            MarketInstrument(
+                provider_id=self.provider_id,
+                symbol=self.symbol,
+                asset_class=AssetClass.CRYPTO,
+                market_type=MarketType.SPOT,
+                base="BTC",
+                quote="EUR",
+                active=True,
+                min_cost=1.0,
+            )
+        ]
+
+    def ticker(self, symbol):
+        if symbol != self.symbol:
+            raise ValueError("unknown symbol")
+        return {"symbol": symbol, "last": 100.0, "timestamp": 1_800_000_000_000}
+
+    def ohlcv(self, symbol, timeframe="1h", limit=100):
+        if symbol != self.symbol:
+            raise ValueError("unknown symbol")
+        return [[1, 1, 2, 0.5, 1.5, 10]]
+
+
+def test_registry_registers_and_describes_capabilities():
+    registry = ProviderRegistry()
+    registry.register(FakeProvider("fake-one"))
+    description = registry.describe()
+    assert description["providers"] == ["fake-one"]
+    capability = description["capabilities"][0]
+    assert capability["asset_classes"] == ["crypto"]
+    assert capability["market_types"] == ["spot"]
+    assert capability["order_management"] is False
+
+
+def test_registry_rejects_duplicate_provider():
+    registry = ProviderRegistry()
+    registry.register(FakeProvider("fake-one"))
+    import pytest
+    with pytest.raises(ProviderRegistryError, match="already registered"):
+        registry.register(FakeProvider("fake-one"))
+
+
+def test_registry_discovery_retains_provider_identity():
+    registry = ProviderRegistry()
+    registry.register(FakeProvider("fake-one"))
+    registry.register(FakeProvider("fake-two"))
+    instruments, failures = registry.discover_markets((AssetClass.CRYPTO,))
+    assert failures == []
+    assert {item.provider_id for item in instruments} == {"fake-one", "fake-two"}
+    assert {item.instrument_id for item in instruments} == {
+        "fake-one:spot:BTC/EUR",
+        "fake-two:spot:BTC/EUR",
+    }
+
+
+def test_registry_routes_ticker_and_ohlcv_to_explicit_provider():
+    registry = ProviderRegistry()
+    registry.register(FakeProvider("fake-one"))
+    registry.register(FakeProvider("fake-two"))
+    assert registry.ticker("BTC/EUR", "fake-two")["last"] == 100
+    assert registry.ohlcv("BTC/EUR", provider_id="fake-one")[0][4] == 1.5
+
+
+def test_registry_does_not_invent_unknown_provider_access():
+    registry = ProviderRegistry()
+    import pytest
+    with pytest.raises(ProviderRegistryError, match="not configured"):
+        registry.get("unknown-broker")
+
+
+def test_registry_filters_asset_classes():
+    registry = ProviderRegistry()
+    registry.register(FakeProvider("fake-one"))
+    instruments, failures = registry.discover_markets((AssetClass.EQUITY,))
+    assert instruments == []
+    assert failures == []
