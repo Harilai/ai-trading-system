@@ -283,3 +283,42 @@ def test_legacy_position_migrates_to_default_ccxt_provider(tmp_path):
 def test_withdrawal_rejects_invalid_amounts(portfolio, amount):
     with pytest.raises(PortfolioError, match="positive finite"):
         portfolio.request_withdrawal(amount)
+
+
+
+@pytest.mark.parametrize(
+    "quantity,price,fee_rate,slippage_rate,max_fraction,minimum",
+    [
+        (float("nan"), 10000, 0.001, 0, 1, 1),
+        (0.001, float("inf"), 0.001, 0, 1, 1),
+        (0.001, 10000, float("nan"), 0, 1, 1),
+        (0.001, 10000, 1.0, 0, 1, 1),
+        (0.001, 10000, 0.001, float("inf"), 1, 1),
+        (0.001, 10000, 0.001, 0, float("nan"), 1),
+        (0.001, 10000, 0.001, 0, 1, float("inf")),
+    ],
+)
+def test_execution_rejects_non_finite_or_out_of_range_numeric_values(
+    portfolio, quantity, price, fee_rate, slippage_rate, max_fraction, minimum
+):
+    with pytest.raises(PortfolioError):
+        portfolio.execute(
+            "BTC/EUR", "buy", quantity, price, fee_rate, slippage_rate, max_fraction, minimum
+        )
+    assert portfolio.history() == []
+    assert portfolio.snapshot()["positions"] == []
+
+
+@pytest.mark.parametrize("initial_cash", [float("nan"), float("inf"), -1, "invalid"])
+def test_portfolio_rejects_invalid_initial_cash(tmp_path, initial_cash):
+    with pytest.raises(PortfolioError, match="Initial cash"):
+        PaperPortfolio(str(tmp_path / "invalid-cash.db"), initial_cash)
+
+
+def test_execution_rejects_non_finite_protective_levels(portfolio):
+    with pytest.raises(PortfolioError, match="finite"):
+        portfolio.execute(
+            "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
+            stop_loss=float("nan"),
+        )
+    assert portfolio.history() == []
