@@ -9,6 +9,9 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Backend FastAPI y paper portfolio SQLite | Implementado |
 | Datos públicos crypto spot vía CCXT | Implementado; solo datos públicos |
 | Contratos normalizados de proveedores e instrumentos | Implementado |
+| Identidad de posiciones por `provider_id + instrument_id` | Implementado; migración SQLite incluida |
+| Aislamiento de posiciones con mismo símbolo entre proveedores | Implementado y probado |
+| Valoración de cartera por instrumento y proveedor | Implementado |
 | Registro de proveedores y capability matrix | Implementado |
 | Descubrimiento multi-provider para adaptadores configurados | Implementado en datos; actualmente un proveedor por defecto |
 | Router de ejecución normalizado | Contrato inicial; ningún adaptador live |
@@ -72,7 +75,8 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 ## Prioridad 4 — cobertura y producto
 
 - [ ] Implementar y validar un adaptador de broker de acciones/ETF, horarios, permisos, datos, mínimos y comisiones.
-- [ ] Generalizar el portfolio a claves `provider_id + instrument_id` y reconciliación multi-proveedor.
+- [x] Generalizar el portfolio a claves `provider_id + instrument_id`, con migración de datos legacy y aislamiento de símbolos duplicados.
+- [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución.
 - [ ] Implementar adaptadores FX, índices y commodities solo tras validar APIs y elegibilidad.
 - [ ] Diseñar wallet read-only y blockchain monitoring antes de añadir firma aislada; no usar seeds en agentes.
 - [ ] Implementar DEX swaps con simulación, gas, slippage, MEV y reconciliación antes de habilitar ejecución.
