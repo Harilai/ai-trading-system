@@ -18,6 +18,8 @@ from .agents.contracts import RiskContext, TradeProposal
 from .agents.risk import RiskManager
 from .portfolio import PaperPortfolio, PortfolioError
 
+WORKER_HEARTBEAT_MAX_AGE_SECONDS = 300
+
 app = FastAPI(title="AI Trading System", version="0.1.0", description="Paper trading only; live execution is not implemented.")
 market = ProviderRegistry()
 for configured_provider in settings.market_data_provider_ids.split(','):
@@ -125,7 +127,7 @@ def readiness():
         if heartbeat_at.tzinfo is None:
             heartbeat_at = heartbeat_at.replace(tzinfo=timezone.utc)
         age_seconds = (datetime.now(timezone.utc) - heartbeat_at).total_seconds()
-        if age_seconds < 0 or age_seconds > 300:
+        if age_seconds < 0 or age_seconds > WORKER_HEARTBEAT_MAX_AGE_SECONDS:
             raise HTTPException(503, "Autonomous worker heartbeat is stale")
     except HTTPException:
         raise
