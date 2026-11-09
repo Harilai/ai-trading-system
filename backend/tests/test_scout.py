@@ -31,3 +31,29 @@ def test_scout_records_market_with_insufficient_history():
     result = ScoutAgent(ShortHistory()).scan()
     assert result["analysed"] == 0
     assert result["rejected"][0]["symbol"] == "BTC/EUR"
+
+
+def test_scout_includes_open_positions_for_exit_monitoring():
+    from datetime import datetime, timezone
+
+    class HeldPositionMarketData(FakeMarketData):
+        def discover_spot_symbols(self, quote="EUR", limit=5):
+            return []
+
+        def ticker(self, symbol):
+            return {
+                "symbol": symbol,
+                "last": 101.0,
+                "bid": 100.9,
+                "ask": 101.1,
+                "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+            }
+
+        @staticmethod
+        def is_stale(ticker, max_age_seconds):
+            return False
+
+    result = ScoutAgent(HeldPositionMarketData()).scan(include_symbols=["BTC/EUR"])
+    assert result["discovered"] == 1
+    assert result["analysed"] == 1
+    assert result["analyses"][0]["market"]["included_open_position"] is True
