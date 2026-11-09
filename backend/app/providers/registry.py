@@ -25,6 +25,7 @@ class ProviderRegistry:
     def __init__(self):
         self._providers: dict[str, MarketDataProvider] = {}
         self._lock = RLock()
+        self.last_discovery_failures: list[dict[str, str]] = []
 
     def register(self, provider: MarketDataProvider) -> None:
         capabilities = provider.capabilities()
@@ -78,6 +79,7 @@ class ProviderRegistry:
         if limit < 1:
             raise ValueError("limit must be positive")
         ranked = []
+        failures: list[dict[str, str]] = []
         with self._lock:
             providers = list(self._providers.values())
         for provider in providers:
@@ -86,9 +88,10 @@ class ProviderRegistry:
                 continue
             try:
                 ranked.extend(discover(quote, limit, max_spread_fraction, min_quote_volume))
-            except Exception:
-                # Provider-specific failures are reported by discover_markets and provider health.
+            except Exception as exc:
+                failures.append({"provider_id": provider.provider_id, "reason": str(exc)})
                 continue
+        self.last_discovery_failures = failures
         ranked.sort(key=lambda item: item.get("quote_volume_24h", 0), reverse=True)
         return ranked[:limit]
 
