@@ -85,7 +85,7 @@ docker compose logs -f api
 
 Configura un secreto largo y aleatorio en `.env` como `AGENT_CONTROL_TOKEN`. Los endpoints de control requieren ese valor en la cabecera `X-Agent-Token`. Si no está configurado, los controles devuelven 503.
 
-El worker se inicia pausado y no realiza operaciones financieras. Para ejecutar un análisis, se debe reanudar explícitamente y encolar una tarea `market_scan`. No expongas la API a Internet sin HTTPS, autenticación, restricciones de red, rate limiting y gestión segura de secretos.
+El worker se inicia pausado. Al reanudarlo explícitamente, programa un `decision_cycle` cada 5 minutos por defecto (`DECISION_CYCLE_INTERVAL_SECONDS`), sin solapar tareas pendientes/en ejecución. Cada ciclo puede ejecutar órdenes paper si el Chief genera una propuesta y el Risk Manager la aprueba. También se pueden encolar análisis manuales. Las salidas stop-loss/take-profit se comprueban en cada ciclo, no continuamente entre ciclos. No expongas la API a Internet sin HTTPS, autenticación, restricciones de red, rate limiting y gestión segura de secretos.
 
 ## Seguridad y límites
 

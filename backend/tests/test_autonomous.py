@@ -1,5 +1,7 @@
 from datetime import timedelta
 
+import pytest
+
 from app.autonomous import AutonomousAgent, AutonomousStore, utcnow
 
 
@@ -254,3 +256,52 @@ def test_end_to_end_paper_buy_then_stop_loss_exit(tmp_path):
     assert sell_result["decision"]["action"] == "sell"
     assert portfolio.snapshot()["positions"] == []
     assert [trade["side"] for trade in reversed(portfolio.history())] == ["buy", "sell"]
+
+
+def test_scheduler_enqueues_one_decision_cycle_when_enabled(tmp_path):
+    store = AutonomousStore(str(tmp_path / "schedule.db"))
+    assert store.schedule_decision_cycle(300) is None
+
+    store.set_enabled(True)
+    first = store.schedule_decision_cycle(300)
+    assert first["kind"] == "decision_cycle"
+    assert first["status"] == "pending"
+    assert store.schedule_decision_cycle(300) is None
+
+    with store.connect() as db:
+        rows = db.execute(
+            "SELECT id FROM agent_tasks WHERE kind='decision_cycle' AND status='pending'"
+        ).fetchall()
+    assert len(rows) == 1
+
+
+def test_scheduler_respects_interval_and_enqueues_again_after_due_time(tmp_path):
+    store = AutonomousStore(str(tmp_path / "schedule.db"))
+    store.set_enabled(True)
+    first = store.schedule_decision_cycle(300)
+    claimed = store.claim_due_task()
+    store.finish_task(claimed["id"], {"execution": "no_order"})
+
+    assert store.schedule_decision_cycle(300) is None
+    with store.connect() as db:
+        db.execute(
+            "UPDATE agent_state SET last_decision_enqueued_at=? WHERE id=1",
+            ((utcnow() - timedelta(seconds=301)).isoformat(),),
+        )
+
+    second = store.schedule_decision_cycle(300)
+    assert second is not None
+    assert second["id"] != first["id"]
+
+
+def test_scheduler_does_not_enqueue_while_paused_or_emergency_stopped(tmp_path):
+    store = AutonomousStore(str(tmp_path / "schedule.db"))
+    store.set_enabled(True)
+    store.emergency_stop()
+    assert store.schedule_decision_cycle(300) is None
+
+
+def test_scheduler_rejects_too_frequent_cycles(tmp_path):
+    store = AutonomousStore(str(tmp_path / "schedule.db"))
+    with pytest.raises(ValueError, match="60 seconds"):
+        store.schedule_decision_cycle(30)
