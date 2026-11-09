@@ -76,12 +76,13 @@ class EquityEtfResearchAgent:
         average_volume = quote.get("averageVolume")
         current_volume = quote.get("baseVolume")
         volume = average_volume if average_volume is not None else current_volume
-        volume = float(volume) if volume is not None else 0.0
-        if volume < 0:
+        volume = float(volume) if volume is not None else None
+        if volume is not None and volume < 0:
             raise MarketDataError("Trading volume cannot be negative")
 
+        # Missing volume receives the lowest score but does not discard useful history.
         # Log scaling avoids allowing a few extreme-volume mega caps to dominate.
-        volume_score = math.log1p(volume)
+        volume_score = math.log1p(volume) if volume is not None else 0.0
         freshness_score = max(0.0, 1.0 - age_ms / max_age_ms)
         spread_score = (
             max(0.0, 1.0 - spread_fraction / 0.02)
@@ -92,7 +93,7 @@ class EquityEtfResearchAgent:
             "timestamp_ms": timestamp_ms,
             "age_seconds": round(age_ms / 1000, 2),
             "average_volume": float(average_volume) if average_volume is not None else None,
-            "ranking_volume": volume if volume > 0 else None,
+            "ranking_volume": volume if volume is not None and volume > 0 else None,
             "spread_fraction": spread_fraction,
             "liquidity_score": round(score, 6),
             "ranking_components": {
@@ -136,12 +137,6 @@ class EquityEtfResearchAgent:
                 score, quality = self._quote_quality(
                     quote, now_ms, self.max_quote_age_seconds * 1000
                 )
-                if quality["ranking_volume"] is None:
-                    rejected.append({
-                        "symbol": instrument.symbol,
-                        "reason": "Quote has no usable volume; excluded from ranked research candidates",
-                    })
-                    continue
                 candidates.append({
                     "instrument": instrument,
                     "quote": quote,
