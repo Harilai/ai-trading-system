@@ -247,10 +247,14 @@ class PaperPortfolio:
             ).fetchone()
 
             if side == "buy":
-                if gross > account["cash"] * max_fraction:
-                    raise PortfolioError("Order exceeds maximum allocation per trade")
-                if total > account["cash"]:
-                    raise PortfolioError("Insufficient cash")
+                pending_withdrawals = float(db.execute(
+                    "SELECT COALESCE(SUM(amount),0) FROM withdrawal_requests WHERE status='pending'"
+                ).fetchone()[0])
+                spendable_cash = max(0.0, float(account["cash"]) - pending_withdrawals)
+                if gross > spendable_cash * max_fraction:
+                    raise PortfolioError("Order exceeds maximum allocation of unreserved cash")
+                if total > spendable_cash:
+                    raise PortfolioError("Insufficient unreserved cash after pending withdrawals")
                 old_quantity = position["quantity"] if position else 0.0
                 old_cost = old_quantity * position["average_price"] if position else 0.0
                 new_quantity = old_quantity + quantity
