@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import sqlite3
+import time
 from datetime import datetime, timezone
+from pathlib import Path
+from threading import RLock
 from typing import Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -21,13 +26,112 @@ class TwelveDataProvider:
 
     BASE_URL = "https://api.twelvedata.com"
 
-    def __init__(self, api_key: str, *, opener: Callable = urlopen, timeout: int = 15):
+    def __init__(
+        self,
+        api_key: str,
+        *,
+        opener: Callable = urlopen,
+        timeout: int = 15,
+        state_path: str = "data/twelve_data_state.sqlite3",
+        daily_credit_budget: int = 750,
+        min_request_interval_seconds: float = 7.5,
+        sleeper: Callable = time.sleep,
+    ):
         if not api_key or not api_key.strip():
             raise ValueError("Twelve Data API key is required")
         self.provider_id = "twelve_data"
         self._api_key = api_key.strip()
         self._opener = opener
         self.timeout = timeout
+        if daily_credit_budget < 1 or min_request_interval_seconds < 0:
+            raise ValueError("Invalid Twelve Data quota or rate-limit configuration")
+        self.state_path = state_path
+        self.daily_credit_budget = daily_credit_budget
+        self.min_request_interval_seconds = min_request_interval_seconds
+        self._sleep = sleeper
+        self._quota_lock = RLock()
+        Path(self.state_path).parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as db:
+            db.executescript("""
+                CREATE TABLE IF NOT EXISTS api_usage (
+                    utc_day TEXT PRIMARY KEY,
+                    credits INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS api_rate_state (
+                    id INTEGER PRIMARY KEY CHECK(id=1),
+                    next_request_at REAL NOT NULL
+                );
+                INSERT OR IGNORE INTO api_rate_state(id, next_request_at) VALUES(1, 0);
+                CREATE TABLE IF NOT EXISTS response_cache (
+                    cache_key TEXT PRIMARY KEY,
+                    payload TEXT NOT NULL,
+                    expires_at REAL NOT NULL
+                );
+            """)
+
+    def _connect(self):
+        return sqlite3.connect(self.state_path, timeout=15)
+
+    @staticmethod
+    def _cache_ttl(endpoint: str, params: dict) -> int:
+        if endpoint in {"stocks", "etfs/list"}:
+            return 86400
+        if endpoint == "quote":
+            return 60
+        if endpoint == "time_series":
+            interval = str(params.get("interval", ""))
+            return 21600 if interval in {"1day", "1week", "1month"} else 300
+        return 0
+
+    def _cached_response(self, cache_key: str) -> dict | None:
+        now = time.time()
+        with self._connect() as db:
+            row = db.execute(
+                "SELECT payload, expires_at FROM response_cache WHERE cache_key=?",
+                (cache_key,),
+            ).fetchone()
+            if not row:
+                return None
+            if row[1] <= now:
+                db.execute("DELETE FROM response_cache WHERE cache_key=?", (cache_key,))
+                return None
+            return json.loads(row[0])
+
+    def _store_response(self, cache_key: str, payload: dict, ttl: int) -> None:
+        if ttl <= 0:
+            return
+        with self._connect() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO response_cache(cache_key,payload,expires_at) VALUES(?,?,?)",
+                (cache_key, json.dumps(payload), time.time() + ttl),
+            )
+
+    def _reserve_api_credit(self) -> None:
+        now = time.time()
+        utc_day = datetime.now(timezone.utc).date().isoformat()
+        with self._quota_lock, self._connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute("SELECT credits FROM api_usage WHERE utc_day=?", (utc_day,)).fetchone()
+            used = int(row[0]) if row else 0
+            if used >= self.daily_credit_budget:
+                raise MarketDataError(
+                    f"Twelve Data daily safety budget exhausted ({used}/{self.daily_credit_budget} estimated credits); retry after UTC midnight"
+                )
+            db.execute(
+                "INSERT INTO api_usage(utc_day,credits) VALUES(?,1) "
+                "ON CONFLICT(utc_day) DO UPDATE SET credits=credits+1",
+                (utc_day,),
+            )
+            row = db.execute("SELECT next_request_at FROM api_rate_state WHERE id=1").fetchone()
+            next_request_at = float(row[0]) if row else 0.0
+            slot = max(now, next_request_at)
+            db.execute(
+                "UPDATE api_rate_state SET next_request_at=? WHERE id=1",
+                (slot + self.min_request_interval_seconds,),
+            )
+        delay = slot - time.time()
+        if delay > 0:
+            self._sleep(delay)
 
     def capabilities(self) -> ProviderCapabilities:
         return ProviderCapabilities(
@@ -66,8 +170,16 @@ class TwelveDataProvider:
 
     def _request(self, endpoint: str, params: dict | None = None) -> dict:
         query = dict(params or {})
-        query["apikey"] = self._api_key
-        url = f"{self.BASE_URL}/{endpoint.lstrip('/')}?{urlencode(query)}"
+        cache_material = json.dumps([endpoint, query], sort_keys=True, separators=(",", ":"))
+        cache_key = hashlib.sha256(cache_material.encode("utf-8")).hexdigest()
+        cached = self._cached_response(cache_key)
+        if cached is not None:
+            return cached
+
+        self._reserve_api_credit()
+        request_query = dict(query)
+        request_query["apikey"] = self._api_key
+        url = f"{self.BASE_URL}/{endpoint.lstrip('/')}?{urlencode(request_query)}"
         try:
             response = self._opener(url, timeout=self.timeout)
             payload = response.read()
@@ -79,6 +191,7 @@ class TwelveDataProvider:
         if data.get("status") == "error" or data.get("code") not in (None, 200):
             message = str(data.get("message") or data.get("status") or "provider error")
             raise MarketDataError(f"Twelve Data {endpoint} error: {message[:240]}")
+        self._store_response(cache_key, data, self._cache_ttl(endpoint, query))
         return data
 
     @staticmethod
