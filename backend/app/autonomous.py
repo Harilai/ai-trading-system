@@ -328,7 +328,7 @@ class AutonomousStore:
             if not isinstance(candidate, dict) or not candidate.get("strategy_id"):
                 continue
             strategy_id = str(candidate["strategy_id"])
-            strategy_version = f"{strategy_id}:{config_fingerprint}"
+            strategy_version = f"{strategy_id}:logic-v1:config-{config_fingerprint}"
             failures = candidate.get("validation_failures", [])
             result = {
                 "description": candidate.get("description"),
@@ -349,6 +349,7 @@ class AutonomousStore:
         if not rows:
             return 0
         with self.lock, self.connect() as db:
+            changes_before = db.total_changes
             db.executemany(
                 """
                 INSERT OR IGNORE INTO strategy_research_history(
@@ -359,11 +360,12 @@ class AutonomousStore:
                 """,
                 rows,
             )
+            inserted_count = db.total_changes - changes_before
         self.audit("strategy_research_persisted", {
             "task_id": task_id, "instrument_id": instrument_id,
-            "candidate_count": len(rows), "config_fingerprint": config_fingerprint,
+            "candidate_count": inserted_count, "config_fingerprint": config_fingerprint,
         })
-        return len(rows)
+        return inserted_count
 
     def strategy_history(
         self,
