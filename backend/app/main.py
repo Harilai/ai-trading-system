@@ -76,6 +76,7 @@ scout = ScoutAgent(
         slippage_rate=settings.slippage_rate,
         max_position_fraction=settings.max_order_fraction,
     ),
+    max_ticker_age_seconds=settings.max_data_age_seconds,
 )
 chief = ChiefAgent(
     max_order_fraction=settings.max_order_fraction,

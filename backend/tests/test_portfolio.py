@@ -63,3 +63,59 @@ def test_rejects_oversell(portfolio):
 def test_rejects_invalid_execution_parameters(portfolio, fee_rate, slippage_rate, max_fraction):
     with pytest.raises(PortfolioError):
         portfolio.execute("BTC/EUR", "buy", 0.001, 10000, fee_rate, slippage_rate, max_fraction, 1)
+
+
+def test_buy_persists_strategy_and_protective_levels(portfolio):
+    portfolio.execute(
+        "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
+        client_order_id="decision-1",
+        strategy_id="ema_12_26",
+        stop_loss=9800,
+        take_profit=10400,
+    )
+    position = portfolio.snapshot()["positions"][0]
+    assert position["strategy_id"] == "ema_12_26"
+    assert position["stop_loss"] == pytest.approx(9800)
+    assert position["take_profit"] == pytest.approx(10400)
+
+
+def test_duplicate_client_order_id_does_not_execute_twice(portfolio):
+    first = portfolio.execute(
+        "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
+        client_order_id="same-decision",
+    )
+    cash_after_first = portfolio.snapshot()["cash"]
+    replay = portfolio.execute(
+        "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
+        client_order_id="same-decision",
+    )
+    assert replay["id"] == first["id"]
+    assert replay["idempotent_replay"] is True
+    assert portfolio.snapshot()["cash"] == pytest.approx(cash_after_first)
+    assert len(portfolio.history()) == 1
+
+
+def test_trade_can_be_recovered_by_idempotency_key(portfolio):
+    trade = portfolio.execute(
+        "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
+        client_order_id="recover-me",
+    )
+    recovered = portfolio.get_trade_by_client_order_id("recover-me")
+    assert recovered["id"] == trade["id"]
+    assert recovered["symbol"] == "BTC/EUR"
+
+
+def test_legacy_database_is_migrated_with_protection_and_idempotency_columns(tmp_path):
+    path = str(tmp_path / "legacy.db")
+    import sqlite3
+
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE positions (symbol TEXT PRIMARY KEY, quantity REAL, average_price REAL)")
+        db.execute("CREATE TABLE trades (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, side TEXT, quantity REAL, price REAL, fee REAL, total REAL, created_at TEXT)")
+        db.execute("CREATE TABLE account (id INTEGER PRIMARY KEY CHECK(id=1), initial_cash REAL, cash REAL, realised_pnl REAL DEFAULT 0)")
+    PaperPortfolio(path, 20)
+    with sqlite3.connect(path) as db:
+        position_columns = {row[1] for row in db.execute("PRAGMA table_info(positions)")}
+        trade_columns = {row[1] for row in db.execute("PRAGMA table_info(trades)")}
+    assert {"strategy_id", "stop_loss", "take_profit"} <= position_columns
+    assert "client_order_id" in trade_columns

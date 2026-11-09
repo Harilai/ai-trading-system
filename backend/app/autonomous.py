@@ -273,10 +273,56 @@ class AutonomousAgent:
         if task["kind"] == "decision_cycle":
             if self.scout is None or self.chief is None or self.portfolio is None:
                 raise RuntimeError("Decision cycle dependencies are not configured")
-            scan = await asyncio.to_thread(self.scout.scan)
+
+            # A retry after a process crash must not place a second paper order.
+            previous_order = await asyncio.to_thread(
+                self.portfolio.get_trade_by_client_order_id,
+                task["id"],
+            )
+            if previous_order is not None:
+                result = {
+                    "execution": "paper_order_replayed",
+                    "order": previous_order,
+                    "idempotent_replay": True,
+                }
+                self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
+                return result
+
             portfolio = await asyncio.to_thread(self.portfolio.snapshot)
+            held_symbols = [position["symbol"] for position in portfolio.get("positions", [])]
+            scan = await asyncio.to_thread(self.scout.scan, held_symbols)
             decision = self.chief.decide(scan, portfolio)
-            result = {"scan": scan, "decision": decision.model_dump(), "execution": "proposal_only"}
+            order = None
+            execution = "no_order"
+            if (
+                decision.action in ("buy", "sell")
+                and decision.proposal is not None
+                and decision.risk is not None
+                and decision.risk.accepted
+            ):
+                proposal = decision.proposal
+                order = await asyncio.to_thread(
+                    self.portfolio.execute,
+                    proposal.symbol,
+                    proposal.side,
+                    decision.risk.approved_quantity,
+                    proposal.reference_price,
+                    settings.fee_rate,
+                    settings.slippage_rate,
+                    settings.max_order_fraction,
+                    settings.min_order_value_eur,
+                    client_order_id=task["id"],
+                    strategy_id=decision.strategy_id if proposal.side == "buy" else None,
+                    stop_loss=proposal.stop_loss,
+                    take_profit=proposal.take_profit,
+                )
+                execution = "paper_order"
+            result = {
+                "scan": scan,
+                "decision": decision.model_dump(),
+                "order": order,
+                "execution": execution,
+            }
             self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
             return result
         raise ValueError(f"Unsupported task kind in this phase: {task['kind']}")

@@ -17,6 +17,7 @@ class TradeProposal(BaseModel):
     quantity: float = Field(gt=0)
     reference_price: float = Field(gt=0)
     stop_loss: float | None = Field(default=None, gt=0)
+    take_profit: float | None = Field(default=None, gt=0)
     rationale: str = Field(min_length=10, max_length=2000)
     source_agent: str = Field(default="sniper", min_length=1, max_length=64)
 

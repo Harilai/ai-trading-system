@@ -70,10 +70,14 @@ def test_decision_cycle_persists_proposal_only_result(tmp_path):
     import asyncio
 
     class FakeScout:
-        def scan(self):
+        def scan(self, include_symbols=None):
             return {"analyses": [{"market": {"symbol": "BTC/EUR"}}]}
 
     class FakeDecision:
+        action = "hold"
+        proposal = None
+        risk = None
+
         def model_dump(self):
             return {"action": "hold", "rationale": "No validated opportunity"}
 
@@ -87,11 +91,166 @@ def test_decision_cycle_persists_proposal_only_result(tmp_path):
         def snapshot(self):
             return {"cash": 20}
 
+        def get_trade_by_client_order_id(self, client_order_id):
+            return None
+
     store = AutonomousStore(str(tmp_path / "decision.db"))
     worker = AutonomousAgent(store, scout=FakeScout(), chief=FakeChief(), portfolio=FakePortfolio())
     task = {"id": "decision-test", "kind": "decision_cycle", "payload": {}}
     result = asyncio.run(worker._execute(task))
-    assert result["execution"] == "proposal_only"
+    assert result["execution"] == "no_order"
     assert result["decision"]["action"] == "hold"
     memory = store.overview()["memory"]
     assert memory[0]["category"] == "chief_decision"
+
+
+def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
+    import asyncio
+
+    from app.agents.contracts import RiskDecision, TradeProposal
+    from app.chief import ChiefDecision
+
+    class FakeScout:
+        def scan(self, include_symbols=None):
+            return {"analyses": [], "included_positions": include_symbols or []}
+
+    class FakeChief:
+        def decide(self, scan, portfolio):
+            proposal = TradeProposal(
+                symbol="BTC/EUR",
+                side="buy",
+                quantity=0.001,
+                reference_price=10000,
+                stop_loss=9800,
+                take_profit=10400,
+                rationale="Validated trend entry with bounded downside",
+                source_agent="chief",
+            )
+            return ChiefDecision(
+                action="buy",
+                symbol="BTC/EUR",
+                strategy_id="ema_12_26",
+                rationale="Risk-approved paper entry",
+                proposal=proposal,
+                risk=RiskDecision(
+                    accepted=True,
+                    reason="passed",
+                    approved_quantity=0.001,
+                    estimated_notional_eur=10.03,
+                ),
+            )
+
+    class FakePortfolio:
+        def __init__(self):
+            self.order = None
+            self.execute_calls = 0
+
+        def snapshot(self):
+            return {"cash": 20, "equity": 20, "positions": []}
+
+        def get_trade_by_client_order_id(self, client_order_id):
+            if self.order and self.order["client_order_id"] == client_order_id:
+                return self.order
+            return None
+
+        def execute(self, *args, **kwargs):
+            self.execute_calls += 1
+            self.order = {
+                "symbol": args[0],
+                "side": args[1],
+                "client_order_id": kwargs["client_order_id"],
+                "strategy_id": kwargs["strategy_id"],
+                "stop_loss": kwargs["stop_loss"],
+                "take_profit": kwargs["take_profit"],
+            }
+            return self.order
+
+    store = AutonomousStore(str(tmp_path / "paper-cycle.db"))
+    portfolio = FakePortfolio()
+    worker = AutonomousAgent(store, scout=FakeScout(), chief=FakeChief(), portfolio=portfolio)
+    task = {"id": "paper-decision-1", "kind": "decision_cycle", "payload": {}}
+
+    first = asyncio.run(worker._execute(task))
+    second = asyncio.run(worker._execute(task))
+
+    assert first["execution"] == "paper_order"
+    assert first["order"]["client_order_id"] == task["id"]
+    assert first["order"]["strategy_id"] == "ema_12_26"
+    assert first["order"]["stop_loss"] == 9800
+    assert first["order"]["take_profit"] == 10400
+    assert second["execution"] == "paper_order_replayed"
+    assert portfolio.execute_calls == 1
+
+
+
+def test_end_to_end_paper_buy_then_stop_loss_exit(tmp_path):
+    import asyncio
+
+    from app.chief import ChiefAgent
+    from app.portfolio import PaperPortfolio
+
+    class MutableScout:
+        def __init__(self):
+            self.exit_mode = False
+
+        def scan(self, include_symbols=None):
+            if not self.exit_mode:
+                return {
+                    "analyses": [{
+                        "market": {
+                            "symbol": "BTC/EUR",
+                            "last": 100.0,
+                            "ask": 100.0,
+                            "bid": 99.9,
+                            "quote_volume_24h": 10000,
+                        },
+                        "analysis": {"close": 100.0, "indicators": {"atr_14": 1.0}},
+                        "strategy_research": {
+                            "recommended_strategy": "ema_12_26",
+                            "candidates": [{
+                                "strategy_id": "ema_12_26",
+                                "eligible": True,
+                                "score": 0.1,
+                                "current_entry_signal": True,
+                                "current_hold_signal": True,
+                                "out_of_sample": {"net_return": 0.1, "max_drawdown": 0.05, "trades": 8},
+                            }],
+                        },
+                    }]
+                }
+            assert include_symbols == ["BTC/EUR"]
+            return {
+                "analyses": [{
+                    "market": {
+                        "symbol": "BTC/EUR",
+                        "last": 97.0,
+                        "ask": 97.1,
+                        "bid": 97.0,
+                        "quote_volume_24h": 10000,
+                    },
+                    "analysis": {"close": 97.0, "indicators": {"atr_14": 1.0}},
+                    "strategy_research": {"recommended_strategy": None, "candidates": []},
+                }]
+            }
+
+    store = AutonomousStore(str(tmp_path / "e2e-agent.db"))
+    portfolio = PaperPortfolio(str(tmp_path / "e2e-paper.db"), initial_cash=20)
+    scout = MutableScout()
+    chief = ChiefAgent(minimum_order_value_eur=1)
+    worker = AutonomousAgent(store, scout=scout, chief=chief, portfolio=portfolio)
+
+    buy_task = {"id": "buy-task-1", "kind": "decision_cycle", "payload": {}}
+    buy_result = asyncio.run(worker._execute(buy_task))
+    assert buy_result["execution"] == "paper_order"
+    position = portfolio.snapshot()["positions"][0]
+    assert position["strategy_id"] == "ema_12_26"
+    assert position["stop_loss"] == 98.0
+    assert position["take_profit"] == 104.0
+
+    scout.exit_mode = True
+    sell_task = {"id": "sell-task-1", "kind": "decision_cycle", "payload": {}}
+    sell_result = asyncio.run(worker._execute(sell_task))
+    assert sell_result["execution"] == "paper_order"
+    assert sell_result["decision"]["action"] == "sell"
+    assert portfolio.snapshot()["positions"] == []
+    assert [trade["side"] for trade in reversed(portfolio.history())] == ["buy", "sell"]
