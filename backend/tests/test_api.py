@@ -232,3 +232,48 @@ def test_readiness_rejects_database_failure(monkeypatch):
 
     assert response.status_code == 503
     assert "readiness check failed" in response.json()["detail"]
+
+
+
+def test_strategy_history_endpoint_requires_agent_token(monkeypatch):
+    monkeypatch.setattr("app.agent_api.settings.agent_control_token", "test-control-token")
+    response = client.get("/api/agent/strategy-history")
+    assert response.status_code == 401
+
+
+def test_strategy_history_endpoint_returns_filtered_persisted_evidence(monkeypatch):
+    monkeypatch.setattr("app.agent_api.settings.agent_control_token", "test-control-token")
+    expected = [{
+        "task_id": "scan-1",
+        "strategy_id": "ema_12_26",
+        "eligible": False,
+        "validation_failures": ["does_not_beat_buy_and_hold"],
+    }]
+    calls = {}
+
+    def fake_history(**kwargs):
+        calls.update(kwargs)
+        return expected
+
+    monkeypatch.setattr("app.agent_api.store.strategy_history", fake_history)
+    response = client.get(
+        "/api/agent/strategy-history?limit=25&strategy_id=ema_12_26&instrument_id=ccxt%3Akraken%3Aspot%3ABTC%2FEUR",
+        headers={"X-Agent-Token": "test-control-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["items"] == expected
+    assert calls == {
+        "limit": 25,
+        "strategy_id": "ema_12_26",
+        "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+    }
+
+
+def test_strategy_history_endpoint_validates_limit(monkeypatch):
+    monkeypatch.setattr("app.agent_api.settings.agent_control_token", "test-control-token")
+    response = client.get(
+        "/api/agent/strategy-history?limit=0",
+        headers={"X-Agent-Token": "test-control-token"},
+    )
+    assert response.status_code == 422
