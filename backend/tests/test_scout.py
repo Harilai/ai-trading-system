@@ -19,6 +19,7 @@ def test_scout_discovers_and_analyses_markets():
     assert result["discovered"] == 1
     assert result["analysed"] == 1
     assert result["analyses"][0]["analysis"]["symbol"] == "BTC/EUR"
+    assert result["analyses"][0]["strategy_research"]["status"] == "insufficient_or_invalid_history"
     assert result["execution"] == "analysis_only"
 
 
