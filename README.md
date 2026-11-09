@@ -80,7 +80,7 @@ docker compose up --build -d
 docker compose logs -f api
 ```
 
-El contenedor se ejecuta como usuario no privilegiado, con sistema de archivos raíz de solo lectura, capacidades Linux eliminadas y volumen persistente para SQLite. El puerto se publica solo en `127.0.0.1`; no queda expuesto directamente a Internet. Para administrar una instancia remota, usa un túnel SSH (`ssh -L 8000:127.0.0.1:8000 usuario@servidor`) o configura un reverse proxy TLS independiente y restringido.
+El contenedor API se ejecuta como usuario no privilegiado, con sistema de archivos raíz de solo lectura, capacidades Linux eliminadas y volumen persistente para SQLite. Un servicio independiente `backup` ejecuta copias diarias de ambas bases SQLite en el mismo volumen, con retención de 14 días por defecto; también usa usuario no privilegiado, filesystem read-only, sin capacidades y sin acceso de red. El puerto se publica solo en `127.0.0.1`; no queda expuesto directamente a Internet. Para administrar una instancia remota, usa un túnel SSH (`ssh -L 8000:127.0.0.1:8000 usuario@servidor`) o configura un reverse proxy TLS independiente y restringido.
 
 
 ## Copias de seguridad y restauración SQLite
@@ -110,7 +110,7 @@ docker compose run --rm --no-deps api python -m app.backup restore --source /app
 docker compose up -d api
 ```
 
-La utilidad es manual; no configura por sí sola una programación automática ni una copia fuera del volumen del servidor. Conserva periódicamente una copia externa y comprueba que puedes restaurarla.
+El servicio `backup` ejecuta este mismo mecanismo automáticamente cada 24 horas (`BACKUP_INTERVAL_SECONDS`) y elimina copias locales con más de 14 días (`BACKUP_RETENTION_DAYS`). Consulta su actividad con `docker compose logs -f backup`. Las copias siguen dentro del mismo volumen/servidor: no protegen frente a pérdida del servidor o del volumen. Conserva también una copia externa y comprueba periódicamente que puedes restaurarla.
 
 ## Endpoints principales
 
