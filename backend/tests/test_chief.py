@@ -150,3 +150,36 @@ def test_risk_manager_accepts_only_enabled_crypto_spot_profile():
         RiskContext(equity_eur=1000, available_cash_eur=1000),
     )
     assert decision.accepted is True
+
+
+def test_chief_does_not_confuse_same_symbol_across_providers():
+    scan = eligible_scan()
+    scan["analyses"][0]["market"]["provider_id"] = "ccxt:kraken"
+    scan["analyses"][0]["market"]["instrument_id"] = "ccxt:kraken:spot:BTC/EUR"
+    other_position = {
+        "symbol": "BTC/EUR",
+        "provider_id": "ccxt:coinbase",
+        "instrument_id": "ccxt:coinbase:spot:BTC/EUR",
+        "quantity": 0.25,
+    }
+    decision = ChiefAgent().decide(scan, portfolio(positions=[other_position]))
+    assert decision.action == "buy"
+    assert decision.proposal.provider_id == "ccxt:kraken"
+    assert decision.proposal.instrument_id == "ccxt:kraken:spot:BTC/EUR"
+
+
+def test_chief_exit_targets_the_exact_provider_position():
+    scan = eligible_scan(entry=False, hold=False)
+    scan["analyses"][0]["market"]["provider_id"] = "ccxt:coinbase"
+    scan["analyses"][0]["market"]["instrument_id"] = "ccxt:coinbase:spot:BTC/EUR"
+    position = {
+        "symbol": "BTC/EUR",
+        "provider_id": "ccxt:coinbase",
+        "instrument_id": "ccxt:coinbase:spot:BTC/EUR",
+        "quantity": 0.25,
+    }
+    decision = ChiefAgent().decide(scan, portfolio(positions=[position]))
+    assert decision.action == "sell"
+    assert decision.proposal.provider_id == "ccxt:coinbase"
+    assert decision.proposal.instrument_id == "ccxt:coinbase:spot:BTC/EUR"
+    assert decision.proposal.quantity == 0.25
