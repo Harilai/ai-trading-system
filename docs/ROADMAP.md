@@ -24,7 +24,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Worker persistente, cola, leases y reintentos | Implementado |
 | Programación periódica de decision_cycle sin solapamientos | Implementada; 5 min por defecto, solo con worker habilitado |
 | Recuperación de leases expirados en ejecución | Implementado |
-| API de control autenticada | Implementada; endurecimiento de despliegue pendiente |
+| API de control y órdenes paper autenticadas | Implementadas con token; endurecimiento de despliegue pendiente |
 | Scout: descubrimiento de spot EUR por volumen/spread/frescura | Implementado |
 | Charts Agent | Implementado |
 | Strategy Research: EMA, RSI, Bollinger, split 70/30, OHLCV validado, benchmark buy-and-hold y gates walk-forward | Implementado como filtro de investigación; no habilita ejecución |
@@ -97,7 +97,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 - [ ] Evaluar Oracle Cloud Always Free y alternativas en el momento del despliegue; no asumir disponibilidad permanente.
 - [ ] Mantener operación sin APIs de inferencia de pago; LLM local opcional y lógica determinista como fallback.
 - [ ] Añadir health/readiness, monitorización, backups y restore probado.
-- [ ] Endurecer Docker: usuario no root, secretos, TLS/reverse proxy y acceso restringido.
+- [x] Proteger el endpoint manual de órdenes paper con token y gate obligatorio del Risk Manager; compras con stop-loss explícito.\n- [ ] Endurecer Docker: usuario no root, secretos, TLS/reverse proxy y acceso restringido.
 - [ ] Medir disponibilidad real antes de afirmar que funciona 24/7.
 
 ## Seguridad no negociable
