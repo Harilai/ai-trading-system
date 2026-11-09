@@ -379,3 +379,42 @@ def test_equity_research_task_fails_closed_without_provider(tmp_path):
     task = {"id": "equity-research-task", "kind": "equity_research", "payload": {}}
     with pytest.raises(RuntimeError, match="not configured"):
         asyncio.run(worker._execute(task))
+
+
+
+@pytest.mark.asyncio
+async def test_worker_survives_transient_store_failure_and_retries(tmp_path):
+    class FlakyStore(AutonomousStore):
+        def __init__(self, path):
+            super().__init__(path)
+            self.state_calls = 0
+            self.audit_events = []
+            self.worker = None
+
+        def state(self):
+            self.state_calls += 1
+            if self.state_calls == 1:
+                raise RuntimeError("transient SQLite read failure")
+            return {"enabled": 0, "emergency_stop": 0}
+
+        def audit(self, action, details=None):
+            self.audit_events.append((action, details or {}))
+
+        def heartbeat(self):
+            if self.state_calls >= 2:
+                self.worker._stopping.set()
+
+    store = FlakyStore(str(tmp_path / "worker-recovery.db"))
+    worker = AutonomousAgent(store, poll_interval_seconds=0.01)
+    store.worker = worker
+
+    await worker._run()
+
+    assert store.state_calls >= 2
+    assert any(action == "worker_loop_error" for action, _ in store.audit_events)
+
+
+def test_worker_rejects_non_positive_poll_interval(tmp_path):
+    store = AutonomousStore(str(tmp_path / "worker-config.db"))
+    with pytest.raises(ValueError, match="poll_interval_seconds"):
+        AutonomousAgent(store, poll_interval_seconds=0)
