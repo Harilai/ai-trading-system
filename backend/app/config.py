@@ -1,3 +1,4 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -10,6 +11,7 @@ class Settings(BaseSettings):
     min_order_value_eur: float = 1.0
     max_data_age_seconds: int = 60
     agent_control_token: str = ""
+    decision_cycle_interval_seconds: int = Field(default=300, ge=60)
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 settings = Settings()
