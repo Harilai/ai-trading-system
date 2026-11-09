@@ -9,8 +9,8 @@ La rama integrada contiene actualmente:
 - Backend FastAPI y cartera simulada persistida en SQLite.
 - Capa de integración universal: contratos normalizados de proveedor, instrumentos, clases de activo, tipos de mercado y registro/capability matrix.
 - Adaptador inicial de datos públicos CEX crypto spot mediante CCXT (Kraken por defecto; lista configurable de proveedores CCXT).
-- Adaptador opcional de datos de acciones y ETF estadounidenses mediante Twelve Data Basic, activado únicamente al configurar una API key gratuita; incorpora caché SQLite persistente, límite diario conservador, separación mínima entre peticiones y conciliación del consumo con la cabecera `api-credits-used` del proveedor cuando está disponible.
-- Pipeline separado de investigación de acciones/ETF con filtros de divisa, frescura, bid/ask y backtesting cronológico; endpoint manual de solo lectura `/api/research/equities`.
+- Adaptador opcional de datos de acciones y ETF estadounidenses mediante Twelve Data Basic, activado únicamente al configurar una API key gratuita; incorpora caché SQLite persistente, límites persistentes diario y móvil de 60 segundos basados en créditos estimados, separación mínima entre peticiones y conciliación del consumo con la cabecera `api-credits-used` del proveedor cuando está disponible.
+- Pipeline separado de investigación de acciones/ETF con muestreo estratificado de todo el catálogo para limitar las cotizaciones sin quedarse siempre con los primeros símbolos, ranking de candidatos por volumen, frescura de cotización y spread; solo descarga histórico para los mejores candidatos. La clasificación usa pesos explícitos (60% volumen, 25% frescura, 15% spread), desempate determinista por símbolo y mantiene investigación histórica separada de los bloqueos de ejecución; endpoint manual de solo lectura `/api/research/equities`.
 - Descubrimiento y enrutamiento de datos por proveedor; endpoints `/api/providers`, `/api/markets` y `/api/risk-profiles`.
 - Indicadores EMA, SMA, RSI, MACD, Bollinger Bands y ATR.
 - Simulación de compras y ventas con comisiones y slippage configurables.
@@ -69,7 +69,7 @@ pytest -q
 
 Crea el archivo `.env` en la raíz del repositorio, junto a `docker-compose.yml`, copiando `.env.example`. Añade la clave nueva de Twelve Data en `TWELVE_DATA_API_KEY=`. El archivo está excluido por Git y no debe subirse al repositorio. La configuración carga ese archivo tanto al ejecutar desde la raíz como desde `backend/`; Docker Compose lo inyecta mediante `env_file`.
 
-La integración conserva su caché y estado de cuota en `data/twelve_data_state.sqlite3` (dentro del volumen persistente de Docker). Por defecto limita el ritmo a una petición cada 7,5 segundos y aplica un presupuesto de seguridad de 750 unidades de petición estimadas por día, dejando margen respecto al límite publicado de 800 créditos. El coste real en créditos puede depender del endpoint; la caché evita repetir llamadas idénticas mientras los datos siguen vigentes.
+La integración conserva su caché y estado de cuota en `data/twelve_data_state.sqlite3` (dentro del volumen persistente de Docker). Por defecto limita el ritmo a una petición cada 7,5 segundos, aplica un máximo móvil de 8 créditos estimados en cualquier ventana de 60 segundos y un presupuesto diario de 750 créditos, dejando margen respecto al límite publicado de 800 créditos. El coste real puede variar por endpoint: cuando la respuesta incluye `api-credits-used`, el adaptador concilia tanto el registro diario como la ventana móvil; si no está presente, conserva la estimación local conservadora. El coste real en créditos puede depender del endpoint; la caché evita repetir llamadas idénticas mientras los datos siguen vigentes.
 
 ## Docker
 
@@ -84,7 +84,7 @@ docker compose logs -f api
 
 - `GET /api/providers` — proveedores configurados y capability matrix. Twelve Data aparece si `TWELVE_DATA_API_KEY` está configurada.
 - `GET /api/markets` — puede incluir el catálogo de acciones/ETF de EE. UU. de Twelve Data.
-- `GET /api/research/equities?max_instruments=5&timeframe=1day` — investigación manual de acciones/ETF; requiere `TWELVE_DATA_API_KEY`, está limitada a 1–10 instrumentos y nunca ejecuta operaciones.
+- `GET /api/research/equities?max_instruments=5&max_quote_candidates=10&timeframe=1day` — investigación manual de acciones/ETF; requiere `TWELVE_DATA_API_KEY`, limita las cotizaciones examinadas (1–100) y el histórico descargado (1–10), y nunca ejecuta operaciones. El muestreo de cotizaciones se distribuye por todo el catálogo y la clasificación preliminar prioriza volumen (60%), frescura (25%) y spread (15%); la ausencia de volumen penaliza la posición, pero no elimina por sí sola la investigación histórica.
 - `GET /api/markets` — instrumentos detectados y restricciones conocidas.
 - `GET /api/risk-profiles` — perfiles de riesgo y estado habilitado/deshabilitado.
 - `GET /api/health`
