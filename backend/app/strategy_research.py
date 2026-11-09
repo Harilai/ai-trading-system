@@ -157,12 +157,23 @@ class StrategyResearchAgent:
                 "close": float(candle["close"]),
                 "volume": float(candle.get("volume", 0.0)),
             }
+            numeric_values = (
+                row["open"], row["high"], row["low"], row["close"], row["volume"]
+            )
+            if not all(math.isfinite(value) for value in numeric_values):
+                raise ValueError("Candle OHLCV values must be finite")
+            if row["timestamp"] <= 0:
+                raise ValueError("Candle timestamp must be positive")
             if min(row["open"], row["high"], row["low"], row["close"]) <= 0:
                 raise ValueError("Candle prices must be positive")
+            if row["volume"] < 0:
+                raise ValueError("Candle volume cannot be negative")
             if row["high"] < max(row["open"], row["close"], row["low"]):
                 raise ValueError("Invalid candle high")
             if row["low"] > min(row["open"], row["close"], row["high"]):
                 raise ValueError("Invalid candle low")
+            if normalized and row["timestamp"] <= normalized[-1]["timestamp"]:
+                raise ValueError("Candle timestamps must be strictly increasing")
             normalized.append(row)
 
         split = int(len(normalized) * 0.7)
