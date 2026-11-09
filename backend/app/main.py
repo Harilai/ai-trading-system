@@ -79,6 +79,7 @@ def markets():
 @app.get("/api/research/equities")
 def research_equities(
     max_instruments: int = Query(5, ge=1, le=10),
+    max_quote_candidates: int = Query(10, ge=1, le=100),
     timeframe: str = Query("1day", pattern="^(1day|1h|4h)$"),
 ):
     try:
@@ -86,6 +87,7 @@ def research_equities(
         agent = EquityEtfResearchAgent(
             provider,
             max_instruments=max_instruments,
+            max_quote_candidates=max_quote_candidates,
             timeframe=timeframe,
         )
         return agent.scan()
