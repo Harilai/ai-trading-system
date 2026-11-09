@@ -117,8 +117,8 @@ def test_legacy_database_is_migrated_with_protection_and_idempotency_columns(tmp
     with sqlite3.connect(path) as db:
         position_columns = {row[1] for row in db.execute("PRAGMA table_info(positions)")}
         trade_columns = {row[1] for row in db.execute("PRAGMA table_info(trades)")}
-    assert {"strategy_id", "stop_loss", "take_profit"} <= position_columns
-    assert "client_order_id" in trade_columns
+    assert {"provider_id", "instrument_id", "strategy_id", "stop_loss", "take_profit"} <= position_columns
+    assert {"client_order_id", "provider_id", "instrument_id"} <= trade_columns
 
 
 def test_market_valuation_distinguishes_realised_and_unrealised_pnl(portfolio):
