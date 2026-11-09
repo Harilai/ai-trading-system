@@ -98,3 +98,37 @@ def test_sniper_rejects_invalid_configuration():
         SniperAgent(max_order_fraction=0.1, risk_per_trade_fraction=0.2)
     with pytest.raises(ValueError, match="positive"):
         SniperAgent(atr_stop_multiple=0)
+
+
+
+def test_sniper_risk_budget_includes_entry_exit_slippage_and_round_trip_fees():
+    sniper = SniperAgent(
+        risk_per_trade_fraction=0.01,
+        estimated_fee_rate=0.01,
+        estimated_slippage_rate=0.02,
+    )
+    proposal = sniper.propose(
+        market(),
+        analysis(),
+        candidate(),
+        equity=1000.0,
+        available_cash=1000.0,
+    )
+
+    assert proposal is not None
+    entry_fill = proposal.reference_price * 1.02
+    stop_fill = proposal.stop_loss * 0.98
+    round_trip_fees = 0.01 * (entry_fill + stop_fill)
+    estimated_loss_per_unit = entry_fill - stop_fill + round_trip_fees
+    assert proposal.quantity * estimated_loss_per_unit <= 10.0 + 1e-9
+
+
+def test_sniper_fails_closed_on_non_numeric_account_values():
+    proposal = SniperAgent().propose(
+        market(),
+        analysis(),
+        candidate(),
+        equity="not-a-number",
+        available_cash=1000.0,
+    )
+    assert proposal is None
