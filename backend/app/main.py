@@ -177,7 +177,17 @@ chief = ChiefAgent(
     estimated_slippage_rate=settings.slippage_rate,
     minimum_order_value_eur=settings.min_order_value_eur,
 )
-agent_worker = AutonomousAgent(agent_store, scout=scout, chief=chief, portfolio=portfolio)
+equity_research_agent = (
+    EquityEtfResearchAgent(market.get("twelve_data"), max_instruments=5, max_quote_candidates=10)
+    if settings.twelve_data_api_key else None
+)
+agent_worker = AutonomousAgent(
+    agent_store,
+    scout=scout,
+    chief=chief,
+    portfolio=portfolio,
+    equity_research=equity_research_agent,
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
