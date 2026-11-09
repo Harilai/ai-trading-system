@@ -23,7 +23,7 @@ def _integrity_check(path: Path) -> None:
         with sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True) as db:
             result = db.execute("PRAGMA integrity_check").fetchone()
     except sqlite3.Error as exc:
-        raise BackupError(f"Unable to validate SQLite database {path}: {exc}") from exc
+        raise BackupError(f"SQLite integrity validation failed for {path}: {exc}") from exc
     if not result or result[0] != "ok":
         raise BackupError(f"SQLite integrity check failed for {path}: {result[0] if result else 'no result'}")
 
