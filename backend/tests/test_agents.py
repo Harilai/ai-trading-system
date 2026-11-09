@@ -40,12 +40,12 @@ def test_risk_manager_accepts_bounded_buy():
 @pytest.mark.parametrize(
     "trade,ctx,reason",
     [
-        ({"symbol": "BTC/USDT"}, {}, "EUR-quoted"),
+        ({"symbol": "BTC/USDT"}, {}, "eur-quoted"),
         ({"stop_loss": None}, {}, "stop-loss"),
         ({"stop_loss": 10000}, {}, "below"),
         ({"stop_loss": 9000}, {}, "distance"),
         ({"quantity": 0.003}, {}, "allocation"),
-        ({"quantity": 0.01}, {"available_cash_eur": 50, "max_order_fraction": 1.0}, "cash"),
+        ({"quantity": 0.01}, {"equity_eur": 1000, "available_cash_eur": 50, "max_order_fraction": 1.0}, "cash"),
     ],
 )
 def test_risk_manager_rejects_unsafe_buy(trade, ctx, reason):
