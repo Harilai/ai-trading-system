@@ -459,7 +459,7 @@ def test_strategy_research_history_persists_versioned_candidate_evidence(tmp_pat
 
     assert store.record_strategy_research("task-1", market, "1h", research) == 2
     # A retry of the same task cannot duplicate the research evidence.
-    assert store.record_strategy_research("task-1", market, "1h", research) == 2
+    assert store.record_strategy_research("task-1", market, "1h", research) == 0
     rows = store.strategy_history(limit=10)
     assert len(rows) == 2
     by_id = {row["strategy_id"]: row for row in rows}
@@ -469,7 +469,7 @@ def test_strategy_research_history_persists_versioned_candidate_evidence(tmp_pat
     assert rejected["result"]["cost_sensitivity"]["2.0"]["beats_buy_and_hold"] is False
     promoted = by_id["rsi_14_reversion"]
     assert promoted["eligible"] is True
-    assert promoted["strategy_version"].startswith("rsi_14_reversion:")
+    assert promoted["strategy_version"].startswith("rsi_14_reversion:logic-v1:config-")
     assert rejected["instrument_id"] == market["instrument_id"]
 
     restarted = AutonomousStore(path)
