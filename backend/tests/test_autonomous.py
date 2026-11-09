@@ -1,4 +1,5 @@
 from datetime import timedelta
+
 from app.autonomous import AutonomousStore, utcnow
 
 
@@ -22,13 +23,44 @@ def test_task_queue_persists_and_completes(tmp_path):
     assert restarted.overview()["tasks"][0]["status"] == "completed"
 
 
-def test_expired_running_task_is_recovered(tmp_path):
+def test_expired_running_task_is_recovered_on_startup(tmp_path):
     path = str(tmp_path / "agent.db")
     store = AutonomousStore(path)
     task = store.enqueue("health_check", {})
     claimed = store.claim_due_task()
     assert claimed["id"] == task["id"]
     with store.connect() as db:
-        db.execute("UPDATE agent_tasks SET lease_until='2000-01-01T00:00:00+00:00' WHERE id=?", (task["id"],))
+        db.execute(
+            "UPDATE agent_tasks SET lease_until='2000-01-01T00:00:00+00:00' WHERE id=?",
+            (task["id"],),
+        )
     restarted = AutonomousStore(path)
     assert restarted.claim_due_task()["id"] == task["id"]
+
+
+def test_expired_running_task_is_recovered_without_restart(tmp_path):
+    store = AutonomousStore(str(tmp_path / "agent.db"))
+    task = store.enqueue("health_check", {})
+    claimed = store.claim_due_task()
+    assert claimed["id"] == task["id"]
+
+    with store.connect() as db:
+        db.execute(
+            "UPDATE agent_tasks SET lease_until='2000-01-01T00:00:00+00:00' WHERE id=?",
+            (task["id"],),
+        )
+
+    assert store.recover_expired_tasks() == 1
+    assert store.claim_due_task()["id"] == task["id"]
+
+
+def test_unexpired_running_task_is_not_recovered(tmp_path):
+    store = AutonomousStore(str(tmp_path / "agent.db"))
+    task = store.enqueue("health_check", {})
+    claimed = store.claim_due_task()
+    assert claimed["id"] == task["id"]
+
+    assert store.recover_expired_tasks() == 0
+    with store.connect() as db:
+        row = db.execute("SELECT status FROM agent_tasks WHERE id=?", (task["id"],)).fetchone()
+    assert row["status"] == "running"
