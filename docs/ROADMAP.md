@@ -9,6 +9,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Backend FastAPI y paper portfolio SQLite | Implementado |
 | Datos públicos crypto spot vía CCXT | Implementado; solo datos públicos |
 | Datos públicos US equities/ETF vía Twelve Data Basic | Adaptador implementado y probado; API key gratuita opcional; solo datos, sin trading |
+| Investigación técnica y backtesting inicial de acciones/ETF | Pipeline manual de solo lectura implementado; integración con ciclo autónomo pendiente |
 | Contratos normalizados de proveedores e instrumentos | Implementado |
 | Identidad de posiciones por `provider_id + instrument_id` | Implementado; migración SQLite incluida |
 | Aislamiento de posiciones con mismo símbolo entre proveedores | Implementado y probado |
@@ -77,7 +78,8 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 ## Prioridad 4 — cobertura y producto
 
 - [x] Implementar adaptador de datos Twelve Data Basic para catálogo, cotizaciones y OHLCV de acciones/ETF estadounidenses (sin órdenes).
-- [ ] Integrar acciones/ETF en Scout y Strategy Research con validación de divisa, horario de mercado, frescura, liquidez y ausencia de bid/ask.
+- [x] Implementar pipeline manual de investigación de acciones/ETF con frescura, divisa USD, bid/ask, Charts y backtesting 70/30.
+- [ ] Integrar acciones/ETF en el ciclo autónomo con horarios de mercado, cuotas del proveedor, liquidez y calidad de cotización.
 - [ ] Implementar y validar un adaptador de broker de acciones/ETF, horarios, permisos, datos, mínimos y comisiones.
 - [x] Generalizar el portfolio a claves `provider_id + instrument_id`, con migración de datos legacy y aislamiento de símbolos duplicados.
 - [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución.
