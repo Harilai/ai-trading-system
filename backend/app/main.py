@@ -73,6 +73,7 @@ scout = ScoutAgent(
     strategy_research=StrategyResearchAgent(
         fee_rate=settings.fee_rate,
         slippage_rate=settings.slippage_rate,
+        max_position_fraction=settings.max_order_fraction,
     ),
 )
 agent_worker = AutonomousAgent(agent_store, scout=scout)
