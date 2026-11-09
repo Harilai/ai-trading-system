@@ -50,10 +50,28 @@ class ChiefAgent:
         self.estimated_slippage_rate = estimated_slippage_rate
         self.minimum_order_value_eur = minimum_order_value_eur
 
+    @staticmethod
+    def _candidate_for(item: dict[str, Any], strategy_id: str | None = None):
+        research = item.get("strategy_research", {})
+        wanted = strategy_id or research.get("recommended_strategy")
+        if not wanted:
+            return None
+        return next(
+            (
+                candidate for candidate in research.get("candidates", [])
+                if candidate.get("strategy_id") == wanted and candidate.get("eligible")
+            ),
+            None,
+        )
+
     def decide(self, scan: dict[str, Any], portfolio: dict[str, Any]) -> ChiefDecision:
+        portfolio_positions = {
+            position["symbol"].upper(): position
+            for position in portfolio.get("positions", [])
+        }
         positions = {
-            item["symbol"].upper(): float(item["quantity"])
-            for item in portfolio.get("positions", [])
+            symbol: float(position["quantity"])
+            for symbol, position in portfolio_positions.items()
         }
         equity = float(portfolio.get("equity", 0))
         cash = float(portfolio.get("cash", 0))
@@ -68,26 +86,77 @@ class ChiefAgent:
             estimated_fee_rate=self.estimated_fee_rate,
             positions=positions,
         )
+        scan_by_symbol = {
+            str(item.get("market", {}).get("symbol", "")).upper(): item
+            for item in scan.get("analyses", [])
+        }
+
+        # Manage existing positions before considering new entries.
+        for symbol, position in portfolio_positions.items():
+            item = scan_by_symbol.get(symbol)
+            if item is None:
+                continue
+            market = item.get("market", {})
+            sell_price = float(market.get("bid") or market.get("last") or 0)
+            if sell_price <= 0:
+                continue
+            stop_loss = position.get("stop_loss")
+            take_profit = position.get("take_profit")
+            exit_reason = None
+            if stop_loss is not None and sell_price <= float(stop_loss):
+                exit_reason = "persisted stop-loss triggered"
+            elif take_profit is not None and sell_price >= float(take_profit):
+                exit_reason = "persisted take-profit triggered"
+            else:
+                candidate = self._candidate_for(item, position.get("strategy_id"))
+                if candidate is not None and not candidate.get("current_hold_signal", False):
+                    exit_reason = "validated strategy exit signal"
+            if exit_reason is None:
+                continue
+
+            proposal = TradeProposal(
+                symbol=symbol,
+                side="sell",
+                quantity=positions[symbol],
+                reference_price=sell_price,
+                rationale=exit_reason,
+                source_agent="chief",
+            )
+            risk = self.risk_manager.evaluate(proposal, context)
+            if risk.accepted:
+                return ChiefDecision(
+                    action="sell",
+                    symbol=symbol,
+                    strategy_id=position.get("strategy_id"),
+                    rationale=f"Position exit: {exit_reason}; Risk Manager approved",
+                    evidence={"market": market, "stop_loss": stop_loss, "take_profit": take_profit},
+                    proposal=proposal,
+                    risk=risk,
+                )
+            return ChiefDecision(
+                symbol=symbol,
+                strategy_id=position.get("strategy_id"),
+                rationale="Position exit proposal rejected by Risk Manager",
+                evidence={"market": market, "exit_reason": exit_reason},
+                proposal=proposal,
+                risk=risk,
+            )
 
         opportunities = []
         for item in scan.get("analyses", []):
             research = item.get("strategy_research", {})
             strategy_id = research.get("recommended_strategy")
-            if not strategy_id:
-                continue
-            candidate = next(
-                (
-                    result for result in research.get("candidates", [])
-                    if result.get("strategy_id") == strategy_id and result.get("eligible")
-                ),
-                None,
-            )
+            candidate = self._candidate_for(item, strategy_id)
             if candidate is None:
                 continue
             market = item.get("market", {})
             symbol = str(market.get("symbol", "")).upper()
             score = candidate.get("score")
-            if not symbol.endswith("/EUR") or not isinstance(score, (int, float)):
+            if (
+                not symbol.endswith("/EUR")
+                or symbol in positions
+                or not isinstance(score, (int, float))
+            ):
                 continue
             opportunities.append((float(score), item, candidate, strategy_id, symbol))
 
@@ -97,45 +166,11 @@ class ChiefAgent:
             analysis = item["analysis"]
             price = float(market.get("ask") or market.get("last") or analysis.get("close") or 0)
             atr_value = float(analysis.get("indicators", {}).get("atr_14", 0) or 0)
-            quantity_held = positions.get(symbol, 0.0)
-            if price <= 0:
-                continue
-
-            if quantity_held > 0:
-                if candidate.get("current_hold_signal", False):
-                    continue
-                proposal = TradeProposal(
-                    symbol=symbol,
-                    side="sell",
-                    quantity=quantity_held,
-                    reference_price=price,
-                    rationale=f"{strategy_id} produced a validated strategy exit signal",
-                    source_agent="chief",
-                )
-                risk = self.risk_manager.evaluate(proposal, context)
-                if risk.accepted:
-                    return ChiefDecision(
-                        action="sell",
-                        symbol=symbol,
-                        strategy_id=strategy_id,
-                        rationale="Strategy exit signal passed deterministic Risk Manager checks",
-                        evidence={"score": score, "market": market, "out_of_sample": candidate["out_of_sample"]},
-                        proposal=proposal,
-                        risk=risk,
-                    )
-                return ChiefDecision(
-                    symbol=symbol,
-                    strategy_id=strategy_id,
-                    rationale="Exit proposal rejected by Risk Manager",
-                    evidence={"score": score},
-                    proposal=proposal,
-                    risk=risk,
-                )
-
-            if not candidate.get("current_entry_signal", False):
+            if price <= 0 or not candidate.get("current_entry_signal", False):
                 continue
             stop_distance = 2.0 * atr_value
             stop_loss = price - stop_distance
+            take_profit = price + 2.0 * stop_distance
             if atr_value <= 0 or stop_loss <= 0:
                 continue
             risk_budget = equity * self.risk_per_trade_fraction
@@ -156,6 +191,7 @@ class ChiefAgent:
                 quantity=quantity,
                 reference_price=price,
                 stop_loss=stop_loss,
+                take_profit=take_profit,
                 rationale=f"{strategy_id} entry; OOS score {score:.6f}; risk budget {self.risk_per_trade_fraction:.2%}",
                 source_agent="chief",
             )
