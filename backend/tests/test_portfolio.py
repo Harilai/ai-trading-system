@@ -612,6 +612,26 @@ def test_order_intent_reconciles_trade_ledger_and_detects_missing_fill(portfolio
     assert "no matching trade" in unresolved["rejection_reason"].lower()
 
 
+def test_new_buy_is_blocked_while_another_order_intent_is_unresolved(portfolio):
+    first = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "unresolved-first",
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": None, "stop_loss": None, "take_profit": None,
+    }
+    second = {**first, "client_order_id": "blocked-second"}
+    portfolio.record_order_intent("unresolved-first", first, {"risk_accepted": True})
+    with pytest.raises(PortfolioError, match="blocked by unresolved"):
+        portfolio.record_order_intent("blocked-second", second, {"risk_accepted": True})
+    with pytest.raises(PortfolioError, match="blocked by unresolved"):
+        portfolio.execute(**second)
+    assert portfolio.get_order_intent("blocked-second") is None
+    portfolio.execute(**first)
+    assert portfolio.get_order_intent("unresolved-first")["status"] == "filled"
+    assert portfolio.record_order_intent("blocked-second", second, {"risk_accepted": True})["status"] == "risk_approved"
+
+
 def test_rejected_order_intent_is_terminal(portfolio):
     request = {
         "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
@@ -623,6 +643,8 @@ def test_rejected_order_intent_is_terminal(portfolio):
     portfolio.record_order_intent("rejected-intent", request, {"risk_accepted": True})
     portfolio.reject_order_intent("rejected-intent", "insufficient cash")
     assert portfolio.get_order_intent("rejected-intent")["status"] == "rejected"
+    with pytest.raises(PortfolioError, match="already rejected"):
+        portfolio.execute(**request)
     with pytest.raises(PortfolioError, match="different order intent"):
         portfolio.record_order_intent(
             "rejected-intent", {**request, "quantity": 0.002},
