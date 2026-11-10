@@ -159,7 +159,11 @@ El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y contr
 - `GET /api/providers` — proveedores configurados y capability matrix. Twelve Data aparece si `TWELVE_DATA_API_KEY` está configurada.
 - `GET /api/markets` — puede incluir el catálogo de acciones/ETF de EE. UU. de Twelve Data.
 - `GET /api/research/equities?max_instruments=5&max_quote_candidates=10&timeframe=1day` — investigación manual de acciones/ETF; requiere `TWELVE_DATA_API_KEY`, limita las cotizaciones examinadas (1–100) y el histórico descargado (1–10), y nunca ejecuta operaciones. El muestreo de cotizaciones se distribuye por todo el catálogo y la clasificación preliminar prioriza volumen (60%), frescura (25%) y spread (15%); la ausencia de volumen penaliza la posición, pero no elimina por sí sola la investigación histórica.
-- `GET /api/markets` — instrumentos detectados y restricciones conocidas.
+- `GET /api/markets` — discovery en vivo; persiste el snapshot y devuelve la identidad de catálogo.
+- `GET /api/instruments` — catálogo persistido con filtros `provider_id`, `venue_id`, `asset_class`, `market_type`, `active` y paginación.
+- `GET /api/instruments/{catalogue_id}` — detalle del instrumento y timestamps first/last seen.
+- `GET /api/instrument-discovery/runs` — historial de ejecuciones de discovery y fallos sanitizados.
+- `POST /api/instruments/refresh` — refresco explícito autenticado con `X-Agent-Token`; solo consulta metadatos, no ejecuta órdenes.
 - `GET /api/risk-profiles` — perfiles de riesgo y estado habilitado/deshabilitado.
 - `GET /api/health` — liveness del proceso.\n- `GET /api/health/ready` — comprueba SQLite y heartbeat reciente del worker; es el healthcheck de Docker.
 - `GET /api/market/{symbol}/ticker`
