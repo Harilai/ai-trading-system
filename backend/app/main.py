@@ -1,6 +1,7 @@
 import hmac
 import math
 import sqlite3
+from decimal import Decimal
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -303,6 +304,65 @@ def get_binance_demo_order_events(
     if demo_order_store.get_order(client_order_id) is None:
         raise HTTPException(404, "Demo order not found")
     return {"items": demo_order_store.list_events(client_order_id)}
+
+
+def _reconcile_binance_demo_fills(client_order_id: str) -> dict:
+    if binance_demo_account_provider is None:
+        raise HTTPException(503, "Binance Spot Demo Trading connector is not configured")
+    order = demo_order_store.get_order(client_order_id)
+    if order is None:
+        raise HTTPException(404, "Demo order not found")
+    if not order.get("exchange_order_id"):
+        raise HTTPException(409, "Demo order has no confirmed exchange order ID")
+    if order["status"] not in ("filled", "partially_filled", "cancelled", "expired"):
+        raise HTTPException(409, "Demo order has no terminal or partial execution to reconcile")
+    try:
+        cumulative_filled = Decimal(order.get("filled") or "0")
+        if cumulative_filled == 0:
+            result = demo_order_store.record_fills(client_order_id, [])
+            return {**result, "exchange_history_complete": True}
+        # Binance /api/v3/myTrades permits orderId filtering only without
+        # startTime/endTime. The exchange order ID is the authoritative filter.
+        exchange_result = binance_demo_account_provider.fetch_order_fills(
+            symbol=order["symbol"],
+            exchange_order_id=order["exchange_order_id"],
+            limit=1000,
+        )
+        result = demo_order_store.record_fills(client_order_id, exchange_result["fills"])
+    except BinanceDemoError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except DemoOrderConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except DemoOrderStoreError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to persist Binance Demo trade fills") from exc
+    return {
+        **result,
+        "exchange_history_complete": exchange_result["complete"],
+        "exchange_records_returned": exchange_result["returned_count"],
+        "accounting_complete": result["fill_coverage_complete"],
+    }
+
+
+@app.get("/api/demo/binance/spot/orders/{client_order_id}/fills")
+def list_binance_demo_order_fills(
+    client_order_id: str,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    if demo_order_store.get_order(client_order_id) is None:
+        raise HTTPException(404, "Demo order not found")
+    return {"items": demo_order_store.list_fills(client_order_id)}
+
+
+@app.post("/api/demo/binance/spot/orders/{client_order_id}/fills/reconcile")
+def reconcile_binance_demo_order_fills(
+    client_order_id: str,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    return _reconcile_binance_demo_fills(client_order_id)
 
 
 @app.post("/api/demo/binance/spot/orders/{client_order_id}/reconcile")

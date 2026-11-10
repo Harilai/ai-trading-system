@@ -1,6 +1,6 @@
 import pytest
 
-from app.accounts.binance_demo import BinanceDemoError, BinanceSpotDemoAccount
+from app.accounts.binance_demo import BinanceDemoError, BinanceSpotDemoAccount, BinanceSpotDemoExecution
 
 
 class FakeBinanceDemoExchange:
@@ -534,3 +534,84 @@ def test_demo_execution_rejects_exchange_symbol_or_side_mismatch():
     assert wrong_symbol["observed_exchange_order_id"] == "order-symbol-mismatch"
     assert wrong_side["status"] == "reconciliation_required"
     assert wrong_side["observed_exchange_status"] == "open"
+
+
+def test_binance_demo_fetches_order_scoped_individual_trades_and_fees():
+    class TradeExchange(FakeBinanceDemoExchange):
+        def __init__(self, trades):
+            super().__init__()
+            self.trades = trades
+            self.trade_query = None
+
+        def fetch_my_trades(self, symbol, since=None, limit=None, params=None):
+            self.trade_query = (symbol, since, limit, params)
+            return self.trades
+
+    exchange = TradeExchange([{
+        "id": "trade-123",
+        "order": "order-456",
+        "symbol": "BTC/USDT",
+        "side": "buy",
+        "amount": "0.001",
+        "price": "20000",
+        "cost": "20",
+        "fee": {"cost": "0.00001", "currency": "BNB"},
+        "timestamp": 1794312000000,
+    }])
+    provider = BinanceSpotDemoExecution(
+        "demo-key", "demo-secret", enabled=True,
+        exchange_factory=lambda _: exchange,
+    )
+
+    result = provider.fetch_order_fills(
+        symbol="BTC/USDT",
+        exchange_order_id="order-456",
+        limit=1000,
+    )
+
+    assert exchange.trade_query == (
+        "BTC/USDT", None, 1000, {"orderId": "order-456"},
+    )
+    assert result["complete"] is True
+    assert result["fills"] == [{
+        "trade_id": "trade-123",
+        "exchange_order_id": "order-456",
+        "symbol": "BTC/USDT",
+        "side": "buy",
+        "amount": "0.001",
+        "price": "20000",
+        "cost": "20",
+        "fee_cost": "0.00001",
+        "fee_currency": "BNB",
+        "timestamp_ms": 1794312000000,
+    }]
+
+
+def test_binance_demo_fill_fetch_rejects_wrong_order_identity():
+    exchange = FakeBinanceDemoExchange()
+    exchange.fetch_my_trades = lambda *args, **kwargs: [{
+        "id": "trade-123", "order": "different-order", "symbol": "BTC/USDT",
+        "side": "buy", "amount": "0.001", "price": "20000", "cost": "20",
+        "fee": {"cost": "0", "currency": "USDT"}, "timestamp": 1794312000000,
+    }]
+    provider = BinanceSpotDemoExecution(
+        "demo-key", "demo-secret", enabled=True,
+        exchange_factory=lambda _: exchange,
+    )
+    with pytest.raises(BinanceDemoError, match="unexpected order ID"):
+        provider.fetch_order_fills(symbol="BTC/USDT", exchange_order_id="order-456")
+
+
+def test_binance_demo_fill_fetch_rejects_missing_commission_currency():
+    exchange = FakeBinanceDemoExchange()
+    exchange.fetch_my_trades = lambda *args, **kwargs: [{
+        "id": "trade-123", "order": "order-456", "symbol": "BTC/USDT",
+        "side": "buy", "amount": "0.001", "price": "20000", "cost": "20",
+        "fee": {"cost": "0.001", "currency": None}, "timestamp": 1794312000000,
+    }]
+    provider = BinanceSpotDemoExecution(
+        "demo-key", "demo-secret", enabled=True,
+        exchange_factory=lambda _: exchange,
+    )
+    with pytest.raises(BinanceDemoError, match="fee currency"):
+        provider.fetch_order_fills(symbol="BTC/USDT", exchange_order_id="order-456")

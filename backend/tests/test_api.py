@@ -1449,3 +1449,109 @@ def test_binance_demo_order_api_requires_exact_decimal_strings(monkeypatch):
     )
     assert response.status_code == 422
     assert "amount" in response.text
+
+
+def test_binance_demo_fill_reconciliation_persists_trades_and_fee_evidence(monkeypatch, tmp_path):
+    from app.accounts.demo_order_store import BinanceDemoOrderStore
+
+    headers = configure_order_auth(monkeypatch)
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-api-fills.db"))
+    monkeypatch.setattr("app.main.demo_order_store", store)
+    store.prepare_intent({
+        "client_order_id": "api-fill-ledger-1",
+        "symbol": "BTC/USDT", "side": "buy", "amount": "0.001",
+        "price": "20000", "quote_asset": "USDT",
+    })
+    store.transition("api-fill-ledger-1", "submission_unknown")
+    store.transition(
+        "api-fill-ledger-1", "filled",
+        exchange_order_id="demo-exchange-fill-1",
+        exchange_status="closed",
+        filled="0.001", remaining="0", average="20000",
+    )
+
+    class FakeDemoExecution:
+        def __init__(self):
+            self.calls = []
+
+        def fetch_order_fills(self, **kwargs):
+            self.calls.append(kwargs)
+            return {
+                "fills": [{
+                    "trade_id": "trade-fill-1",
+                    "exchange_order_id": "demo-exchange-fill-1",
+                    "symbol": "BTC/USDT", "side": "buy",
+                    "amount": "0.001", "price": "20000", "cost": "20",
+                    "fee_cost": "0.00001", "fee_currency": "BNB",
+                    "timestamp_ms": 1794312000000,
+                }],
+                "complete": True, "returned_count": 1, "limit": 1000,
+            }
+
+    provider = FakeDemoExecution()
+    monkeypatch.setattr("app.main.binance_demo_account_provider", provider)
+
+    unauthorized = client.post(
+        "/api/demo/binance/spot/orders/api-fill-ledger-1/fills/reconcile",
+    )
+    assert unauthorized.status_code == 401
+
+    response = client.post(
+        "/api/demo/binance/spot/orders/api-fill-ledger-1/fills/reconcile",
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["accounting_complete"] is True
+    assert response.json()["fees_by_currency"] == {"BNB": "0.00001"}
+    assert provider.calls[0]["symbol"] == "BTC/USDT"
+    assert provider.calls[0]["exchange_order_id"] == "demo-exchange-fill-1"
+
+    listed = client.get(
+        "/api/demo/binance/spot/orders/api-fill-ledger-1/fills",
+        headers=headers,
+    )
+    assert listed.status_code == 200
+    assert listed.json()["items"][0]["exchange_trade_id"] == "trade-fill-1"
+    assert listed.json()["items"][0]["fee_currency"] == "BNB"
+
+
+def test_binance_demo_fill_reconciliation_rejects_incomplete_fee_evidence(monkeypatch, tmp_path):
+    from app.accounts.demo_order_store import BinanceDemoOrderStore
+
+    headers = configure_order_auth(monkeypatch)
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-api-missing-fee.db"))
+    monkeypatch.setattr("app.main.demo_order_store", store)
+    store.prepare_intent({
+        "client_order_id": "api-fill-missing-fee",
+        "symbol": "BTC/USDT", "side": "buy", "amount": "0.001",
+        "price": "20000", "quote_asset": "USDT",
+    })
+    store.transition("api-fill-missing-fee", "submission_unknown")
+    store.transition(
+        "api-fill-missing-fee", "filled",
+        exchange_order_id="demo-exchange-missing-fee",
+        exchange_status="closed",
+        filled="0.001", remaining="0", average="20000",
+    )
+
+    class FakeDemoExecution:
+        def fetch_order_fills(self, **kwargs):
+            return {
+                "fills": [{
+                    "trade_id": "trade-missing-fee",
+                    "exchange_order_id": "demo-exchange-missing-fee",
+                    "symbol": "BTC/USDT", "side": "buy",
+                    "amount": "0.001", "price": "20000", "cost": "20",
+                    "fee_cost": None, "fee_currency": None,
+                    "timestamp_ms": 1794312000000,
+                }],
+                "complete": True, "returned_count": 1, "limit": 1000,
+            }
+
+    monkeypatch.setattr("app.main.binance_demo_account_provider", FakeDemoExecution())
+    response = client.post(
+        "/api/demo/binance/spot/orders/api-fill-missing-fee/fills/reconcile",
+        headers=headers,
+    )
+    assert response.status_code == 409
+    assert store.list_fills("api-fill-missing-fee") == []

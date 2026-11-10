@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 import json
 from pathlib import Path
 import re
@@ -95,6 +95,31 @@ class BinanceDemoOrderStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_binance_demo_order_events_order
                     ON binance_demo_order_events(client_order_id,created_at,event_id);
+                CREATE TABLE IF NOT EXISTS binance_demo_order_fills (
+                    exchange_trade_id TEXT NOT NULL,
+                    client_order_id TEXT NOT NULL,
+                    exchange_order_id TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    amount TEXT NOT NULL,
+                    price TEXT NOT NULL,
+                    cost TEXT NOT NULL,
+                    fee_cost TEXT,
+                    fee_currency TEXT,
+                    timestamp_ms INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    recorded_at TEXT NOT NULL,
+                    PRIMARY KEY(symbol,exchange_trade_id),
+                    FOREIGN KEY(client_order_id) REFERENCES binance_demo_orders(client_order_id)
+                );
+                CREATE INDEX IF NOT EXISTS idx_binance_demo_order_fills_order
+                    ON binance_demo_order_fills(client_order_id,timestamp_ms,exchange_trade_id);
+                CREATE TRIGGER IF NOT EXISTS binance_demo_order_fills_no_update
+                    BEFORE UPDATE ON binance_demo_order_fills
+                    BEGIN SELECT RAISE(ABORT,'demo order fills are append-only'); END;
+                CREATE TRIGGER IF NOT EXISTS binance_demo_order_fills_no_delete
+                    BEFORE DELETE ON binance_demo_order_fills
+                    BEGIN SELECT RAISE(ABORT,'demo order fills are append-only'); END;
                 CREATE TRIGGER IF NOT EXISTS binance_demo_order_intent_immutable
                     BEFORE UPDATE OF client_order_id,request_json,symbol,side,amount,price,quote_asset
                     ON binance_demo_orders
@@ -212,6 +237,28 @@ class BinanceDemoOrderStore:
                 raise DemoOrderConflict(
                     "A previous Demo order is still open or requires reconciliation"
                 )
+
+            completed_orders = db.execute(
+                """
+                SELECT client_order_id,filled FROM binance_demo_orders
+                WHERE status IN ('filled','cancelled','expired') AND filled IS NOT NULL
+                """
+            ).fetchall()
+            for completed_order in completed_orders:
+                with localcontext() as context:
+                    context.prec = 120
+                    expected_filled = Decimal(completed_order["filled"] or "0")
+                    if expected_filled <= 0:
+                        continue
+                    fill_rows = db.execute(
+                        "SELECT amount FROM binance_demo_order_fills WHERE client_order_id=?",
+                        (completed_order["client_order_id"],),
+                    ).fetchall()
+                    recorded_filled = sum((Decimal(item["amount"]) for item in fill_rows), Decimal("0"))
+                if recorded_filled != expected_filled:
+                    raise DemoOrderConflict(
+                        "A previous Demo order has incomplete individual fill/fee evidence"
+                    )
 
             db.execute(
                 """
@@ -388,6 +435,159 @@ class BinanceDemoOrderStore:
                 (client_order_id,),
             ).fetchone()
         return self._row_dict(updated)
+
+
+    @staticmethod
+    def _canonical_fill(fill: dict, order: sqlite3.Row) -> dict:
+        if not isinstance(fill, dict):
+            raise DemoOrderStoreError("Exchange trade record must be an object")
+        trade_id = fill.get("trade_id")
+        exchange_order_id = fill.get("exchange_order_id")
+        symbol = fill.get("symbol")
+        side = fill.get("side")
+        if not isinstance(trade_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", trade_id):
+            raise DemoOrderStoreError("Exchange trade ID is missing or invalid")
+        if str(exchange_order_id) != str(order["exchange_order_id"]):
+            raise DemoOrderConflict("Trade belongs to a different exchange order")
+        if symbol != order["symbol"] or side != order["side"]:
+            raise DemoOrderConflict("Trade identity does not match the immutable Demo order")
+        normalized = {"trade_id": trade_id.strip()}
+        for field in ("amount", "price", "cost"):
+            value = fill.get(field)
+            if not isinstance(value, str) or not re.fullmatch(r"\d+(?:\.\d+)?", value) or len(value) > 100:
+                raise DemoOrderStoreError(f"Exchange trade {field} must be a plain decimal string")
+            try:
+                parsed = Decimal(value)
+            except (InvalidOperation, ValueError):
+                raise DemoOrderStoreError(f"Exchange trade {field} is malformed") from None
+            if not parsed.is_finite() or parsed <= 0 or len(parsed.as_tuple().digits) > 50:
+                raise DemoOrderStoreError(f"Exchange trade {field} must be finite and positive")
+            normalized[field] = format(parsed, "f")
+        fee_cost = fill.get("fee_cost")
+        fee_currency = fill.get("fee_currency")
+        if fee_cost is None:
+            raise DemoOrderStoreError("Exchange trade commission evidence is missing")
+        if fee_cost is not None:
+            if not isinstance(fee_cost, str) or not re.fullmatch(r"\d+(?:\.\d+)?", fee_cost) or len(fee_cost) > 100:
+                raise DemoOrderStoreError("Exchange trade fee must be a plain decimal string")
+            try:
+                fee_value = Decimal(fee_cost)
+            except (InvalidOperation, ValueError):
+                raise DemoOrderStoreError("Exchange trade fee is malformed") from None
+            if not fee_value.is_finite() or fee_value < 0:
+                raise DemoOrderStoreError("Exchange trade fee must be finite and non-negative")
+            normalized["fee_cost"] = format(fee_value, "f")
+            if not isinstance(fee_currency, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,24}", fee_currency):
+                raise DemoOrderStoreError("Exchange trade fee currency is required when fee is present")
+            normalized["fee_currency"] = fee_currency.strip().upper()
+        else:
+            if fee_currency is not None:
+                raise DemoOrderStoreError("Exchange trade fee currency cannot exist without a fee amount")
+            normalized["fee_cost"] = None
+            normalized["fee_currency"] = None
+        timestamp_ms = fill.get("timestamp_ms")
+        if isinstance(timestamp_ms, bool) or not isinstance(timestamp_ms, int) or timestamp_ms <= 0:
+            raise DemoOrderStoreError("Exchange trade timestamp must be a positive integer")
+        normalized["timestamp_ms"] = timestamp_ms
+        normalized["exchange_order_id"] = str(exchange_order_id)
+        normalized["symbol"] = symbol
+        normalized["side"] = side
+        return normalized
+
+    def record_fills(self, client_order_id: str, fills: list[dict]) -> dict:
+        if not isinstance(fills, list):
+            raise DemoOrderStoreError("Exchange fills must be a list")
+        inserted = 0
+        stamp = datetime.now(timezone.utc).isoformat()
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            order = db.execute(
+                "SELECT * FROM binance_demo_orders WHERE client_order_id=?",
+                (client_order_id,),
+            ).fetchone()
+            if order is None:
+                raise DemoOrderStoreError("Demo order intent not found")
+            if not order["exchange_order_id"]:
+                raise DemoOrderConflict("Cannot record fills before the exchange order ID is confirmed")
+            if order["status"] not in ("filled", "partially_filled", "cancelled", "expired"):
+                raise DemoOrderConflict("Trade fills can only be reconciled for filled, partial or cancelled orders")
+            for raw_fill in fills:
+                fill = self._canonical_fill(raw_fill, order)
+                payload_json = json.dumps(fill, sort_keys=True, separators=(",", ":"))
+                existing = db.execute(
+                    "SELECT payload_json,client_order_id FROM binance_demo_order_fills WHERE symbol=? AND exchange_trade_id=?",
+                    (fill["symbol"], fill["trade_id"]),
+                ).fetchone()
+                if existing:
+                    if existing["client_order_id"] != client_order_id or existing["payload_json"] != payload_json:
+                        raise DemoOrderConflict("Exchange trade ID was reused with different fill evidence")
+                    continue
+                db.execute(
+                    """
+                    INSERT INTO binance_demo_order_fills(
+                        exchange_trade_id,client_order_id,exchange_order_id,symbol,side,
+                        amount,price,cost,fee_cost,fee_currency,timestamp_ms,payload_json,recorded_at
+                    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """,
+                    (
+                        fill["trade_id"], client_order_id, fill["exchange_order_id"],
+                        fill["symbol"], fill["side"], fill["amount"], fill["price"],
+                        fill["cost"], fill["fee_cost"], fill["fee_currency"],
+                        fill["timestamp_ms"], payload_json, stamp,
+                    ),
+                )
+                inserted += 1
+
+            rows = db.execute(
+                "SELECT amount,fee_cost,fee_currency FROM binance_demo_order_fills WHERE client_order_id=?",
+                (client_order_id,),
+            ).fetchall()
+            with localcontext() as context:
+                context.prec = 120
+                total_filled = sum((Decimal(row["amount"]) for row in rows), Decimal("0"))
+                order_filled = Decimal(order["filled"] or "0")
+                if total_filled > order_filled:
+                    raise DemoOrderConflict("Individual trade fills exceed the exchange cumulative filled quantity")
+                fee_totals: dict[str, Decimal] = {}
+                for row in rows:
+                    if row["fee_cost"] is not None:
+                        currency = row["fee_currency"]
+                        fee_totals[currency] = fee_totals.get(currency, Decimal("0")) + Decimal(row["fee_cost"])
+            self._insert_event(
+                db, client_order_id, order["status"], order["status"],
+                {
+                    "source": "individual_trade_fill_reconciliation",
+                    "inserted_fills": inserted,
+                    "total_fill_records": len(rows),
+                    "individual_filled_amount": format(total_filled, "f"),
+                    "exchange_cumulative_filled": format(order_filled, "f"),
+                    "fill_coverage_complete": total_filled == order_filled,
+                    "fees_by_currency": {key: format(value, "f") for key, value in sorted(fee_totals.items())},
+                },
+                stamp,
+            )
+        return {
+            "client_order_id": client_order_id,
+            "inserted_fills": inserted,
+            "total_fill_records": len(rows),
+            "individual_filled_amount": format(total_filled, "f"),
+            "exchange_cumulative_filled": format(order_filled, "f"),
+            "fill_coverage_complete": total_filled == order_filled,
+            "fees_by_currency": {key: format(value, "f") for key, value in sorted(fee_totals.items())},
+        }
+
+    def list_fills(self, client_order_id: str) -> list[dict]:
+        with self.connect() as db:
+            rows = db.execute(
+                """
+                SELECT exchange_trade_id,exchange_order_id,symbol,side,amount,price,cost,
+                       fee_cost,fee_currency,timestamp_ms,recorded_at
+                FROM binance_demo_order_fills
+                WHERE client_order_id=? ORDER BY timestamp_ms,exchange_trade_id
+                """,
+                (client_order_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
 
     def get_order(self, client_order_id: str) -> dict | None:
         with self.connect() as db:

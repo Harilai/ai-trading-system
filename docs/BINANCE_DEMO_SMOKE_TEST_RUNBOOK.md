@@ -138,7 +138,23 @@ A partial fill is market-dependent and cannot be guaranteed by a deterministic s
 - The order cannot be marked filled without complete evidence for the original amount.
 - A contradictory or regressing exchange snapshot is quarantined and preserves the last known-good quantities.
 
-**Known scope limit:** PR #63 stores cumulative filled/remaining quantity and average price; it does not yet persist each individual exchange trade, commission amount or commission asset as a fill ledger. Do not use this Demo order store as the accounting source of truth. Individual trade/fee reconciliation is a required follow-up before any live execution.
+After the order has a confirmed exchange order ID and reports a partial or terminal fill, reconcile individual trades and commissions:
+
+```bash
+curl -i -X POST -H "X-Agent-Token: $AGENT_CONTROL_TOKEN" \
+  "$API/api/demo/binance/spot/orders/demo-smoke-unique-001/fills/reconcile"
+curl -fsS -H "X-Agent-Token: $AGENT_CONTROL_TOKEN" \
+  "$API/api/demo/binance/spot/orders/demo-smoke-unique-001/fills"
+```
+
+Acceptance:
+- Each exchange trade appears once with trade ID, order ID, symbol, side, amount, price, quote cost, commission amount/currency and timestamp.
+- Repeating fill reconciliation does not duplicate rows or change previously stored evidence.
+- `accounting_complete=true` means the sum of individual trade quantities equals the order's cumulative filled quantity and every fill has commission evidence.
+- If commission or fill evidence is missing, malformed or inconsistent, the endpoint fails closed. The system blocks the next Demo order until the prior filled quantity is fully covered by individual fills and fees.
+- If the trade-history response reaches its 1,000-record limit, confirm coverage by quantity; otherwise keep the order unresolved for accounting purposes.
+
+This is still a Demo execution evidence ledger, not a production accounting system. It does not merge Demo activity into the paper portfolio or real Binance snapshots.
 
 ## 8. Close the drill
 
