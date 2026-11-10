@@ -393,8 +393,41 @@ class AccountSnapshotStore:
             })
         return changes
 
+    @staticmethod
+    def _diff_positions(previous: dict[tuple[str, str], dict], current: dict[tuple[str, str], dict]) -> list[dict]:
+        changes = []
+        fields = (
+            "symbol", "asset_class", "market_type", "quantity", "quote_currency",
+            "average_entry_price", "mark_price", "market_value", "unrealized_pnl",
+        )
+        for key in sorted(set(previous) | set(current)):
+            before = previous.get(key)
+            after = current.get(key)
+            instrument_id, side = key
+            if before is None:
+                changes.append({
+                    "instrument_id": instrument_id, "side": side, "state": "added",
+                    "previous_present": False, "current_present": True,
+                    "previous": None, "current": after,
+                })
+            elif after is None:
+                changes.append({
+                    "instrument_id": instrument_id, "side": side, "state": "absent_from_latest_snapshot",
+                    "previous_present": True, "current_present": False,
+                    "previous": before, "current": None,
+                })
+            else:
+                changed = any(before.get(field) != after.get(field) for field in fields)
+                changes.append({
+                    "instrument_id": instrument_id, "side": side,
+                    "state": "changed" if changed else "unchanged",
+                    "previous_present": True, "current_present": True,
+                    "previous": before, "current": after,
+                })
+        return changes
+
     def record_snapshot(self, snapshot: dict) -> dict:
-        normalized, balances = self._normalize(snapshot)
+        normalized, balances, positions = self._normalize(snapshot)
         recorded_at = datetime.now(timezone.utc).isoformat()
         snapshot_id = str(uuid4())
         canonical = json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -402,45 +435,70 @@ class AccountSnapshotStore:
         provider_id = normalized["provider_id"]
         account_alias = normalized["account_alias"]
         market_type = normalized["market_type"]
+        environment = normalized["environment"]
+        venue_type = normalized["venue_type"]
 
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             previous_row = db.execute(
                 """
                 SELECT snapshot_id,fetched_at FROM account_snapshots
-                WHERE provider_id=? AND account_alias=? AND market_type=?
+                WHERE provider_id=? AND account_alias=? AND market_type=? AND environment=?
                 ORDER BY fetched_at DESC, recorded_at DESC, snapshot_id DESC LIMIT 1
                 """,
-                (provider_id, account_alias, market_type),
+                (provider_id, account_alias, market_type, environment),
             ).fetchone()
             previous_id = previous_row["snapshot_id"] if previous_row else None
             if previous_row and normalized["fetched_at"] < previous_row["fetched_at"]:
                 raise AccountSnapshotError(
                     "Account snapshot is older than the latest stored observation"
                 )
+
             previous_balances = {}
+            previous_positions = {}
             if previous_id:
                 rows = db.execute(
                     "SELECT asset,free,used,total FROM account_snapshot_balances WHERE snapshot_id=?",
                     (previous_id,),
                 ).fetchall()
                 previous_balances = {row["asset"]: dict(row) for row in rows}
+                position_rows = db.execute(
+                    "SELECT instrument_id,symbol,asset_class,market_type,quantity,side,quote_currency,"
+                    "average_entry_price,mark_price,market_value,unrealized_pnl "
+                    "FROM account_snapshot_positions WHERE snapshot_id=?",
+                    (previous_id,),
+                ).fetchall()
+                previous_positions = {
+                    (row["instrument_id"], row["side"]): dict(row) for row in position_rows
+                }
+
             current_balances = {item["asset"]: item for item in balances}
-            changes = self._diff(previous_balances, current_balances) if previous_id else []
-            change_count = sum(item["state"] != "unchanged" for item in changes)
+            current_positions = {
+                (item["instrument_id"], item["side"]): item for item in positions
+            }
+            balance_changes = self._diff(previous_balances, current_balances) if previous_id else []
+            position_changes = self._diff_positions(previous_positions, current_positions) if previous_id else []
+            balance_change_count = sum(item["state"] != "unchanged" for item in balance_changes)
+            position_change_count = sum(item["state"] != "unchanged" for item in position_changes)
+            change_count = balance_change_count + position_change_count
             status = "initial" if previous_id is None else ("changed" if change_count else "unchanged")
 
             db.execute(
                 """
                 INSERT INTO account_snapshots(
                     snapshot_id,provider_id,account_alias,market_type,fetched_at,recorded_at,
-                    previous_snapshot_id,reconciliation_status,change_count,balance_count,content_hash
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+                    previous_snapshot_id,reconciliation_status,change_count,balance_count,content_hash,
+                    environment,venue_type,read_only,execution_enabled,withdrawals_enabled,
+                    transfers_enabled,wallet_signing_enabled,permissions_verified,
+                    position_count,position_change_count
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     snapshot_id, provider_id, account_alias, market_type,
                     normalized["fetched_at"], recorded_at, previous_id,
                     status, change_count, len(balances), content_hash,
+                    environment, venue_type, 1, 0, 0, 0, 0,
+                    int(normalized["permissions_verified"]), len(positions), position_change_count,
                 ),
             )
             db.executemany(
@@ -451,6 +509,23 @@ class AccountSnapshotStore:
                 [
                     (snapshot_id, item["asset"], item["free"], item["used"], item["total"])
                     for item in balances
+                ],
+            )
+            db.executemany(
+                """
+                INSERT INTO account_snapshot_positions(
+                    snapshot_id,instrument_id,symbol,asset_class,market_type,quantity,side,
+                    quote_currency,average_entry_price,mark_price,market_value,unrealized_pnl
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                """,
+                [
+                    (
+                        snapshot_id, item["instrument_id"], item["symbol"], item["asset_class"],
+                        item["market_type"], item["quantity"], item["side"], item["quote_currency"],
+                        item["average_entry_price"], item["mark_price"], item["market_value"],
+                        item["unrealized_pnl"],
+                    )
+                    for item in positions
                 ],
             )
 
