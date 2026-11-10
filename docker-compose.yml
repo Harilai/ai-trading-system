@@ -34,9 +34,6 @@ services:
     command: ["python", "-m", "app.backup_scheduler"]
     restart: unless-stopped
     init: true
-    depends_on:
-      api:
-        condition: service_healthy
     env_file:
       - path: .env.backup
         required: false
