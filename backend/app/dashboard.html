@@ -357,7 +357,7 @@
             node.appendChild(dataItem("Señal de entrada actual","Señal técnica en la última evaluación",result.current_entry_signal?"Sí":"No"));
           if(result.current_hold_signal===true||result.current_hold_signal===false)
             node.appendChild(dataItem("Señal de mantenimiento","Estado de salida/continuidad de la estrategia",result.current_hold_signal?"Mantener":"Evaluar salida"));
-          if(Number.isFinite(Number(result.experimental_score)))
+          if(result.experimental_score!==null&&result.experimental_score!==undefined&&Number.isFinite(Number(result.experimental_score)))
             node.appendChild(dataItem("Puntuación experimental","Métrica interna; no representa rentabilidad garantizada",Number(result.experimental_score).toFixed(4)));
           node.appendChild(dataItem("Interpretación","La aptitud experimental solo autoriza pruebas paper controladas; no demuestra rentabilidad ni promoción","Sin ejecución real"));
         }
