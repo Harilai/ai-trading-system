@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, localcontext
 import json
 from pathlib import Path
@@ -325,6 +325,8 @@ class BinanceDemoOrderStore:
                 order = self._row_dict(row)
                 if order["status"] in active:
                     candidates.append(order)
+                    if len(candidates) >= limit:
+                        break
                     continue
                 if order["status"] not in terminal or Decimal(order.get("filled") or "0") <= 0:
                     continue
