@@ -19,7 +19,7 @@ Keep the existing verified local SQLite snapshots, then replicate each successfu
 - The API container must not receive backup storage credentials.
 - The backup container has no published ports, a read-only root filesystem, non-root user, dropped capabilities and a dedicated egress network.
 - Credentials are never written to logs, status files, object metadata or Git.
-- Do not grant delete permissions to the backup writer. Prefer a separate administrator role for bucket lifecycle/versioning.
+- Grant only `s3:ListBucket` on the bucket and `s3:PutObject`/`s3:GetObject` on the configured prefix; do not grant delete permissions to the backup writer. For SSE-KMS, grant only the KMS encrypt/decrypt/data-key permissions required by the chosen key. Prefer a separate administrator role for bucket lifecycle/versioning.
 
 ## Restore workflow
 
