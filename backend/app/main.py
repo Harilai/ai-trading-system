@@ -12,7 +12,7 @@ from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
 from .market_data import MarketDataError
 from .providers.ccxt_spot import CcxtSpotProvider
 from .providers.twelve_data import TwelveDataProvider
-from .providers.base import AssetClass, MarketType
+from .providers.base import AssetClass
 from .instrument_catalog import InstrumentCatalog, InstrumentCatalogError
 from .equity_research import EquityEtfResearchAgent
 from .providers.registry import ProviderRegistry
