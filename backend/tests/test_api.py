@@ -1434,3 +1434,18 @@ def test_binance_demo_order_api_is_disabled_without_demo_connector(monkeypatch):
         headers=headers,
     )
     assert response.status_code == 503
+
+
+def test_binance_demo_order_api_requires_exact_decimal_strings(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    payload = {
+        "symbol": "BTC/USDT", "side": "buy", "amount": 0.001,
+        "price": "20000", "client_order_id": "numeric-demo-amount",
+    }
+    response = client.post(
+        "/api/demo/binance/spot/orders",
+        json=payload,
+        headers=headers,
+    )
+    assert response.status_code == 422
+    assert "amount" in response.text
