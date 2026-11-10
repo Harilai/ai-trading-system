@@ -102,7 +102,7 @@ class S3BackupStore:
 
     def _key_for(self, path: Path, created_at: datetime, digest: str) -> str:
         stamp = created_at.astimezone(timezone.utc)
-        name = f"{path.stem}-{stamp.strftime('%Y%m%dT%H%M%SZ')}-{digest[:12]}.sqlite3"
+        name = f"{path.stem}-{digest[:12]}.sqlite3"
         date_prefix = stamp.strftime("%Y/%m/%d")
         return "/".join(part for part in (self.prefix, date_prefix, name) if part)
 
