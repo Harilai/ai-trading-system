@@ -199,6 +199,72 @@ class AccountPosition:
     market_value: str | None = None
     unrealized_pnl: str | None = None
 
+    @classmethod
+    def normalize(cls, raw: Any) -> "AccountPosition":
+        if isinstance(raw, cls):
+            raw = asdict(raw)
+        if not isinstance(raw, dict):
+            raise AccountProviderError("Position record must be an object")
+        text_fields = ("instrument_id", "symbol", "asset_class", "market_type", "side", "quote_currency")
+        if any(not isinstance(raw.get(field), str) or not raw[field].strip() for field in text_fields):
+            raise AccountProviderError("Position identity fields are missing")
+        if len(raw["instrument_id"]) > 256 or len(raw["symbol"]) > 128:
+            raise AccountProviderError("Position identity field is too long")
+        if raw["asset_class"] not in {
+            "crypto", "forex", "equity", "etf", "index", "commodity",
+            "future", "option", "defi", "tokenized",
+        }:
+            raise AccountProviderError("Position asset class is unsupported")
+        if raw["market_type"] not in {
+            "spot", "cash_equity", "margin", "futures", "options", "forex", "onchain",
+        }:
+            raise AccountProviderError("Position market type is unsupported")
+        if raw["side"] not in ("long", "short"):
+            raise AccountProviderError("Position side must be long or short")
+        quote = raw["quote_currency"].strip().upper()
+        if not re.fullmatch(r"[A-Z0-9._-]{1,24}", quote):
+            raise AccountProviderError("Position quote currency is invalid")
+        quantity = _decimal_text(raw.get("quantity"), field="position quantity")
+        if quantity is None or Decimal(quantity) <= 0:
+            raise AccountProviderError("Position quantity must be positive")
+        optional = {}
+        for field in ("average_entry_price", "mark_price", "market_value"):
+            optional[field] = _decimal_text(raw.get(field), field=f"position {field}")
+        for field in ("average_entry_price", "mark_price"):
+            if optional[field] is not None and Decimal(optional[field]) <= 0:
+                raise AccountProviderError(f"Position {field} must be positive")
+        pnl = raw.get("unrealized_pnl")
+        if pnl is not None:
+            if not isinstance(pnl, str):
+                raise AccountProviderError("Position unrealized P&L must be a decimal string")
+            try:
+                amount = Decimal(pnl)
+            except (InvalidOperation, ValueError):
+                raise AccountProviderError("Position unrealized P&L is malformed") from None
+            if not amount.is_finite() or len(amount.as_tuple().digits) > 80 or abs(amount.as_tuple().exponent) > 80:
+                raise AccountProviderError("Position unrealized P&L is invalid")
+            pnl = format(amount, "f")
+            if "." in pnl:
+                pnl = pnl.rstrip("0").rstrip(".")
+            if pnl in ("", "-0"):
+                pnl = "0"
+        return cls(
+            instrument_id=raw["instrument_id"].strip(),
+            symbol=raw["symbol"].strip(),
+            asset_class=raw["asset_class"],
+            market_type=raw["market_type"],
+            quantity=quantity,
+            side=raw["side"],
+            quote_currency=quote,
+            average_entry_price=optional["average_entry_price"],
+            mark_price=optional["mark_price"],
+            market_value=optional["market_value"],
+            unrealized_pnl=pnl,
+        )
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
 
 @dataclass(frozen=True)
 class AccountOrder:
