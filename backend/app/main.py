@@ -31,6 +31,7 @@ from .accounts.ccxt_readonly import CcxtReadOnlyAccount, CcxtReadOnlyAccountErro
 from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
 from .accounts.contracts import (
     AccountProviderError, AccountProviderNotFound, AccountProviderRegistry, AmbiguousAccountProvider,
+    InvalidAccountRequest,
     UnsupportedAccountCapability,
 )
 from .accounts.binance_demo import BinanceDemoError, BinanceSpotDemoExecution
@@ -232,8 +233,10 @@ def account_provider_positions(
         raise HTTPException(409, str(exc)) from exc
     except UnsupportedAccountCapability as exc:
         raise HTTPException(409, str(exc)) from exc
-    except AccountProviderError as exc:
+    except InvalidAccountRequest as exc:
         raise HTTPException(422, str(exc)) from exc
+    except AccountProviderError as exc:
+        raise HTTPException(502, str(exc)) from exc
 
 
 @app.post("/api/accounts/{provider_id}/snapshots", status_code=201)
@@ -254,6 +257,8 @@ def create_account_provider_snapshot(
         raise HTTPException(409, str(exc)) from exc
     except AmbiguousAccountProvider as exc:
         raise HTTPException(409, str(exc)) from exc
+    except InvalidAccountRequest as exc:
+        raise HTTPException(422, str(exc)) from exc
     except AccountProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
     except AccountSnapshotError as exc:
