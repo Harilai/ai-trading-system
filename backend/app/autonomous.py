@@ -860,6 +860,27 @@ class AutonomousAgent:
                     execution_request,
                     decision.model_dump(),
                 )
+                if hasattr(self.portfolio, "order_intent_is_fresh"):
+                    fresh = await asyncio.to_thread(
+                        self.portfolio.order_intent_is_fresh,
+                        task["id"],
+                        settings.max_data_age_seconds,
+                        settings.max_fx_data_age_seconds,
+                    )
+                    if not fresh:
+                        await asyncio.to_thread(
+                            self.portfolio.expire_order_intent,
+                            task["id"],
+                            "Market/FX evidence expired before paper fill",
+                        )
+                        result = {
+                            "execution": "expired",
+                            "order_intent": await asyncio.to_thread(
+                                self.portfolio.get_order_intent, task["id"],
+                            ),
+                        }
+                        self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
+                        return result
                 try:
                     order = await asyncio.to_thread(
                         self.portfolio.execute,
