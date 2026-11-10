@@ -9,8 +9,9 @@ Provide a venue-independent account boundary without merging accounts, environme
 - `AccountCapabilities`: venue, environment, supported market types, balances, positions, order management/submission/cancellation, reconciliation, read-only connector mode, transfers, withdrawals, wallet signing and whether key permissions have actually been verified.
 - `AccountBalance` / `AccountBalanceSnapshot`: canonical asset codes and decimal-string free/used/total amounts, account identity, market type, environment, timestamp and explicit permission flags.
 - `AccountPosition`: normalized instrument identity, quantity/side, quote currency, entry/mark price, market value and unrealized P&L.
-- `AccountOrder`: normalized client/exchange IDs, instrument, side/type/status, requested/filled/remaining quantities, average fill and quote currency.
-- `AccountBalanceProvider`, `PositionProvider` and `OrderReconciliationProvider`: capability-specific protocols. A provider must not imply support for methods it does not implement.
+- `AccountOrder`: normalized order observation keyed by provider/account/environment/market, with exchange/client IDs, instrument, side/type/status, requested/filled/remaining quantities, average fill, quote currency and observation timestamp.
+- `AccountOrderFill`: immutable per-trade execution with stable trade/order IDs, exact decimal amount/price/cost, quote currency, timestamp and explicit fee amount/currency.
+- `AccountBalanceProvider`, `PositionProvider` and `OrderReconciliationProvider`: capability-specific protocols. Order reconciliation returns typed `AccountOrder` and `AccountOrderFill` values; a provider must not imply support for methods it does not implement.
 
 ## Registry invariants
 
@@ -28,6 +29,7 @@ Provide a venue-independent account boundary without merging accounts, environme
 - `ccxt:binance` / `binance-spot-readonly`: production Spot balance observation only; no order submission, transfers, withdrawals or wallet signing. The account key's actual permissions are not verified by the adapter.
 - Optional generic `ccxt:{exchange_id}` read-only adapter (Kraken by default): configured with `CCXT_READONLY_EXCHANGE_ID`, `CCXT_READONLY_API_KEY` and `CCXT_READONLY_API_SECRET`; it calls only CCXT `fetch_balance()` for Spot. It does not implement order, transfer or withdrawal methods.
 - `ccxt:binance-demo` / `binance-spot-demo`: virtual Demo account; limit-order submission/management and reconciliation are separately declared. It cannot be stored as a read-only snapshot.
+- `OrderReconciliationProvider` is currently a contract only; no account adapter is registered through it. Binance Spot Demo continues to use its separate, provider-specific order store and reconciler.
 - No generic broker, margin, futures, options, DEX or wallet account adapter is added by this phase.
 
 ## API
