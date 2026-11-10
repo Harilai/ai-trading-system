@@ -295,7 +295,7 @@ class AccountBalanceProvider(Protocol):
 
 @runtime_checkable
 class PositionProvider(Protocol):
-    def fetch_positions(self) -> list[AccountPosition]: ...
+    def fetch_positions(self) -> dict: ...
 
 
 @runtime_checkable
@@ -451,39 +451,64 @@ class AccountProviderRegistry:
 
     def fetch_positions(
         self, provider_id: str, account_alias: str | None = None, *, market_type: str | None = None,
-    ) -> list[dict]:
+    ) -> dict:
         provider, capabilities, lock = self._resolve(provider_id, account_alias)
         if not capabilities.positions:
             raise UnsupportedAccountCapability("Account provider does not declare position support")
-        selected_market = market_type
-        if selected_market is None:
-            if len(capabilities.market_types) != 1:
-                raise AccountProviderError("market_type is required for a multi-market account")
-            selected_market = capabilities.market_types[0]
-        if selected_market not in capabilities.market_types:
-            raise UnsupportedAccountCapability("Requested market_type is not declared by this account")
         try:
             with lock:
-                raw_positions = provider.fetch_positions()
+                raw = provider.fetch_positions()
         except AccountProviderError:
             raise
         except Exception as exc:
             raise AccountProviderError(f"Account position request failed ({type(exc).__name__})") from None
+        if not isinstance(raw, dict):
+            raise AccountProviderError("Account provider must return a timestamped position snapshot object")
+        if raw.get("provider_id") != capabilities.provider_id:
+            raise AccountProviderError("Account provider identity changed in position response")
+        if raw.get("account_alias") != capabilities.account_alias:
+            raise AccountProviderError("Account alias changed in position response")
+        if raw.get("environment") != capabilities.environment:
+            raise AccountProviderError("Account environment conflicts with declared provider capabilities")
+        selected_market = raw.get("market_type")
+        if not isinstance(selected_market, str) or selected_market not in capabilities.market_types:
+            raise AccountProviderError("Position market_type is not declared by the provider")
+        if market_type is not None and selected_market != market_type:
+            raise AccountProviderError("Position market_type conflicts with requested account market")
+        fetched_at = raw.get("fetched_at")
+        if not isinstance(fetched_at, str):
+            raise AccountProviderError("Position snapshot timestamp is missing")
+        try:
+            timestamp = datetime.fromisoformat(fetched_at)
+        except ValueError:
+            raise AccountProviderError("Position snapshot timestamp is invalid") from None
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            raise AccountProviderError("Position snapshot timestamp must include a timezone")
+        age = (datetime.now(timezone.utc) - timestamp.astimezone(timezone.utc)).total_seconds()
+        if age < -60 or age > 300:
+            raise AccountProviderError("Position snapshot is stale or future-dated")
+        raw_positions = raw.get("positions")
         if not isinstance(raw_positions, list):
             raise AccountProviderError("Account provider returned an invalid positions collection")
         normalized = []
         seen = set()
-        for raw in raw_positions:
-            position = AccountPosition.normalize(raw)
+        for item in raw_positions:
+            position = AccountPosition.normalize(item)
             if position.market_type != selected_market:
-                raise AccountProviderError("Position market_type conflicts with requested account market")
+                raise AccountProviderError("Position record market_type conflicts with snapshot")
             key = (position.instrument_id, position.side)
             if key in seen:
                 raise AccountProviderError("Account provider returned duplicate instrument/side positions")
             seen.add(key)
             normalized.append(position.to_dict())
-        return sorted(normalized, key=lambda item: (item["instrument_id"], item["side"]))
-
+        return {
+            "provider_id": capabilities.provider_id,
+            "account_alias": capabilities.account_alias,
+            "market_type": selected_market,
+            "environment": capabilities.environment,
+            "fetched_at": timestamp.astimezone(timezone.utc).isoformat(),
+            "positions": sorted(normalized, key=lambda item: (item["instrument_id"], item["side"])),
+        }
     def fetch_account_snapshot(
         self, provider_id: str, account_alias: str | None = None, *, market_type: str | None = None,
     ) -> dict:
@@ -500,15 +525,25 @@ class AccountProviderRegistry:
             raise UnsupportedAccountCapability("Requested market_type is not declared by this account")
         if balance_snapshot is not None and balance_snapshot["market_type"] != selected_market:
             raise AccountProviderError("Balance and position snapshots cannot mix market types")
-        positions = self.fetch_positions(provider_id, account_alias, market_type=selected_market) if capabilities.positions else []
-        timestamp = balance_snapshot["fetched_at"] if balance_snapshot is not None else datetime.now(timezone.utc).isoformat()
+        position_snapshot = (
+            self.fetch_positions(provider_id, account_alias, market_type=selected_market)
+            if capabilities.positions else None
+        )
+        timestamps = []
+        if balance_snapshot is not None:
+            timestamps.append(datetime.fromisoformat(balance_snapshot["fetched_at"]))
+        if position_snapshot is not None:
+            timestamps.append(datetime.fromisoformat(position_snapshot["fetched_at"]))
+        if len(timestamps) == 2 and abs((timestamps[0] - timestamps[1]).total_seconds()) > 60:
+            raise AccountProviderError("Balance and position observations are too far apart to form one snapshot")
+        fetched_at = min(timestamps).isoformat() if timestamps else datetime.now(timezone.utc).isoformat()
         return {
             "provider_id": capabilities.provider_id,
             "account_alias": capabilities.account_alias,
             "market_type": selected_market,
             "environment": capabilities.environment,
             "venue_type": capabilities.venue_type,
-            "fetched_at": timestamp,
+            "fetched_at": fetched_at,
             "read_only": capabilities.read_only,
             "execution_enabled": capabilities.order_submission,
             "withdrawals_enabled": capabilities.withdrawals,
@@ -516,7 +551,7 @@ class AccountProviderRegistry:
             "wallet_signing_enabled": capabilities.wallet_signing,
             "permissions_verified": capabilities.permissions_verified,
             "balances": balance_snapshot["balances"] if balance_snapshot else [],
-            "positions": positions,
+            "positions": position_snapshot["positions"] if position_snapshot else [],
         }
     def record_read_only_snapshot(
         self,
