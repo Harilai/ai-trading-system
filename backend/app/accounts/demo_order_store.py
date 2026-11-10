@@ -154,6 +154,8 @@ class BinanceDemoOrderStore:
             raise DemoOrderStoreError("Demo order quote cap is malformed") from None
         if not quote_cap.is_finite() or quote_cap <= 0:
             raise DemoOrderStoreError("Demo order quote cap must be finite and positive")
+        if len(quote_cap.as_tuple().digits) > 50 or abs(quote_cap.as_tuple().exponent) > 50:
+            raise DemoOrderStoreError("Demo order quote cap precision is unsupported")
         quote_cap_text = format(quote_cap, "f")
         if "." in quote_cap_text:
             quote_cap_text = quote_cap_text.rstrip("0").rstrip(".")
