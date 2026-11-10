@@ -231,10 +231,10 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
 
     @staticmethod
     def _decimal(value: Any, field: str) -> Decimal:
-        if isinstance(value, bool) or value is None:
-            raise BinanceDemoError(f"Demo order {field} is invalid")
+        if not isinstance(value, str) or not re.fullmatch(r"\\d+(?:\\.\\d+)?", value):
+            raise BinanceDemoError(f"Demo order {field} must be a plain decimal string")
         try:
-            result = Decimal(str(value))
+            result = Decimal(value)
         except (InvalidOperation, TypeError, ValueError):
             raise BinanceDemoError(f"Demo order {field} is invalid") from None
         if not result.is_finite() or result <= 0:
