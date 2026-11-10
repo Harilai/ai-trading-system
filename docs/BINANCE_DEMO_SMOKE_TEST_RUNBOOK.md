@@ -99,14 +99,7 @@ curl -fsS -H "X-Agent-Token: $AGENT_CONTROL_TOKEN" "$API/api/demo/binance/spot/o
 
 Repeat the exact same POST once with the same client ID and identical payload. It must return the existing order and must not create a second exchange order. Reusing the client ID with a different symbol, side, amount, price or quote cap must be rejected.
 
-If the order is open, cancel it:
-
-```bash
-curl -i -X POST -H "X-Agent-Token: $AGENT_CONTROL_TOKEN" \
-  "$API/api/demo/binance/spot/orders/demo-smoke-unique-001/cancel"
-```
-
-Then read the order and events again. Confirm the exchange ID is stable and that filled/remaining quantities are consistent with the original amount.
+Read the order and events again. Confirm the exchange ID is stable and that filled/remaining quantities are consistent with the original amount. Leave the order resting for the restart drill in the next section.
 
 ## 6. Verify restart and ambiguous-outcome recovery
 
@@ -128,7 +121,14 @@ Acceptance:
 - Reconciliation queries the existing order by exchange ID or client order ID.
 - No restart, retry or repeated POST causes blind resubmission.
 - If an acknowledged order cannot be found, or exchange identity/quantity data conflicts, the state becomes `reconciliation_required` and blocks subsequent Demo orders.
-- Resolve any remaining open order in the Binance Demo interface and reconcile/cancel it before ending the drill.
+- If the order remains open, cancel it after reconciliation:
+
+```bash
+curl -i -X POST -H "X-Agent-Token: $AGENT_CONTROL_TOKEN" \
+  "$API/api/demo/binance/spot/orders/demo-smoke-unique-001/cancel"
+```
+
+- Read the order/events again and verify the final state. Do not leave an open order behind.
 
 ## 7. Partial fills and fee evidence
 
