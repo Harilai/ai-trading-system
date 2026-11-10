@@ -16,7 +16,8 @@ Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de 
 
 | Área | Estado |
 |---|---|
-| Cartera paper multidivisa EUR/USD, conversiones FX y manual equity/ETF paper | En validación en PR #41; no integrado hasta CI/revisión |\n| Backend FastAPI y paper portfolio SQLite | Implementado |
+| Cartera paper multidivisa EUR/USD, conversiones FX y manual equity/ETF paper | En validación en PR #41; no integrado hasta CI/revisión |
+| Backend FastAPI y paper portfolio SQLite | Implementado |
 | Datos públicos crypto spot vía CCXT | Implementado; solo datos públicos |
 | Datos públicos US equities/ETF vía Twelve Data Basic | Adaptador implementado y probado; API key gratuita opcional; solo datos, sin trading |
 | Investigación técnica y backtesting inicial de acciones/ETF | Pipeline manual y tarea autónoma periódica de solo lectura implementados; sin propuestas ni órdenes |
