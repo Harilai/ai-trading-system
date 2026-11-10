@@ -33,7 +33,7 @@ There are deliberately no `submitted`, `accepted`, `partial_fill` or broker-pend
 - Reusing a `client_order_id` with a different payload is a conflict.
 - A paper fill is allowed only from `risk_approved`.
 - Reconciliation compares the complete immutable request with the persisted trade row (instrument, side, quantity, fill price, fees, totals, FX evidence, market timestamp and protective levels); a matching client ID alone is insufficient.
-- The trade insert, position/cash mutation, intent transition to `paper_filled`, and fill event commit in the same SQLite transaction.
+- The trade insert, position/cash mutation, intent transition to `filled`, and fill event commit in the same SQLite transaction.
 - Replaying a filled intent returns the original trade without a second portfolio mutation.
 - A retry resumes the exact persisted request only while its market and, when applicable, FX timestamps remain within configured freshness limits. Retries use backoff and a finite six-attempt recovery budget. If evidence is stale, the owning task is lost, or the retry budget is exhausted, the intent expires and the next scheduled cycle must obtain fresh data and a new task ID.
 - A filled intent with no matching trade, or a trade inconsistent with its intent, moves to `reconciliation_required` and blocks new orders.
@@ -62,8 +62,8 @@ Equity/ETF stop-loss and take-profit fields are currently stored but not monitor
 - Existing SQLite databases migrate additively without losing trades, positions, tasks or audit history.
 - State transitions reject illegal edges and every transition is auditable.
 - A duplicate intent cannot create a second paper fill.
-- Trade + portfolio mutation + `paper_filled` state are atomic.
-- Crash/restart tests cover intent-created, risk-approved, paper-filled and task-completed boundaries.
+- Trade + portfolio mutation + `filled` state are atomic.
+- Crash/restart tests cover risk-approved, filled-before-task-completion, task lease expiry and replay boundaries.
 - A missing/mismatched trade moves to `reconciliation_required` and blocks new buys.
 - Stale/future/malformed market or FX evidence fails closed.
 - Expired task leases cannot be completed by an old worker after a new claim.
