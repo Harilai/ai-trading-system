@@ -135,7 +135,8 @@ def run_backup_cycle(
                         and previous.get("key") in remote_keys
                     ):
                         continue
-                    uploaded = external_store.upload(local_backup, created_at=timestamp)
+                    file_timestamp = datetime.fromtimestamp(stat.st_mtime, timezone.utc)
+                    uploaded = external_store.upload(local_backup, created_at=file_timestamp)
                     uploaded_sources[local_backup.name] = {
                         "key": uploaded["key"],
                         "sha256": uploaded["sha256"],
