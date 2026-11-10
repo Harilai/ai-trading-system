@@ -78,10 +78,10 @@ class BinanceSpotDemoAccount:
                     visit(nested)
 
         visit(api_urls)
-        if not found or not any("demo-api.binance.com" in url for url in found):
-            raise BinanceDemoError("CCXT did not route REST requests to Binance Demo Trading")
         if any("api.binance.com" in url and "demo-api.binance.com" not in url for url in found):
             raise BinanceDemoError("Production Binance REST endpoint detected; refusing to initialize")
+        if not found or not any("demo-api.binance.com" in url for url in found):
+            raise BinanceDemoError("CCXT did not route REST requests to Binance Demo Trading")
 
     def describe(self) -> dict:
         return {
