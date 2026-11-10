@@ -125,7 +125,8 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [x] Añadir reconciliación periódica automática de órdenes Demo abiertas/unknown tras restart, con lease, rate limit y sin reenvío ciego.
 - [ ] Añadir monitorización paper de stop-loss/take-profit equity con cotizaciones USD y FX frescas, cierres idempotentes y recuperación tras reinicio.
 - [x] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
-- [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
+- [x] Mantener el sistema en hold/cash si no existe una oportunidad validada; el Chief devuelve `hold` sin propuesta cuando no hay señal elegible.
+- [ ] Conservar cotizaciones Kraken sin timestamp de exchange mediante hora local de recepción marcada `retrieved_at` y guardar su procedencia en el ledger paper (PR pendiente de CI/revisión).
 
 ## Prioridad 3 — contabilidad y control del capital
 

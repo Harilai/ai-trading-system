@@ -20,7 +20,11 @@ def _normalize_discovered_spot_ticker(
     if not isinstance(ticker, dict):
         return None
     try:
-        timestamp = int(ticker["timestamp"])
+        timestamp_source = str(ticker.get("timestamp_source") or "exchange").strip().lower()
+        raw_timestamp = ticker.get("timestamp")
+        if raw_timestamp is None and timestamp_source == "retrieved_at":
+            raw_timestamp = ticker.get("observed_at_ms")
+        timestamp = int(raw_timestamp)
         last = float(ticker["last"])
         bid = float(ticker["bid"])
         ask = float(ticker["ask"])
@@ -55,6 +59,7 @@ def _normalize_discovered_spot_ticker(
         "spread_fraction": spread,
         "quote_volume_24h": quote_volume,
         "ticker_timestamp_ms": timestamp,
+        "ticker_timestamp_source": timestamp_source,
     }
     if provider_id:
         result.update({
@@ -157,3 +162,4 @@ class CcxtMarketData:
         now_ms = datetime.now(timezone.utc).timestamp() * 1000
         age_ms = now_ms - timestamp
         return age_ms < 0 or age_ms > max_age_seconds * 1000
+

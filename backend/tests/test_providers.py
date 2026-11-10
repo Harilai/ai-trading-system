@@ -164,6 +164,50 @@ def test_ccxt_provider_discovery_skips_malformed_tickers():
     assert results[0]["provider_id"] == "ccxt:fake"
 
 
+def test_ccxt_provider_marks_missing_exchange_time_as_local_retrieval_time():
+    from app.providers.ccxt_spot import CcxtSpotProvider
+
+    class FakeExchange:
+        has = {"fetchTickers": True}
+
+        def fetch_tickers(self, symbols):
+            return {
+                "BTC/EUR": {
+                    "timestamp": None,
+                    "datetime": None,
+                    "last": 100.0,
+                    "bid": 99.9,
+                    "ask": 100.1,
+                    "quoteVolume": 10000,
+                }
+            }
+
+        def fetch_ticker(self, symbol):
+            return {
+                "timestamp": None,
+                "datetime": None,
+                "last": 100.0,
+                "bid": 99.9,
+                "ask": 100.1,
+                "quoteVolume": 10000,
+            }
+
+    provider = CcxtSpotProvider.__new__(CcxtSpotProvider)
+    provider.provider_id = "ccxt:fake"
+    provider._markets = {"BTC/EUR": {"spot": True, "active": True, "quote": "EUR"}}
+    provider.exchange = FakeExchange()
+
+    result = provider.discover_spot_symbols()
+    ticker = provider.ticker("BTC/EUR")
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+    assert len(result) == 1
+    assert result[0]["ticker_timestamp_source"] == "retrieved_at"
+    assert 0 <= now_ms - result[0]["ticker_timestamp_ms"] < 10_000
+    assert ticker["timestamp_source"] == "retrieved_at"
+    assert 0 <= now_ms - ticker["timestamp"] < 10_000
+
+
 
 def test_registry_discovery_continues_when_one_provider_fails():
     class HealthyDiscoveryProvider(FakeProvider):
@@ -353,3 +397,4 @@ def test_ccxt_discovery_maps_decimal_places_without_inventing_tick_sizes():
     assert instrument.amount_precision == 5
     assert instrument.price_tick is None
     assert instrument.amount_step is None
+

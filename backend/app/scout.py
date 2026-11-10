@@ -78,6 +78,7 @@ class ScoutAgent:
                     "spread_fraction": 0.0,
                     "quote_volume_24h": 0.0,
                     "ticker_timestamp_ms": int(ticker["timestamp"]),
+                    "ticker_timestamp_source": ticker.get("timestamp_source", "exchange"),
                     "included_open_position": True,
                 })
                 known_instruments.add(instrument_id)
@@ -141,3 +142,4 @@ class ScoutAgent:
             "rejected": rejected,
             "execution": "analysis_only",
         }
+

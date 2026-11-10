@@ -1145,6 +1145,7 @@ def _paper_equity_order(order: OrderRequest):
             fx_provider_id=fx["provider_id"],
             fx_timestamp=fx["timestamp"],
             market_timestamp=int(quote["timestamp"]),
+            market_timestamp_source=str(quote.get("timestamp_source") or "provider"),
         )
     except PortfolioError as exc:
         raise HTTPException(422, str(exc)) from exc
@@ -1258,6 +1259,7 @@ def paper_order(
             quote_currency="EUR",
             fx_rate_to_eur=1.0,
             market_timestamp=int(quote["timestamp"]),
+            market_timestamp_source=str(quote.get("timestamp_source") or "provider"),
         )
     except PortfolioError as exc:
         raise HTTPException(422, str(exc)) from exc

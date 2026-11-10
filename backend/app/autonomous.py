@@ -941,6 +941,9 @@ class AutonomousAgent:
                     "stop_loss": proposal.stop_loss,
                     "take_profit": proposal.take_profit,
                     "market_timestamp": market_timestamp,
+                    "market_timestamp_source": str(
+                        market_observation.get("ticker_timestamp_source") or "provider"
+                    ),
                     "quote_currency": str(
                         market_observation.get("quote_currency")
                         or (proposal_symbol.rsplit("/", 1)[-1] if "/" in proposal_symbol else "EUR")

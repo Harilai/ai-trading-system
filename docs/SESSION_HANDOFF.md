@@ -1,9 +1,17 @@
 # Session handoff — AI Trading System
 
-> **Última revisión del repositorio:** 2026-11-10 15:42 Europe/Madrid
+> **Última revisión del repositorio:** 2026-11-10 22:30 Europe/Madrid
 > **Rama base revisada:** `main`
-> **Último commit integrado en `main`:** `7852073f9601bfcfd8b9091ad1eb05f42eb60170` — PR #75, Demo local paper.
+> **Último commit integrado en `main`:** `ede62ebfd64dc9364b2465cc70d932226d912e17` — PR #82, independent reviewer workflow.
 > **Estado de ejecución:** paper trading únicamente; Binance Spot Demo aislado; live trading no implementado ni habilitado.
+
+## Fase activa — Kraken y operaciones paper (PR #81)
+
+- PR #81 `fix/kraken-retrieved-timestamp-paper`, basado en `main`, corrige que el ticker público de Kraken no siempre aporta timestamp de exchange. Las respuestas válidas se marcan con hora local de recepción `retrieved_at`; la procedencia se conserva hasta el ledger paper y la frescura sigue limitada.
+- Tests locales registrados antes del sync: suite completa **512 passed, 1 warning**; tests dirigidos **118 passed**; `git diff --check` correcto. GitHub Actions pasó `Python tests` y `Docker build and runtime hardening` en el SHA `8880829be7b8b4c37730cf85dcda4f621ab58dd7` (run 42907071675). Se añadieron tests para persistencia de `retrieved_at`, idempotencia de intent y migración legacy. La rama se sincronizó con el nuevo `main` mediante merge commit `f3fe252f4a19d7b28eb125a38d0edd99481f03d6`; CI debe repetirse sobre este head exacto antes de integrar.
+- Demo local reconstruida desde el checkout de trabajo y healthy: `mode=paper`, `live_trading_enabled=false`; cotización BTC/EUR fresca con fuente `retrieved_at`.
+- Escaneo/ciclo: cinco pares descubiertos y analizados, pero cero oportunidades elegibles. Todas las estrategias fallaron gates de muestra fuera de entrenamiento, walk-forward y costes; Chief mantuvo `hold`, sin orden.
+- No se relajaron límites, no se crearon órdenes para aparentar actividad, no se usaron claves de trading ni se conectaron fondos reales.
 
 ## Fase completada — Demo local paper (PR #75)
 
@@ -16,7 +24,10 @@
 
 ## Siguiente acción
 
-Continuar PR #74, actualmente en draft (`phase/account-position-snapshots`, head `068a316a14de2f03753dbdefbad364b902bb29d6`): revisar el cambio, actualizar/rebasar contra el `main` nuevo tras PR #75, ejecutar pruebas y revisión independiente, y solo entonces moverla a ready. No hay CI publicado para su head actual.
+1. Completar CI y conseguir revisión independiente de PR #81; integrar solo cuando ambos gates estén verdes.
+2. Revisar el estado vivo de PR #77–80 (varias ramas están apiladas); mantener el orden de dependencias y no mergear una rama base sin verificar sus descendientes.
+3. Tras integrar el fix, medir si las estrategias producen oportunidades validadas en más ciclos. No rebajar los gates OOS/walk-forward/costes para fabricar operaciones.
+4. Actualizar el roadmap/handoff con el SHA integrado y el siguiente phase gate.
 
 ## 1. Cómo retomar en una conversación nueva
 
