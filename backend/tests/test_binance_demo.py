@@ -103,6 +103,7 @@ def test_binance_demo_connector_fails_closed_if_ccxt_keeps_production_rest_endpo
 
 def test_binance_demo_connector_fails_closed_if_demo_endpoint_is_not_present():
     exchange = FakeBinanceDemoExchange()
+    exchange.urls = {"api": {"public": "https://api.other-venue.example", "private": "https://api.other-venue.example"}}
     exchange.enable_demo_trading = lambda enabled: exchange.calls.append(("enable_demo_trading", enabled))
     with pytest.raises(BinanceDemoError, match="did not route"):
         BinanceSpotDemoAccount(
