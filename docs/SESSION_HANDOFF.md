@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `23cfcb597c78060d37d190ebff9820c5c24f3716` — PR #41, cartera paper multidivisa EUR/USD.  
+> **Último commit observado en `main`:** `df760119580b56a345d0e7c9ecdc60b45d2365dd` — merge de PR #44, ciclo de vida y conciliación paper.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -37,12 +37,13 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - Twelve Data Basic opcional para datos/FX de acciones y ETF estadounidenses; el Chief mantiene investigación read-only y las órdenes equity solo son manuales paper.
 - Scout, Charts, Strategy Research, Chief, Risk Manager y Sniper integrados.
 - Backtesting cronológico 70/30, benchmark buy-and-hold, walk-forward y sensibilidad de costes.
-- Worker persistente con cola durable, leases, reintentos y ciclos periódicos.
+- Worker persistente con cola durable, leases con token de fencing, heartbeat, reintentos acotados y ciclos periódicos.
+- Ciclo de vida paper de órdenes con intentos risk-approved persistidos, fills atómicos, eventos append-only, reconciliación contra el ledger y bloqueo fail-closed ante discrepancias.
 - Órdenes paper con comisión, slippage, stop-loss/take-profit e idempotencia por `client_order_id`.
 - Dashboard, health/readiness, controles autenticados y backups SQLite.
 - No hay ejecución real, adaptadores de órdenes live, wallets, firma blockchain, broker de acciones, derivados ni DeFi. No habilitarlos como parte de esta fase.
 
-## 4. Fase completada: cartera paper multidivisa para acciones y ETF
+## 4. Fases completadas: cartera multidivisa y conciliación de órdenes
 
 **Completada en PR #41.** La cartera paper mantiene efectivo y posiciones EUR/USD, permite conversiones explícitas y valora acciones/ETF estadounidenses en USD dentro de una cartera cuya divisa base continúa siendo EUR. La investigación sigue siendo read-only para el Chief: las órdenes equity son manuales y paper-only.
 
@@ -81,7 +82,7 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 5. [x] Extender contratos de instrumentos y Risk Manager para permitir únicamente cash equities/ETFs USD de Twelve Data en paper, manteniendo bloqueados otros activos, mercados y proveedores sin soporte.
 6. [x] Mantener la investigación read-only para el Chief; permitir solo órdenes manuales paper tras los gates de cartera, FX, sesión bursátil, costes y riesgo. No activar órdenes autónomas de equities.
 7. [x] Añadir pruebas de migración, FX stale/futuro/malformado, falta de cuota, conversiones duplicadas, saldo insuficiente, movimientos entre divisas, valoración parcial, cambios de FX, comisiones y regresión crypto EUR.
-8. [x] Tras completar esta fase, el siguiente trabajo es el ciclo de vida y conciliación de órdenes.
+8. [x] PR #44 completa el ciclo de vida y conciliación paper; la siguiente fase pendiente son backups externos y restauración.
 
 ### Criterios de aceptación
 
@@ -93,17 +94,35 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - El Risk Manager sigue siendo obligatorio y no permite shorting, margin, derivados, broker live ni wallets.
 - La suite completa y CI deben pasar en el SHA exacto de la PR antes del merge.
 
-## 5. Siguiente fase y prioridades posteriores
+### Resultado integrado — PR #44: ciclo de vida y conciliación paper
 
-1. **Siguiente fase:** completar el ciclo de vida, conciliación y recuperación de órdenes/fills; incluir supervisión paper de stop-loss/take-profit en posiciones equity antes de habilitar cualquier decisión autónoma equity.
-2. Implementar copias de seguridad externas fuera del volumen/servidor de Docker, con verificación de integridad y restauración probada.
-3. Ampliar el dashboard con gráficos, investigación y gestión de retiradas, mostrando solo métricas verificadas.
-4. Preparar despliegue persistente 24/7 en VPS: persistencia, TLS/reverse proxy, monitorización, alertas, readiness, recuperación, backups off-host y medición de disponibilidad.
-5. Solo después, evaluar nuevos mercados y proveedores mediante adaptadores, reglas de riesgo y conciliación específicos.
+- PR: https://github.com/Harilai/ai-trading-system/pull/44
+- Merge commit: `df760119580b56a345d0e7c9ecdc60b45d2365dd`.
+- Head validado: `0c20359375af24be79c5ebd008c8ca9fa32e84d1`.
+- CI: 292 pruebas Python correctas; Compose, build Docker y ejecución non-root correctos.
+- Intentos risk-approved persistidos con request/decision inmutables; fills y cambios de ledger atómicos.
+- Reconciliación de intentos frente a trades, verificación del payload completo, eventos append-only y estado `reconciliation_required`.
+- Recuperación tras restart con market/FX freshness, backoff y presupuesto finito; fencing por lease token y heartbeat.
+- Nuevas compras bloqueadas mientras exista un intento sin resolver; las ventas de reducción de riesgo siguen permitidas.
+- API owner-authenticated `/api/agent/order-intents` para consultar intents y eventos.
+
+## 5. Objetivo de producto y siguientes fases
+
+El objetivo final no es un bot exclusivamente crypto. Debe evolucionar a una plataforma multiactivo y multi-venue preparada para capital real: conectar exchanges como Binance, brokers y wallets, y descubrir/operar los instrumentos que cada proveedor y cuenta permita. El universo objetivo incluye crypto CEX/DEX, acciones, ETF, FX, futuros, opciones, bonos, materias primas y otros mercados integrables. La disponibilidad depende del proveedor, país, cuenta, API, liquidez y elegibilidad. Descubrir un símbolo no habilita su trading.
+
+La arquitectura de referencia está en `docs/MARKET_EXPANSION_ARCHITECTURE.md`.
+
+Siguiente secuencia:
+1. **Siguiente fase: backups externos y restauración.** Copia cifrada fuera del volumen/servidor Docker, retención, verificación de integridad y restauración probada.
+2. Ampliar el dashboard con gráficos, investigación, salud de conectores, órdenes/fills y gestión de retiradas.
+3. Construir abstracción multi-venue y catálogo de instrumentos: capabilities, cuentas, permisos, precisión/ticks, multiplicadores, vencimientos, margen/colateral, settlement, corporate actions, funding y FX.
+4. Preparar despliegue persistente 24/7 en VPS: TLS/reverse proxy, secretos, aislamiento, monitorización, alertas, readiness, recuperación y backups off-host.
+5. Añadir supervisión paper de stops/take-profit equity y madurez paper/sandbox por mercado antes de decisiones autónomas o live.
+6. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## 6. Límites que no se deben saltar
 
-- Mantener paper trading como único modo operativo.
+- Mantener paper trading como único modo operativo hasta que cada venue/clase supere su proceso de madurez y el propietario habilite explícitamente live.
 - Live trading no puede activarse desde agentes, LLM, dashboard ni configuración accidental.
 - No solicitar ni guardar seeds, claves privadas ni credenciales en Git, logs o frontend.
 - No dar permisos de retirada a claves de trading.

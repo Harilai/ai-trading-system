@@ -1,15 +1,15 @@
 # AI Trading System
 
-Plataforma modular de trading algorítmico autónomo, construida por fases con prioridad en la validación, la trazabilidad y la protección del capital.
+Plataforma modular de trading algorítmico multiactivo y multi-venue, orientada a investigación, gestión de cartera y eventual ejecución con capital real. Se construye por fases con prioridad en validación, trazabilidad y protección del capital.
 
-**Continuidad entre conversaciones:** consulta [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) para conocer el último estado revisado y el siguiente paso concreto. El método obligatorio de trabajo por roles especializados está en [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md). El diseño de cartera EUR/USD está en [`docs/MULTICURRENCY_DESIGN.md`](docs/MULTICURRENCY_DESIGN.md). Comprueba siempre el estado vivo de `main` y las PR antes de continuar.
+**Continuidad entre conversaciones:** consulta [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) para conocer el último estado revisado y el siguiente paso concreto. El método obligatorio de trabajo por roles especializados está en [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md). El diseño de cartera EUR/USD está en [`docs/MULTICURRENCY_DESIGN.md`](docs/MULTICURRENCY_DESIGN.md). La arquitectura objetivo multiactivo y multi-venue está en [`docs/MARKET_EXPANSION_ARCHITECTURE.md`](docs/MARKET_EXPANSION_ARCHITECTURE.md). Comprueba siempre el estado vivo de `main` y las PR antes de continuar.
 
 ## Estado real de implementación
 
 La rama integrada contiene actualmente:
 
 - Backend FastAPI y cartera simulada persistida en SQLite.
-- Capa de integración universal: contratos normalizados de proveedor, instrumentos, clases de activo, tipos de mercado y registro/capability matrix.
+- Capa de integración extensible: contratos normalizados de proveedor, instrumentos, clases de activo, tipos de mercado y registro/capability matrix; las capacidades reales dependen de cada adaptador.
 - Adaptador inicial de datos públicos CEX crypto spot mediante CCXT (Kraken por defecto; lista configurable de proveedores CCXT).
 - Adaptador opcional de datos de acciones y ETF estadounidenses mediante Twelve Data Basic, activado únicamente al configurar una API key gratuita; incorpora caché SQLite persistente, límites persistentes diario y móvil de 60 segundos basados en créditos estimados, separación mínima entre peticiones y conciliación del consumo con la cabecera `api-credits-used` del proveedor cuando está disponible.
 - Pipeline separado de investigación de acciones/ETF con muestreo estratificado con cursor SQLite persistente que rota entre ejecuciones por todo el catálogo, para limitar las cotizaciones sin quedarse siempre con los mismos símbolos, ranking de candidatos por volumen, frescura de cotización y spread; solo descarga histórico para los mejores candidatos. La clasificación usa pesos explícitos (60% volumen, 25% frescura, 15% spread), desempate determinista por símbolo y mantiene investigación histórica separada de los bloqueos de ejecución; endpoint manual de solo lectura `/api/research/equities`.
@@ -21,6 +21,8 @@ La rama integrada contiene actualmente:
 - Órdenes paper manuales (solo propietario autenticado) para acciones/ETF cash USD de EE. UU. descubiertas por Twelve Data, con cotización reciente, spread máximo si hay bid/ask, sesión abierta, conversión FX, stop-loss obligatorio en compras y Risk Manager determinista. No hay ejecución mediante broker ni operaciones autónomas de equities.
 - Rechazo de pares no admitidos y datos de mercado obsoletos.
 - Worker asíncrono persistente con cola durable, leases, reintentos, recuperación de tareas expiradas y tolerancia a fallos transitorios del bucle de supervisión.
+- Ciclo de vida paper de órdenes persistido: intentos aprobados inmutables, fills atómicos, eventos de auditoría append-only, conciliación de ledger, caducidad de datos stale y recuperación acotada con fencing de leases (PR #44).
+- Historial autenticado de intentos y eventos disponible en `/api/agent/order-intents`; el token de control se envía por cabecera y no se almacena en el navegador.
 - API de supervisión autenticada: estado, pausa, reanudación, parada de emergencia y encolado de tareas.
 - Scout que descubre mercados spot cotizados en EUR, filtra por liquidez, spread y frescura de ticker.
 - Charts Agent determinista.
