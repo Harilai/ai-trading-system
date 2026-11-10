@@ -57,6 +57,24 @@
     .badge{border:1px solid #33445d;border-radius:999px;padding:4px 7px;color:#b9c9dc;font-size:10px}
     .positive{color:#58d39b}.negative{color:#f17e7e}
     footer{margin-top:18px;color:#65758c;font-size:11px;text-align:center}
+    .wide{margin-bottom:14px}
+    .chart-tools{display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:12px}
+    .chart-tools .field{min-width:130px}
+    select{background:#0d1520;color:#e8edf5;border:1px solid #33445d;border-radius:9px;padding:10px 12px;font:inherit}
+    .chart{width:100%;height:240px;display:block;background:#0d1520;border:1px solid #202c3c;border-radius:10px}
+    .chart-meta{display:flex;justify-content:space-between;gap:10px;color:#91a0b5;font-size:11px;margin-top:8px}
+    .data-list{display:grid;gap:8px}
+    .data-item{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #202c3c;font-size:12px}
+    .data-item:last-child{border:0}
+    .data-item small{display:block;color:#8291a6;margin-top:3px;overflow-wrap:anywhere}
+    .data-item strong{text-align:right;overflow-wrap:anywhere}
+    .form-row{display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin:10px 0}
+    .form-row .field{min-width:130px;flex:1}
+    .mini-input{width:100%;min-width:100px}
+    .table-wrap.compact{max-height:300px}
+    .state-good{color:#58d39b}.state-warn{color:#e9ad4b}.state-bad{color:#f17e7e}
+    .subheading{font-size:11px;color:#91a0b5;text-transform:uppercase;letter-spacing:.08em;margin:14px 0 6px}
+    @media(max-width:620px){.chart-tools .field{min-width:calc(50% - 8px)}.form-row .field{min-width:100%}.chart{height:200px}}
     @media(max-width:1000px){.metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.grid{grid-template-columns:1fr}}
     @media(max-width:620px){.shell{padding:20px 13px 40px}header{display:block}.pill{margin-top:12px}.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metric .value{font-size:20px}.toolbar .field{min-width:100%}.toolbar button{flex:1}}
   </style>
@@ -140,6 +158,60 @@
       <div id="recent-tasks" class="task-list"><div class="empty">Conecta el token para consultar las tareas.</div></div>
     </section>
 
+    <section class="grid wide">
+      <div class="panel">
+        <div class="section-head"><h2>Mercado · gráfico OHLCV</h2><span id="chart-status" class="badge">Datos de mercado</span></div>
+        <div class="chart-tools">
+          <div class="field"><label for="chart-symbol">Símbolo</label><input id="chart-symbol" value="BTC/EUR"></div>
+          <div class="field"><label for="chart-provider">Proveedor</label><select id="chart-provider"><option value="ccxt:kraken">Kraken · crypto</option><option value="twelve_data">Twelve Data · equities</option></select></div>
+          <div class="field"><label for="chart-timeframe">Intervalo</label><select id="chart-timeframe"><option value="1h">1 hora</option><option value="4h">4 horas</option><option value="1day">1 día</option><option value="15m">15 minutos</option></select></div>
+          <button id="load-chart" class="primary">Cargar gráfico</button>
+        </div>
+        <svg id="market-chart" class="chart" viewBox="0 0 900 240" role="img" aria-label="Gráfico de precios OHLCV"></svg>
+        <div class="chart-meta"><span id="chart-range">—</span><span id="chart-latest">—</span></div>
+        <div class="message" id="chart-message" role="status"></div>
+      </div>
+      <div class="panel">
+        <div class="section-head"><h2>Conectores y salud</h2><span id="connector-count" class="badge">—</span></div>
+        <div id="connector-list" class="data-list"><div class="empty">Consultando proveedores…</div></div>
+        <div class="notice">La presencia de un proveedor o símbolo no significa que haya una cuenta autenticada ni que el trading esté habilitado.</div>
+      </div>
+    </section>
+
+    <section class="grid wide">
+      <div class="panel">
+        <div class="section-head"><h2>Investigación y estrategias</h2><span id="research-count" class="badge">Token requerido</span></div>
+        <div class="actions">
+          <button id="run-equity-research" disabled>Analizar acciones/ETF</button>
+          <button id="load-strategy-history" disabled>Historial de estrategias</button>
+        </div>
+        <div id="research-message" class="message" role="status"></div>
+        <div id="research-results" class="data-list"><div class="empty">Conecta el token para ejecutar investigación o consultar resultados.</div></div>
+      </div>
+      <div class="panel">
+        <div class="section-head"><h2>Órdenes paper y conciliación</h2><span id="intent-count" class="badge">Token requerido</span></div>
+        <div id="intent-list" class="data-list"><div class="empty">Conecta el token para consultar los intentos de orden.</div></div>
+        <div class="notice">Solo órdenes simuladas. Una discrepancia de conciliación bloquea nuevas compras; no se envían órdenes a ningún exchange.</div>
+      </div>
+    </section>
+
+    <section class="grid wide">
+      <div class="panel">
+        <div class="section-head"><h2>Backups y restauración</h2><span id="backup-state" class="badge">Token requerido</span></div>
+        <div id="backup-details" class="data-list"><div class="empty">Conecta el token para consultar las copias de seguridad.</div></div>
+      </div>
+      <div class="panel">
+        <div class="section-head"><h2>Retiradas de cartera paper</h2><span id="withdrawal-count" class="badge">Token requerido</span></div>
+        <div class="notice">Gestión contable exclusivamente paper. Aprobar una solicitud descuenta efectivo simulado; no transfiere dinero real ni interactúa con bancos o wallets.</div>
+        <div class="form-row">
+          <div class="field"><label for="withdrawal-amount">Importe EUR</label><input id="withdrawal-amount" class="mini-input" type="number" min="0.01" step="0.01" placeholder="0,00" disabled></div>
+          <button id="request-withdrawal" disabled>Solicitar retirada paper</button>
+        </div>
+        <div id="withdrawal-message" class="message" role="status"></div>
+        <div id="withdrawal-list" class="data-list"><div class="empty">Conecta el token para consultar solicitudes.</div></div>
+      </div>
+    </section>
+
     <footer>AI Trading System · datos y operaciones paper · no constituye garantía de rentabilidad</footer>
   </main>
 
@@ -166,88 +238,138 @@
         const td = document.createElement("td"); td.textContent = value == null ? "—" : String(value);
         if (className) td.className = className; row.appendChild(td);
       }
+      function dataItem(title, detail, value, state="") {
+        const row=document.createElement("div");row.className="data-item";
+        const left=document.createElement("div");left.textContent=title;
+        if(detail){const small=document.createElement("small");small.textContent=detail;left.appendChild(small);}
+        const right=document.createElement("strong");right.textContent=value==null?"—":String(value);
+        if(state)right.className=state;row.append(left,right);return row;
+      }
+      function empty(node,text){node.replaceChildren();const el=document.createElement("div");el.className="empty";el.textContent=text;node.appendChild(el);}
       function renderPositions(items) {
         const body = $("positions"); body.replaceChildren();
         $("position-count").textContent = String(items.length);
-        if (!items.length) {
-          const row=document.createElement("tr"),td=document.createElement("td");
-          td.colSpan=8;td.className="empty";td.textContent="No hay posiciones abiertas";row.appendChild(td);body.appendChild(row);return;
-        }
+        if (!items.length) { const row=document.createElement("tr"),td=document.createElement("td");td.colSpan=8;td.className="empty";td.textContent="No hay posiciones abiertas";row.appendChild(td);body.appendChild(row);return; }
         for (const p of items) {
-          const row=document.createElement("tr");
-          const pnl=Number(p.unrealised_pnl || 0);
-          cell(row,p.symbol);cell(row,p.provider_id);cell(row,number(p.quantity));
-          const currency=p.quote_currency||"EUR";
-          cell(row,money(p.average_price,currency));cell(row,money(p.market_price,currency));
-          cell(row,money(pnl,"EUR"),pnl>=0?"positive":"negative");
-          cell(row,p.stop_loss==null?"—":money(p.stop_loss,currency));cell(row,p.take_profit==null?"—":money(p.take_profit,currency));
-          body.appendChild(row);
+          const row=document.createElement("tr"),pnl=Number(p.unrealised_pnl||0),currency=p.quote_currency||"EUR";
+          cell(row,p.symbol);cell(row,p.provider_id);cell(row,number(p.quantity));cell(row,money(p.average_price,currency));cell(row,money(p.market_price,currency));cell(row,money(pnl,"EUR"),pnl>=0?"positive":"negative");cell(row,p.stop_loss==null?"—":money(p.stop_loss,currency));cell(row,p.take_profit==null?"—":money(p.take_profit,currency));body.appendChild(row);
         }
       }
       function renderTrades(items) {
         const body=$("trades");body.replaceChildren();$("trade-count").textContent=String(items.length);
         if(!items.length){const row=document.createElement("tr"),td=document.createElement("td");td.colSpan=7;td.className="empty";td.textContent="Todavía no hay operaciones";row.appendChild(td);body.appendChild(row);return;}
-        for(const t of items){
-          const row=document.createElement("tr");cell(row,date(t.created_at));cell(row,t.symbol);
-          cell(row,String(t.side||"").toUpperCase());cell(row,number(t.quantity));
-          const currency=t.quote_currency||"EUR";
-          cell(row,money(t.price,currency));cell(row,money(t.fee,currency));cell(row,money(t.total,currency));body.appendChild(row);
-        }
+        for(const t of items){const row=document.createElement("tr");cell(row,date(t.created_at));cell(row,t.symbol);cell(row,String(t.side||"").toUpperCase());cell(row,number(t.quantity));const currency=t.quote_currency||"EUR";cell(row,money(t.price,currency));cell(row,money(t.fee,currency));cell(row,money(t.total,currency));body.appendChild(row);}
       }
-      function statusRow(label,value){
-        const row=document.createElement("div");row.className="status-row";
-        const left=document.createElement("span");left.textContent=label;
-        const right=document.createElement("strong");right.textContent=value;
-        row.append(left,right);return row;
-      }
+      function statusRow(label,value){const row=document.createElement("div");row.className="status-row";const left=document.createElement("span"),right=document.createElement("strong");left.textContent=label;right.textContent=value;row.append(left,right);return row;}
       function renderAgent(data){
-        const state=data.state||{};const node=$("agent-details");node.replaceChildren();
-        node.append(
-          statusRow("Worker",state.enabled?"Habilitado":"Pausado"),
-          statusRow("Parada de emergencia",state.emergency_stop?"ACTIVA":"Inactiva"),
-          statusRow("Último heartbeat",date(state.last_heartbeat)),
-          statusRow("Actualizado",date(state.updated_at))
-        );
-        $("agent-state").textContent=state.emergency_stop?"Emergencia":(state.enabled?"Activo":"Pausado");
-        $("agent-state").style.color=state.emergency_stop?"#f17e7e":(state.enabled?"#58d39b":"#d6ad66");
-        $("pause").disabled=!controlToken || !state.enabled;
-        $("resume").disabled=!controlToken || !!state.enabled || !!state.emergency_stop;
-        $("stop").disabled=!controlToken || !!state.emergency_stop;
-        $("reset-stop").disabled=!controlToken || !state.emergency_stop;
+        const state=data.state||{},node=$("agent-details");node.replaceChildren();
+        node.append(statusRow("Worker",state.enabled?"Habilitado":"Pausado"),statusRow("Parada de emergencia",state.emergency_stop?"ACTIVA":"Inactiva"),statusRow("Último heartbeat",date(state.last_heartbeat)),statusRow("Actualizado",date(state.updated_at)));
+        $("agent-state").textContent=state.emergency_stop?"Emergencia":(state.enabled?"Activo":"Pausado");$("agent-state").style.color=state.emergency_stop?"#f17e7e":(state.enabled?"#58d39b":"#d6ad66");
+        $("pause").disabled=!controlToken||!state.enabled;$("resume").disabled=!controlToken||!!state.enabled||!!state.emergency_stop;$("stop").disabled=!controlToken||!!state.emergency_stop;$("reset-stop").disabled=!controlToken||!state.emergency_stop;
         document.querySelectorAll("[data-task]").forEach(button=>button.disabled=!controlToken);
-        const tasks=$("recent-tasks");tasks.replaceChildren();
-        const recent=(data.tasks||[]).slice(0,12);$("task-count").textContent=recent.length+" tareas";
-        if(!recent.length){const empty=document.createElement("div");empty.className="empty";empty.textContent="No hay tareas registradas";tasks.appendChild(empty);return;}
-        for(const item of recent){
-          const row=document.createElement("div");row.className="task";
-          const details=document.createElement("div");details.textContent=item.kind||"task";
-          const small=document.createElement("small");small.textContent=date(item.created_at)+" · intentos "+(item.attempts??0);
-          details.appendChild(small);
-          const badge=document.createElement("span");badge.className="badge";badge.textContent=item.status||"unknown";
-          row.append(details,badge);tasks.appendChild(row);
-        }
+        const tasks=$("recent-tasks");tasks.replaceChildren();const recent=(data.tasks||[]).slice(0,12);$("task-count").textContent=recent.length+" tareas";
+        if(!recent.length){empty(tasks,"No hay tareas registradas");return;}
+        for(const item of recent){const row=document.createElement("div");row.className="task";const details=document.createElement("div");details.textContent=item.kind||"task";const small=document.createElement("small");small.textContent=date(item.created_at)+" · intentos "+(item.attempts??0);details.appendChild(small);const badge=document.createElement("span");badge.className="badge";badge.textContent=item.status||"unknown";row.append(details,badge);tasks.appendChild(row);}
+      }
+      function renderConnectors(data,ready){
+        const node=$("connector-list");node.replaceChildren();const caps=data.capabilities||[];$("connector-count").textContent=caps.length+" capacidades";
+        node.appendChild(dataItem("API",ready.status||"unknown","paper · live off",ready.status==="ready"?"state-good":"state-warn"));
+        if(!caps.length){node.appendChild(dataItem("Proveedores","No hay capacidades declaradas","—","state-warn"));return;}
+        for(const cap of caps){const status=cap.connectivity_status||"unknown";const auth=cap.authenticated_account?"Cuenta autenticada":"Sin cuenta autenticada";const features=(cap.asset_classes||[]).join(", ")+" · "+(cap.market_types||[]).join(", ");node.appendChild(dataItem(cap.provider_id,features,auth+" · "+status,status==="connected"?"state-good":"state-warn"));}
+      }
+      function renderIntents(data){
+        const node=$("intent-list");node.replaceChildren();const items=data.items||[];$("intent-count").textContent=items.length+" intentos";
+        if(!items.length){empty(node,"No hay intentos de orden registrados");return;}
+        for(const item of items.slice(0,10)){const label=item.request?.symbol||item.client_order_id;const details=(item.request?.side||"").toUpperCase()+" · "+date(item.created_at)+" · "+(item.provider_id||item.request?.provider_id||"");const state=item.status||"unknown";node.appendChild(dataItem(label,details,state,state==="filled"?"state-good":(state==="reconciliation_required"?"state-bad":"state-warn")));}
+      }
+      function renderBackups(data){
+        const node=$("backup-details");node.replaceChildren();const local=data.local||{},external=data.external||{};const state=external.enabled?(external.status||"unknown"):"off-host desactivado";
+        $("backup-state").textContent=state;$("backup-state").className="badge "+(external.enabled&&external.status==="verified"?"state-good":(external.enabled?"state-warn":""));
+        node.append(dataItem("Último ciclo",date(data.last_cycle_at),local.status||"unknown"),dataItem("Snapshots locales",(local.created||[]).join(", ")||"Sin snapshots nuevos",(local.failures||[]).length+" errores",(local.failures||[]).length?"state-bad":"state-good"),dataItem("Almacenamiento externo",external.enabled?"Activado":"Desactivado",external.status||"no configurado",external.status==="verified"?"state-good":"state-warn"),dataItem("Última comprobación remota",date(external.last_store_check_at),"consulta del bucket"),dataItem("Último backup verificado",date(external.last_backup_verified_at),"SHA-256 read-back"));
+        for(const failure of (external.failures||[]).slice(0,3))node.appendChild(dataItem("Error "+(failure.source||failure.operation||"externo"),failure.error,"Revisar","state-bad"));
+      }
+      function renderWithdrawals(data){
+        const node=$("withdrawal-list");node.replaceChildren();const items=Array.isArray(data)?data:[];$("withdrawal-count").textContent=items.length+" solicitudes";
+        if(!items.length){empty(node,"No hay solicitudes de retirada");return;}
+        for(const item of items.slice(0,12)){const row=document.createElement("div");row.className="data-item";const left=document.createElement("div");left.textContent=money(item.amount,"EUR")+" · "+(item.status||"unknown");const small=document.createElement("small");small.textContent=date(item.requested_at)+" · "+(item.id||"");left.appendChild(small);const right=document.createElement("div");right.className="actions";
+          if(item.status==="pending"){const approve=document.createElement("button");approve.textContent="Aprobar";approve.addEventListener("click",()=>decideWithdrawal(item.id,"approve"));const cancel=document.createElement("button");cancel.textContent="Cancelar";cancel.addEventListener("click",()=>decideWithdrawal(item.id,"cancel"));right.append(approve,cancel);}
+          else {const badge=document.createElement("span");badge.className="badge";badge.textContent=item.status;right.appendChild(badge);}
+          row.append(left,right);node.appendChild(row);}
+      }
+      function renderEquityResearch(data){
+        const node=$("research-results");node.replaceChildren();const items=data.analyses||[];$("research-count").textContent=(items.length||0)+" análisis";
+        node.appendChild(dataItem("Universo",String(data.discovered??"—")+" detectados · "+String(data.considered??"—")+" considerados",String(data.analysed??items.length??0)+" analizados"));
+        for(const item of items.slice(0,8)){const result=item.result||item;const label=item.symbol||item.instrument?.symbol||result.symbol||"Instrumento";const summary=result.recommendation||result.signal||result.status||"Investigación disponible";node.appendChild(dataItem(label,(item.name||"")+" · "+(item.timeframe||data.timeframe||""),summary));}
+        if(!items.length)node.appendChild(dataItem("Investigación","No hay análisis elegibles","Solo lectura"));
+        node.appendChild(dataItem("Ejecución","Deshabilitada","Research only","state-warn"));
+      }
+      function renderStrategyHistory(data){
+        const node=$("research-results");node.replaceChildren();const items=data.items||[];$("research-count").textContent=items.length+" registros";
+        if(!items.length){empty(node,"No hay historial de investigación");return;}
+        for(const item of items.slice(0,10)){const result=item.result||{};node.appendChild(dataItem(item.strategy_id||"Estrategia",item.instrument_id+" · "+date(item.created_at),item.eligible?"Elegible":"No elegible",item.eligible?"state-good":"state-warn"));const failures=(item.validation_failures||[]).slice(0,2);if(failures.length)node.appendChild(dataItem("Validación",failures.join(" · "),result.walk_forward?.windows?"Walk-forward":"Revisar"));}
+      }
+      function drawChart(candles){
+        const svg=$("market-chart");svg.replaceChildren();const ns="http://www.w3.org/2000/svg";const width=900,height=240,pad=26;
+        const closes=candles.map(c=>Number(c.close)).filter(Number.isFinite);if(closes.length<2)throw new Error("No hay suficientes velas válidas");
+        const min=Math.min(...closes),max=Math.max(...closes),span=max-min||Math.max(Math.abs(max)*0.001,1);
+        const points=closes.map((v,i)=>((pad+i*(width-2*pad)/(closes.length-1)).toFixed(2)+","+(height-pad-(v-min)*(height-2*pad)/span).toFixed(2))).join(" ");
+        for(let n=0;n<4;n++){const line=document.createElementNS(ns,"line");const y=pad+n*(height-2*pad)/3;line.setAttribute("x1",pad);line.setAttribute("x2",width-pad);line.setAttribute("y1",y);line.setAttribute("y2",y);line.setAttribute("stroke","#263347");line.setAttribute("stroke-width","1");svg.appendChild(line);}
+        const poly=document.createElementNS(ns,"polyline");poly.setAttribute("points",points);poly.setAttribute("fill","none");poly.setAttribute("stroke","#62a6ef");poly.setAttribute("stroke-width","2.5");poly.setAttribute("stroke-linejoin","round");poly.setAttribute("stroke-linecap","round");svg.appendChild(poly);
+        $("chart-range").textContent=money(min,"EUR")+" — "+money(max,"EUR")+" · "+candles.length+" velas";$("chart-latest").textContent="Último cierre "+money(closes[closes.length-1],"EUR")+" · "+date(candles[candles.length-1].timestamp);
+      }
+      async function loadChart(){
+        const symbol=$("chart-symbol").value.trim().toUpperCase(),provider=$("chart-provider").value,timeframe=$("chart-timeframe").value;
+        if(!symbol){setMessage("chart-message","Introduce un símbolo.","error");return;}
+        $("load-chart").disabled=true;$("chart-status").textContent="Cargando";
+        try{const result=await api("/api/market/"+encodeURIComponent(symbol)+"/ohlcv?timeframe="+encodeURIComponent(timeframe)+"&limit=120&provider_id="+encodeURIComponent(provider));drawChart(result.candles||[]);$("chart-status").textContent=provider+" · "+timeframe;setMessage("chart-message","Datos OHLCV recibidos. Gráfico informativo; no es una señal de compra/venta.","success");}
+        catch(error){$("chart-status").textContent="Sin datos";setMessage("chart-message","No se pudo cargar el gráfico: "+error.message,"error");}
+        finally{$("load-chart").disabled=false;}
+      }
+      async function loadResearch(){
+        $("run-equity-research").disabled=true;setMessage("research-message","Consultando universo de acciones/ETF…");
+        try{const data=await api("/api/research/equities?max_instruments=5&max_quote_candidates=10&timeframe=1day");renderEquityResearch(data);setMessage("research-message","Investigación de solo lectura completada.","success");}
+        catch(error){setMessage("research-message","Investigación no disponible: "+error.message,"error");}
+        finally{$("run-equity-research").disabled=!controlToken;}
+      }
+      async function loadStrategyHistory(){
+        try{const data=await api("/api/agent/strategy-history?limit=20",{},true);renderStrategyHistory(data);setMessage("research-message","Historial cargado.","success");}
+        catch(error){setMessage("research-message","No se pudo cargar el historial: "+error.message,"error");}
+      }
+      async function decideWithdrawal(id,action){
+        const verb=action==="approve"?"aprobar":"cancelar";
+        if(!window.confirm("¿Confirmas "+verb+" esta retirada paper? No se realizará ninguna transferencia real."))return;
+        try{await api("/api/agent/withdrawals/"+encodeURIComponent(id)+"/"+action,{method:"POST"},true);setMessage("withdrawal-message","Solicitud "+(action==="approve"?"aprobada":"cancelada")+" en la cartera paper.","success");await loadSecuredPanels();}
+        catch(error){setMessage("withdrawal-message","No se pudo actualizar: "+error.message,"error");}
+      }
+      async function requestWithdrawal(){
+        const amount=Number($("withdrawal-amount").value);
+        if(!Number.isFinite(amount)||amount<=0){setMessage("withdrawal-message","Introduce un importe EUR válido.","error");return;}
+        if(!window.confirm("¿Crear una solicitud de retirada paper por "+money(amount)+"? No se enviará dinero."))return;
+        try{await api("/api/agent/withdrawals",{method:"POST",body:JSON.stringify({amount})},true);$("withdrawal-amount").value="";setMessage("withdrawal-message","Solicitud paper creada.","success");await loadSecuredPanels();}
+        catch(error){setMessage("withdrawal-message","No se pudo crear: "+error.message,"error");}
+      }
+      async function loadSecuredPanels(){
+        const results=await Promise.allSettled([
+          api("/api/agent/order-intents?limit=20",{},true),
+          api("/api/agent/backup-status",{},true),
+          api("/api/agent/withdrawals",{},true)
+        ]);
+        if(results[0].status==="fulfilled")renderIntents(results[0].value);else empty($("intent-list"),"Error: "+results[0].reason.message);
+        if(results[1].status==="fulfilled")renderBackups(results[1].value);else{$("backup-state").textContent="Error";empty($("backup-details"),results[1].reason.message);}
+        if(results[2].status==="fulfilled")renderWithdrawals(results[2].value);else empty($("withdrawal-list"),"Error: "+results[2].reason.message);
       }
       async function refresh(){
         $("refresh").disabled=true;
         try{
-          const [portfolio,trades,health]=await Promise.all([
-            api("/api/portfolio"),api("/api/trades?limit=12"),api("/api/health")
+          const [portfolio,trades,health,providers,ready]=await Promise.all([
+            api("/api/portfolio"),api("/api/trades?limit=12"),api("/api/health"),api("/api/providers"),api("/api/health/ready").catch(error=>({status:"not_ready",detail:error.message}))
           ]);
-          $("equity").textContent=money(portfolio.equity);
-          $("cash").textContent=money(portfolio.cash,"EUR");
+          $("equity").textContent=money(portfolio.equity);$("cash").textContent=money(portfolio.cash,"EUR");
           $("cash-breakdown").textContent="Por divisa: "+(portfolio.cash_balances||[]).map(item=>money(item.balance,item.currency)).join(" · ");
-          $("valuation-warning").hidden=!!portfolio.valuation_complete;
-          $("realised").textContent=money(portfolio.realised_pnl);
-          $("unrealised").textContent=money(portfolio.unrealised_pnl);
-          $("reserve").textContent=money(portfolio.withdrawal_reserve);
-          renderPositions(portfolio.positions||[]);renderTrades(trades||[]);
-          if(controlToken){
-            const status=await api("/api/agent/status",{},true);
-            renderAgent(status);$("connection").textContent="Controles autenticados · "+health.mode;
-          }else{
-            $("agent-state").textContent="Token requerido";
-            $("connection").textContent="Lectura actualizada · introduce el token para controles";
-          }
+          $("valuation-warning").hidden=!!portfolio.valuation_complete;$("realised").textContent=money(portfolio.realised_pnl);$("unrealised").textContent=money(portfolio.unrealised_pnl);$("reserve").textContent=money(portfolio.withdrawal_reserve);
+          renderPositions(portfolio.positions||[]);renderTrades(trades||[]);renderConnectors(providers,ready);
+          if(controlToken){const status=await api("/api/agent/status",{},true);renderAgent(status);$("connection").textContent="Controles autenticados · "+health.mode;await loadSecuredPanels();}
+          else{$("agent-state").textContent="Token requerido";$("connection").textContent="Lectura actualizada · introduce el token para controles";}
         }catch(error){setMessage("control-message","Error al actualizar: "+error.message,"error");}
         finally{$("refresh").disabled=false;}
       }
@@ -256,29 +378,21 @@
         catch(error){setMessage("control-message","No se pudo ejecutar: "+error.message,"error");}
       }
       async function enqueue(kind){
-        try{const result=await api("/api/agent/tasks",{method:"POST",body:JSON.stringify({kind,payload:{}})},true);
-          setMessage("task-message","Tarea encolada: "+(result.id||kind),"success");await refresh();}
+        try{const result=await api("/api/agent/tasks",{method:"POST",body:JSON.stringify({kind,payload:{}})},true);setMessage("task-message","Tarea encolada: "+(result.id||kind),"success");await refresh();}
         catch(error){setMessage("task-message","No se pudo encolar: "+error.message,"error");}
       }
       $("connect").addEventListener("click",async()=>{
         controlToken=$("token").value.trim();
         if(!controlToken){setMessage("control-message","Introduce el token de control.","error");return;}
-        try{const status=await api("/api/agent/status",{},true);renderAgent(status);
-          $("connection").textContent="Controles autenticados";setMessage("control-message","Token validado. No se guarda en el navegador.","success");}
-        catch(error){
-          controlToken="";
-          $("agent-state").textContent="Token requerido";
-          document.querySelectorAll("[data-task],#pause,#resume,#stop,#reset-stop").forEach(button=>button.disabled=true);
-          setMessage("control-message","Token no válido: "+error.message,"error");
-        }
+        try{const status=await api("/api/agent/status",{},true);renderAgent(status);$("connection").textContent="Controles autenticados";setMessage("control-message","Token validado. No se guarda en el navegador.","success");
+          $("run-equity-research").disabled=false;$("load-strategy-history").disabled=false;$("withdrawal-amount").disabled=false;$("request-withdrawal").disabled=false;await loadSecuredPanels();}
+        catch(error){controlToken="";$("agent-state").textContent="Token requerido";document.querySelectorAll("[data-task],#pause,#resume,#stop,#reset-stop,#run-equity-research,#load-strategy-history,#withdrawal-amount,#request-withdrawal").forEach(button=>button.disabled=true);setMessage("control-message","Token no válido: "+error.message,"error");}
       });
-      $("refresh").addEventListener("click",refresh);
-      $("pause").addEventListener("click",()=>control("pause"));
-      $("resume").addEventListener("click",()=>control("resume"));
-      $("stop").addEventListener("click",()=>{if(window.confirm("¿Activar la parada de emergencia?"))control("emergency-stop");});
-      $("reset-stop").addEventListener("click",()=>control("reset-emergency-stop"));
+      $("refresh").addEventListener("click",refresh);$("pause").addEventListener("click",()=>control("pause"));$("resume").addEventListener("click",()=>control("resume"));
+      $("stop").addEventListener("click",()=>{if(window.confirm("¿Activar la parada de emergencia?"))control("emergency-stop");});$("reset-stop").addEventListener("click",()=>control("reset-emergency-stop"));
       document.querySelectorAll("[data-task]").forEach(button=>button.addEventListener("click",()=>enqueue(button.dataset.task)));
-      refresh();window.setInterval(refresh,30000);
+      $("load-chart").addEventListener("click",loadChart);$("run-equity-research").addEventListener("click",loadResearch);$("load-strategy-history").addEventListener("click",loadStrategyHistory);$("request-withdrawal").addEventListener("click",requestWithdrawal);
+      refresh();loadChart();window.setInterval(refresh,30000);
     })();
   </script>
 </body>
