@@ -277,3 +277,14 @@ def test_strategy_history_endpoint_validates_limit(monkeypatch):
         headers={"X-Agent-Token": "test-control-token"},
     )
     assert response.status_code == 422
+
+
+
+def test_dashboard_route_serves_operations_ui():
+    response = client.get("/dashboard")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "AI Trading System" in response.text
+    assert "PAPER TRADING" in response.text
+    assert "localStorage" not in response.text

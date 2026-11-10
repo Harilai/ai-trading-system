@@ -41,7 +41,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Valoración a mercado, P/L realizado/no realizado | Implementado en cartera paper; depende de cotización fresca |
 | Reserva 50/50 de beneficio neto realizado | Implementada como cálculo de reserva; política provisional configurable pendiente |
 | Solicitud/aprobación/cancelación manual de retiradas paper | Implementada; cualquier efectivo disponible, con desglose auditado entre beneficio reservado y capital no reservado; sin liquidación automática |
-| Dashboard | Pendiente |
+| Dashboard | MVP responsive integrado: cartera, posiciones, operaciones, estado/heartbeat, tareas y controles autenticados; gráficos avanzados y gestión de retiradas siguen pendientes |
 | Infraestructura gratuita/Oracle Always Free y despliegue 24/7 | Pendiente |
 | Live trading | No implementado; deshabilitado |
 
@@ -89,7 +89,7 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 - [ ] Mantener margin, futures, options y apalancamiento deshabilitados hasta completar sus perfiles y pruebas independientes.
 - [ ] Añadir FX con tipos y timestamps verificables antes de mezclar divisas.
 - [ ] Añadir News/Sentiment solo con atribución de fuente, frescura y calidad.
-- [ ] Crear dashboard responsive con cartera, posiciones, investigación, decisiones, auditoría y controles.
+- [x] Crear dashboard responsive MVP con cartera, posiciones, operaciones, heartbeat, tareas y controles autenticados; pendientes gráficos avanzados, vistas detalladas de investigación y retiradas.
 - [ ] Añadir PostgreSQL/migraciones cuando la carga lo justifique.
 
 ## Prioridad 5 — despliegue y operación
