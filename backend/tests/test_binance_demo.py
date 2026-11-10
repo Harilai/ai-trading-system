@@ -503,3 +503,34 @@ def test_demo_execution_does_not_infer_missing_fills_from_order_status():
     assert open_without_fill_field["status"] == "open"
     assert open_without_fill_field["filled"] is None
     assert cancelled_without_fill_field["status"] == "reconciliation_required"
+
+
+def test_demo_execution_rejects_exchange_symbol_or_side_mismatch():
+    provider = make_demo_execution(FakeDemoExecutionExchange())
+    wrong_symbol = provider.normalize_order({
+        "id": "order-symbol-mismatch",
+        "clientOrderId": "client-symbol-mismatch",
+        "symbol": "ETH/USDT",
+        "side": "buy",
+        "status": "open",
+        "amount": "0.001",
+        "filled": "0",
+        "remaining": "0.001",
+    }, expected_client_order_id="client-symbol-mismatch",
+       expected_amount="0.001", expected_symbol="BTC/USDT", expected_side="buy")
+    wrong_side = provider.normalize_order({
+        "id": "order-side-mismatch",
+        "clientOrderId": "client-side-mismatch",
+        "symbol": "BTC/USDT",
+        "side": "sell",
+        "status": "open",
+        "amount": "0.001",
+        "filled": "0",
+        "remaining": "0.001",
+    }, expected_client_order_id="client-side-mismatch",
+       expected_amount="0.001", expected_symbol="BTC/USDT", expected_side="buy")
+
+    assert wrong_symbol["status"] == "reconciliation_required"
+    assert wrong_symbol["observed_exchange_order_id"] == "order-symbol-mismatch"
+    assert wrong_side["status"] == "reconciliation_required"
+    assert wrong_side["observed_exchange_status"] == "open"
