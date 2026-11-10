@@ -178,6 +178,7 @@ def test_backup_cycle_retries_failed_off_host_uploads_without_losing_local_backu
     assert failed["local"]["status"] == "created"
     assert failed["external"]["status"] == "failed"
     assert failed["external"]["uploaded_sources"] == {}
+    assert failed["local"]["unverified_offsite_count"] == 1
     assert list(destination.glob("*.sqlite3"))
 
     working = WorkingStore()
@@ -188,6 +189,7 @@ def test_backup_cycle_retries_failed_off_host_uploads_without_losing_local_backu
     )
     recovered = read_backup_status(destination)
     assert recovered["external"]["status"] == "verified"
+    assert recovered["local"]["unverified_offsite_count"] == 0
     assert working.upload_calls == 2
     assert len(recovered["external"]["uploaded_sources"]) == 2
 
