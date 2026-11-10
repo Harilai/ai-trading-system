@@ -121,6 +121,7 @@ class BinanceDemoOrderStore:
         amount = request.get("amount")
         price = request.get("price")
         quote_asset = request.get("quote_asset")
+        max_order_quote = request.get("max_order_quote", "25")
         if not isinstance(client_order_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,36}", client_order_id):
             raise DemoOrderStoreError("client_order_id must contain 1-36 safe characters")
         if not isinstance(symbol, str) or not re.fullmatch(r"[A-Z0-9._-]{2,32}/[A-Z0-9._-]{2,24}", symbol):
@@ -145,6 +146,17 @@ class BinanceDemoOrderStore:
             normalized_amounts[field] = text
         if not isinstance(quote_asset, str) or not re.fullmatch(r"[A-Z0-9._-]{1,24}", quote_asset):
             raise DemoOrderStoreError("Demo order quote asset is invalid")
+        if not isinstance(max_order_quote, str):
+            raise DemoOrderStoreError("Demo order quote cap must be a decimal string")
+        try:
+            quote_cap = Decimal(max_order_quote)
+        except (InvalidOperation, ValueError):
+            raise DemoOrderStoreError("Demo order quote cap is malformed") from None
+        if not quote_cap.is_finite() or quote_cap <= 0:
+            raise DemoOrderStoreError("Demo order quote cap must be finite and positive")
+        quote_cap_text = format(quote_cap, "f")
+        if "." in quote_cap_text:
+            quote_cap_text = quote_cap_text.rstrip("0").rstrip(".")
         return {
             "client_order_id": client_order_id,
             "symbol": symbol,
@@ -152,6 +164,7 @@ class BinanceDemoOrderStore:
             "amount": normalized_amounts["amount"],
             "price": normalized_amounts["price"],
             "quote_asset": quote_asset,
+            "max_order_quote": quote_cap_text,
         }
 
     @staticmethod
