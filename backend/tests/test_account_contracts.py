@@ -292,7 +292,7 @@ def test_registry_rejects_untrusted_position_snapshot_metadata(mutate, reason):
 def test_registry_requires_explicit_coverage_capable_snapshot_method():
     registry = AccountProviderRegistry()
     provider = FakePositionAccountProvider()
-    delattr(provider, "fetch_positions_snapshot")
+    provider.fetch_positions_snapshot = None
     provider.fetch_positions = lambda: []
     registry.register(provider)
     with pytest.raises(UnsupportedAccountCapability, match="explicit coverage"):
