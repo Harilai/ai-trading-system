@@ -29,6 +29,7 @@ from .backup_scheduler import read_backup_status
 from .accounts.binance_spot import AccountConnectorError, BinanceSpotReadOnlyAccount
 from .accounts.ccxt_readonly import CcxtReadOnlyAccount, CcxtReadOnlyAccountError
 from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
+from .accounts.position_snapshot_store import PositionSnapshotError, PositionSnapshotStore
 from .accounts.contracts import (
     AccountProviderError, AccountProviderNotFound, AccountProviderRegistry, AmbiguousAccountProvider,
     UnsupportedAccountCapability,
@@ -57,6 +58,7 @@ if settings.twelve_data_api_key:
 portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 instrument_catalog = InstrumentCatalog(settings.database_path)
 account_snapshot_store = AccountSnapshotStore(settings.database_path)
+position_snapshot_store = PositionSnapshotStore(settings.database_path)
 demo_order_store = BinanceDemoOrderStore(settings.database_path)
 
 _binance_key = settings.binance_readonly_api_key.get_secret_value().strip()
@@ -626,6 +628,70 @@ def account_snapshot_detail(
         raise HTTPException(503, "Unable to read account snapshot") from exc
     if snapshot is None:
         raise HTTPException(404, "Account snapshot not found")
+    return snapshot
+
+
+@app.post("/api/accounts/{provider_id}/positions/snapshots", status_code=201)
+def create_account_position_snapshot(
+    provider_id: str,
+    account_alias: str | None = None,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        observed = account_provider_registry.fetch_positions_snapshot(provider_id, account_alias)
+        return position_snapshot_store.record_snapshot(observed)
+    except AccountProviderNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (AmbiguousAccountProvider, UnsupportedAccountCapability) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except AccountProviderError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except PositionSnapshotError as exc:
+        raise HTTPException(502, "Provider returned an invalid position snapshot") from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to persist account position snapshot") from exc
+
+
+@app.get("/api/accounts/positions/snapshots")
+def account_position_snapshot_history(
+    provider_id: str | None = None,
+    account_alias: str | None = None,
+    environment: str | None = None,
+    market_type: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        return {
+            "items": position_snapshot_store.list_snapshots(
+                provider_id=provider_id,
+                account_alias=account_alias,
+                environment=environment,
+                market_type=market_type,
+                limit=limit,
+            ),
+            "limit": limit,
+        }
+    except PositionSnapshotError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to read account position snapshot history") from exc
+
+
+@app.get("/api/accounts/positions/snapshots/{snapshot_id}")
+def account_position_snapshot_detail(
+    snapshot_id: str,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        snapshot = position_snapshot_store.get_snapshot(snapshot_id)
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to read account position snapshot") from exc
+    if snapshot is None:
+        raise HTTPException(404, "Account position snapshot not found")
     return snapshot
 
 

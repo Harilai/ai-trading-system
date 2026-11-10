@@ -1,5 +1,17 @@
 # Session handoff — AI Trading System
 
+## En curso — integración API del ledger de posiciones (PR #93)
+
+- Rama: `feat/position-snapshot-provider-api`, apilada sobre PR #92 → #91 → #89.
+- `AccountProviderRegistry.fetch_positions_snapshot()` exige `positions=true`, proveedor/cuenta read-only sin capacidades de escritura, identidad y entorno coincidentes, mercado declarado, timestamp fresco y un método provider que entregue `coverage_status=complete|partial` explícito.
+- Endpoints owner-authenticated:
+  - `POST /api/accounts/{provider_id}/positions/snapshots?account_alias=...`
+  - `GET /api/accounts/positions/snapshots`
+  - `GET /api/accounts/positions/snapshots/{snapshot_id}`
+- Los adaptadores actuales siguen con `positions=false`; el endpoint de captura devolverá conflicto/no capability hasta implementar un adaptador real. No se acepta una lista de posiciones sin cobertura explícita.
+- CI verde en el head exacto `064d5df0969a6aae6be6cd7d5c3e7da4cf0c807b`: Python tests y Docker build/runtime hardening.
+- Siguiente: implementar un adaptador read-only de posiciones con cobertura verificable; mantener aisladas las cuentas y no convertir snapshots externos en posiciones paper.
+
 ## En curso — ledger append-only de posiciones externas (PR #92)
 
 - Rama: `feat/external-position-snapshot-ledger`, apilada sobre PR #91, que depende de PR #89.
