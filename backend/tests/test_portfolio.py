@@ -680,3 +680,29 @@ def test_order_intent_freshness_requires_recent_market_and_fx_timestamps(tmp_pat
     assert [event["to_status"] for event in portfolio.list_order_intent_events("fresh-usd-intent")] == [
         "risk_approved", "expired",
     ]
+
+
+def test_order_intent_reconciliation_flags_mismatched_trade_payload(portfolio):
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "mismatched-fill",
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "stop_loss": 9800, "take_profit": 10400,
+    }
+    portfolio.record_order_intent("mismatched-fill", request, {"risk_accepted": True})
+    trade = portfolio.execute(**request)
+    with portfolio.connect() as db:
+        db.execute(
+            "UPDATE trades SET symbol='ETH/EUR' WHERE id=?",
+            (trade["id"],),
+        )
+        db.execute(
+            "UPDATE order_intents SET status='risk_approved' WHERE client_order_id=?",
+            ("mismatched-fill",),
+        )
+    result = portfolio.reconcile_order_intents()
+    assert result["reconciliation_required"] == 1
+    intent = portfolio.get_order_intent("mismatched-fill")
+    assert intent["status"] == "reconciliation_required"
+    assert [event["to_status"] for event in portfolio.list_order_intent_events("mismatched-fill")][-1] == "reconciliation_required"
