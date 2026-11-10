@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `a3fd39472e3d1aa6cbcbfc033ca1c3778da91a07` — merge de PR #53, handoff actualizado tras PR #52.  
+> **Último commit observado en `main`:** `b9dbba57ffcf5c908f318d3962f93407e94cb14f` — merge de PR #54, catálogo persistente de instrumentos.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
