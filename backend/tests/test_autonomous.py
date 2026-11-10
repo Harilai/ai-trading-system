@@ -890,3 +890,68 @@ def test_demo_order_reconciliation_runs_even_when_strategy_worker_is_paused(tmp_
 
     assert store.state()["enabled"] == 0
     assert reconciler.calls >= 1
+
+
+
+def test_strategy_history_persists_experimental_evidence_and_entry_signals(tmp_path):
+    store = AutonomousStore(str(tmp_path / "strategy-history.db"))
+    research = {
+        "method": "test",
+        "recommended_experimental_strategy": "rsi_14_reversion",
+        "experimental_candidate_count": 1,
+        "candidates": [{
+            "strategy_id": "rsi_14_reversion",
+            "eligible": False,
+            "validation_failures": ["non_positive_oos_return"],
+            "score": None,
+            "experimental_eligible": True,
+            "experimental_validation_failures": [],
+            "experimental_score": 0.42,
+            "current_entry_signal": False,
+            "current_hold_signal": True,
+        }],
+    }
+    inserted = store.record_strategy_research(
+        "task-experimental",
+        {
+            "provider_id": "ccxt:kraken",
+            "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+            "symbol": "BTC/EUR",
+        },
+        "1h",
+        research,
+    )
+    assert inserted == 1
+    item = store.strategy_history(limit=1)[0]
+    assert item["eligible"] is False
+    assert item["experimental_eligible"] is True
+    assert item["experimental_status"] == "recorded"
+    assert item["result"]["experimental_validation_failures"] == []
+    assert item["result"]["experimental_score"] == pytest.approx(0.42)
+    assert item["result"]["current_entry_signal"] is False
+    assert item["result"]["current_hold_signal"] is True
+    assert item["result"]["recommended_experimental_strategy"] == "rsi_14_reversion"
+
+
+def test_strategy_history_marks_legacy_experimental_status_unknown(tmp_path):
+    store = AutonomousStore(str(tmp_path / "strategy-legacy.db"))
+    store.record_strategy_research(
+        "task-legacy",
+        {
+            "provider_id": "ccxt:kraken",
+            "instrument_id": "ccxt:kraken:spot:ETH/EUR",
+            "symbol": "ETH/EUR",
+        },
+        "1h",
+        {
+            "method": "legacy-test",
+            "candidates": [{
+                "strategy_id": "ema_12_26",
+                "eligible": False,
+                "validation_failures": ["insufficient_oos_trades"],
+            }],
+        },
+    )
+    item = store.strategy_history(limit=1)[0]
+    assert item["experimental_eligible"] is None
+    assert item["experimental_status"] == "legacy"
