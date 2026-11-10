@@ -280,6 +280,7 @@ def test_demo_execution_validates_limit_order_precision_limits_and_quote_cap():
         "amount": "0.001",
         "price": "20000",
         "quote_asset": "USDT",
+        "max_order_quote": "25",
     }
 
     with pytest.raises(BinanceDemoError, match="quote cap"):
