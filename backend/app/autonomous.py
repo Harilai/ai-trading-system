@@ -285,8 +285,8 @@ class AutonomousStore:
         with self.connect() as db:
             changed = db.execute(
                 "UPDATE agent_tasks SET lease_until=?, updated_at=? "
-                "WHERE id=? AND status='running' AND lease_token=?",
-                (lease, now.isoformat(), task_id, lease_token),
+                "WHERE id=? AND status='running' AND lease_token=? AND lease_until>=?",
+                (lease, now.isoformat(), task_id, lease_token, now.isoformat()),
             ).rowcount
         return changed == 1
 
@@ -311,8 +311,8 @@ class AutonomousStore:
         with self.connect() as db:
             changed = db.execute(
                 "UPDATE agent_tasks SET status='completed', result=?, lease_until=NULL, lease_token=NULL, updated_at=? "
-                "WHERE id=? AND status='running' AND lease_token=?",
-                (json.dumps(result, ensure_ascii=False), now, task_id, lease_token),
+                "WHERE id=? AND status='running' AND lease_token=? AND lease_until>=?",
+                (json.dumps(result, ensure_ascii=False), now, task_id, lease_token, now),
             ).rowcount
         if changed != 1:
             return False
@@ -334,8 +334,8 @@ class AutonomousStore:
         with self.connect() as db:
             changed = db.execute(
                 "UPDATE agent_tasks SET status=?, due_at=?, error=?, lease_until=NULL, lease_token=NULL, updated_at=? "
-                "WHERE id=? AND status='running' AND lease_token=?",
-                ("pending" if retry else "failed", due, error[:2000], now.isoformat(), task["id"], lease_token),
+                "WHERE id=? AND status='running' AND lease_token=? AND lease_until>=?",
+                ("pending" if retry else "failed", due, error[:2000], now.isoformat(), task["id"], lease_token, now.isoformat()),
             ).rowcount
         if changed != 1:
             return False
