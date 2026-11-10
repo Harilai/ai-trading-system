@@ -41,6 +41,22 @@ class PaperPortfolio:
                 "price REAL, fee REAL, total REAL, created_at TEXT, client_order_id TEXT)"
             )
             db.execute(
+                "CREATE TABLE IF NOT EXISTS currency_balances ("
+                "currency TEXT PRIMARY KEY, balance REAL NOT NULL CHECK(balance >= 0), "
+                "updated_at TEXT NOT NULL)"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS currency_conversions ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "client_conversion_id TEXT NOT NULL UNIQUE, "
+                "from_currency TEXT NOT NULL, to_currency TEXT NOT NULL, "
+                "from_amount REAL NOT NULL, gross_to_amount REAL NOT NULL, "
+                "fee REAL NOT NULL, fee_eur REAL NOT NULL DEFAULT 0, "
+                "net_to_amount REAL NOT NULL, rate REAL NOT NULL, "
+                "fx_provider_id TEXT NOT NULL, fx_timestamp INTEGER NOT NULL, "
+                "created_at TEXT NOT NULL)"
+            )
+            db.execute(
                 "CREATE TABLE IF NOT EXISTS withdrawal_requests ("
                 "id TEXT PRIMARY KEY, amount REAL NOT NULL, status TEXT NOT NULL, "
                 "profit_component REAL NOT NULL DEFAULT 0, "
@@ -51,6 +67,17 @@ class PaperPortfolio:
             self._ensure_column(db, "trades", "provider_id", "TEXT NOT NULL DEFAULT 'ccxt:kraken'")
             self._ensure_column(db, "trades", "instrument_id", "TEXT NOT NULL DEFAULT ''")
             self._ensure_column(db, "account", "withdrawn_profit", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column(db, "positions", "quote_currency", "TEXT NOT NULL DEFAULT 'EUR'")
+            self._ensure_column(db, "positions", "average_price_eur", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column(db, "trades", "quote_currency", "TEXT NOT NULL DEFAULT 'EUR'")
+            self._ensure_column(db, "trades", "fx_rate_to_eur", "REAL NOT NULL DEFAULT 1")
+            self._ensure_column(db, "trades", "total_eur", "REAL NOT NULL DEFAULT 0")
+            self._ensure_column(db, "trades", "fx_provider_id", "TEXT")
+            self._ensure_column(db, "trades", "fx_timestamp", "INTEGER")
+            self._ensure_column(db, "trades", "strategy_id", "TEXT")
+            self._ensure_column(db, "trades", "stop_loss", "REAL")
+            self._ensure_column(db, "trades", "take_profit", "REAL")
+            self._ensure_column(db, "currency_conversions", "fee_eur", "REAL NOT NULL DEFAULT 0")
             self._ensure_column(
                 db, "withdrawal_requests", "non_reserved_component", "REAL NOT NULL DEFAULT 0"
             )
@@ -62,6 +89,19 @@ class PaperPortfolio:
                 "INSERT OR IGNORE INTO account(id,initial_cash,cash,realised_pnl,withdrawn_profit) "
                 "VALUES(1,?,?,0,0)",
                 (initial_cash, initial_cash),
+            )
+            eur_cash = float(db.execute("SELECT cash FROM account WHERE id=1").fetchone()[0])
+            stamp = datetime.now(timezone.utc).isoformat()
+            db.execute(
+                "INSERT OR IGNORE INTO currency_balances(currency,balance,updated_at) VALUES('EUR',?,?)",
+                (eur_cash, stamp),
+            )
+            db.execute(
+                "UPDATE positions SET average_price_eur=average_price WHERE quote_currency='EUR' "
+                "AND average_price_eur=0"
+            )
+            db.execute(
+                "UPDATE trades SET total_eur=total WHERE quote_currency='EUR' AND total_eur=0"
             )
 
     @staticmethod
@@ -102,28 +142,96 @@ class PaperPortfolio:
         db.row_factory = sqlite3.Row
         return db
 
-    def snapshot(self, valuation_prices: dict[str, float] | None = None):
+    def cash_balances(self) -> list[dict]:
+        with self.connect() as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT currency,balance,updated_at FROM currency_balances ORDER BY currency"
+                )
+            ]
+
+    def snapshot(
+        self,
+        valuation_prices: dict[str, float] | None = None,
+        fx_rates: dict | None = None,
+    ):
+        fx_rates = fx_rates or {}
         with self.connect() as db:
             account = db.execute("SELECT * FROM account WHERE id=1").fetchone()
             positions = [
                 dict(row)
                 for row in db.execute("SELECT * FROM positions ORDER BY provider_id, instrument_id")
             ]
+            balances = [
+                dict(row)
+                for row in db.execute(
+                    "SELECT currency,balance,updated_at FROM currency_balances ORDER BY currency"
+                )
+            ]
             pending_withdrawals = float(db.execute(
                 "SELECT COALESCE(SUM(amount),0) FROM withdrawal_requests WHERE status='pending'"
             ).fetchone()[0])
 
+        cash_by_currency = {item["currency"]: float(item["balance"]) for item in balances}
+        eur_cash = cash_by_currency.get("EUR", float(account["cash"]))
+        valuation_complete = True
+        cash_total_eur = eur_cash
+        normalized_fx = {}
+        for currency, raw in fx_rates.items():
+            try:
+                if isinstance(raw, dict):
+                    rate = float(raw["rate"])
+                    metadata = {
+                        "symbol": raw.get("symbol"),
+                        "provider_id": raw.get("provider_id"),
+                        "timestamp": raw.get("timestamp"),
+                        "inverted": bool(raw.get("inverted", False)),
+                    }
+                else:
+                    rate = float(raw)
+                    metadata = {"symbol": f"{currency}/EUR", "provider_id": None, "timestamp": None, "inverted": False}
+            except (KeyError, TypeError, ValueError, OverflowError):
+                continue
+            if math.isfinite(rate) and rate > 0:
+                normalized_fx[currency] = {"rate": rate, **metadata}
+
+        cash_balance_details = []
+        for currency, amount in cash_by_currency.items():
+            if currency == "EUR":
+                rate = 1.0
+                metadata = {"provider_id": None, "timestamp": None, "symbol": "EUR/EUR"}
+            else:
+                fx = normalized_fx.get(currency)
+                rate = fx["rate"] if fx else None
+                metadata = fx or {"provider_id": None, "timestamp": None, "symbol": f"{currency}/EUR"}
+                if rate is None and abs(amount) > 1e-12:
+                    valuation_complete = False
+            value_eur = amount * rate if rate is not None else (0.0 if abs(amount) <= 1e-12 else None)
+            if value_eur is not None:
+                cash_total_eur += value_eur if currency != "EUR" else 0
+            cash_balance_details.append({
+                "currency": currency,
+                "balance": amount,
+                "updated_at": next((item["updated_at"] for item in balances if item["currency"] == currency), None),
+                "fx_rate_to_eur": rate,
+                "value_eur": value_eur,
+                "fx_provider_id": metadata.get("provider_id"),
+                "fx_timestamp": metadata.get("timestamp"),
+            })
+
         cost_basis_value = 0.0
         market_value = 0.0
         unrealised_pnl = 0.0
-        valuation_complete = valuation_prices is not None or not positions
         for position in positions:
             symbol = position["symbol"]
             instrument_id = position["instrument_id"]
             provider_id = position["provider_id"]
-            cost_basis = float(position["average_price"])
+            currency = str(position.get("quote_currency") or "EUR").upper()
+            cost_basis_native = float(position["average_price"])
+            cost_basis_eur = float(position.get("average_price_eur") or cost_basis_native)
             quantity = float(position["quantity"])
-            cost_basis_value += quantity * cost_basis
+            cost_basis_value += quantity * cost_basis_eur
             current_price = None
             if valuation_prices is not None:
                 supplied = valuation_prices.get(instrument_id)
@@ -131,20 +239,48 @@ class PaperPortfolio:
                     supplied = valuation_prices.get(f"{provider_id}|{symbol}")
                 if supplied is None:
                     supplied = valuation_prices.get(symbol)
-                if supplied is not None and math.isfinite(float(supplied)) and float(supplied) > 0:
-                    current_price = float(supplied)
+                if supplied is not None:
+                    try:
+                        candidate = float(supplied)
+                        if math.isfinite(candidate) and candidate > 0:
+                            current_price = candidate
+                    except (TypeError, ValueError, OverflowError):
+                        pass
             if current_price is None:
                 valuation_complete = False
-                current_price = cost_basis
-            position_market_value = quantity * current_price
-            position_unrealised = (current_price - cost_basis) * quantity
-            market_value += position_market_value
-            unrealised_pnl += position_unrealised
-            position["market_price"] = current_price
-            position["market_value"] = position_market_value
-            position["unrealised_pnl"] = position_unrealised
+                current_price = cost_basis_native
 
-        cash = float(account["cash"])
+            if currency == "EUR":
+                fx_to_eur = 1.0
+            else:
+                fx = normalized_fx.get(currency)
+                fx_to_eur = fx["rate"] if fx else None
+                if fx_to_eur is None:
+                    valuation_complete = False
+
+            if fx_to_eur is None:
+                position_market_value_eur = quantity * cost_basis_eur
+                position_unrealised_eur = 0.0 if current_price == cost_basis_native else None
+            else:
+                position_market_value_eur = quantity * current_price * fx_to_eur
+                position_unrealised_eur = (
+                    quantity * (current_price * fx_to_eur - cost_basis_eur)
+                )
+            market_value += position_market_value_eur
+            if position_unrealised_eur is None:
+                valuation_complete = False
+            else:
+                unrealised_pnl += position_unrealised_eur
+            position["quote_currency"] = currency
+            position["market_price"] = current_price
+            position["market_value_native"] = quantity * current_price
+            position["market_value_eur"] = position_market_value_eur
+            position["fx_rate_to_eur"] = fx_to_eur
+            position["fx_provider_id"] = normalized_fx.get(currency, {}).get("provider_id")
+            position["fx_timestamp"] = normalized_fx.get(currency, {}).get("timestamp")
+            position["market_value"] = position_market_value_eur
+            position["unrealised_pnl"] = position_unrealised_eur
+
         total_realised_profit = max(0.0, float(account["realised_pnl"]))
         net_realised_profit = max(
             0.0,
@@ -154,26 +290,28 @@ class PaperPortfolio:
             0.0,
             total_realised_profit * 0.5 - float(account["withdrawn_profit"]),
         )
-        reinvestment_reserve = total_realised_profit * 0.5
         return {
             "currency": "EUR",
             "initial_cash": account["initial_cash"],
-            "cash": cash,
+            "cash": eur_cash,
+            "cash_balances": cash_balance_details,
+            "cash_total_eur": cash_total_eur,
+            "fx_observations": normalized_fx,
             "positions": positions,
             "invested_value": cost_basis_value,
             "market_value": market_value,
             "unrealised_pnl": unrealised_pnl,
-            "equity": cash + market_value,
+            "equity": cash_total_eur + market_value,
             "valuation_complete": valuation_complete,
-            "valuation_source": "market" if valuation_prices is not None and valuation_complete else "cost_basis_or_partial",
+            "valuation_source": "market_and_fx" if valuation_prices is not None and valuation_complete else "cost_basis_or_partial",
             "realised_pnl": account["realised_pnl"],
             "net_realised_profit_available": net_realised_profit,
             "withdrawn_profit": account["withdrawn_profit"],
             "withdrawal_reserve": withdrawal_reserve,
-            "reinvestment_reserve": reinvestment_reserve,
-            "withdrawable_reserved_profit": min(cash, withdrawal_reserve),
+            "reinvestment_reserve": total_realised_profit * 0.5,
+            "withdrawable_reserved_profit": min(eur_cash, withdrawal_reserve),
             "pending_withdrawals": pending_withdrawals,
-            "available_cash_for_manual_withdrawal": max(0.0, cash - pending_withdrawals),
+            "available_cash_for_manual_withdrawal": max(0.0, eur_cash - pending_withdrawals),
             "mode": "paper",
         }
 
@@ -204,17 +342,30 @@ class PaperPortfolio:
         strategy_id: str | None = None,
         stop_loss: float | None = None,
         take_profit: float | None = None,
+        quote_currency: str | None = None,
+        fx_rate_to_eur: float = 1.0,
+        fx_provider_id: str | None = None,
+        fx_timestamp: int | None = None,
     ):
         if not isinstance(symbol, str) or not isinstance(provider_id, str):
             raise PortfolioError("Symbol and provider identity must be text")
         symbol = symbol.strip().upper()
         provider_id = provider_id.strip()
+        quote_currency = (
+            str(quote_currency).strip().upper()
+            if quote_currency is not None
+            else (symbol.rsplit("/", 1)[-1] if "/" in symbol else "EUR")
+        )
         instrument_id = instrument_id or f"{provider_id}:spot:{symbol}"
         if not provider_id or not instrument_id:
             raise PortfolioError("Provider and instrument identity are required")
+        if client_order_id is not None:
+            if not isinstance(client_order_id, str) or not client_order_id.strip():
+                raise PortfolioError("client_order_id must not be blank")
+            client_order_id = client_order_id.strip()
+        if quote_currency not in {"EUR", "USD"}:
+            raise PortfolioError("Only EUR and USD quote currencies are supported")
         side = side.lower() if isinstance(side, str) else ""
-        if not symbol.endswith("/EUR"):
-            raise PortfolioError("Only EUR-quoted markets are supported")
         if side not in ("buy", "sell"):
             raise PortfolioError("Invalid side")
         try:
@@ -224,20 +375,30 @@ class PaperPortfolio:
             slippage_rate = float(slippage_rate)
             max_fraction = float(max_fraction)
             minimum = float(minimum)
+            fx_rate_to_eur = float(fx_rate_to_eur)
             if stop_loss is not None:
                 stop_loss = float(stop_loss)
             if take_profit is not None:
                 take_profit = float(take_profit)
         except (TypeError, ValueError, OverflowError) as exc:
             raise PortfolioError("Execution values must be finite numbers") from exc
-        numeric_values = [quantity, price, fee_rate, slippage_rate, max_fraction, minimum]
-        numeric_values.extend(
-            value for value in (stop_loss, take_profit) if value is not None
-        )
+        numeric_values = [quantity, price, fee_rate, slippage_rate, max_fraction, minimum, fx_rate_to_eur]
+        numeric_values.extend(value for value in (stop_loss, take_profit) if value is not None)
         if not all(math.isfinite(value) for value in numeric_values):
             raise PortfolioError("Execution values must be finite numbers")
-        if quantity <= 0 or price <= 0:
-            raise PortfolioError("Quantity and price must be positive")
+        if quantity <= 0 or price <= 0 or fx_rate_to_eur <= 0:
+            raise PortfolioError("Quantity, price and FX rate must be positive")
+        if quote_currency == "EUR" and not math.isclose(fx_rate_to_eur, 1.0, rel_tol=0, abs_tol=1e-12):
+            raise PortfolioError("EUR-quoted instruments must use an EUR conversion rate of 1")
+        if quote_currency == "USD":
+            if not isinstance(fx_provider_id, str) or not fx_provider_id.strip():
+                raise PortfolioError("USD fills require an FX provider identity")
+            try:
+                fx_timestamp = int(fx_timestamp)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise PortfolioError("USD fills require a valid FX source timestamp") from exc
+            if fx_timestamp <= 0:
+                raise PortfolioError("USD fills require a valid FX source timestamp")
         if not 0 <= fee_rate < 1 or not 0 <= slippage_rate < 1:
             raise PortfolioError("Fee and slippage rates must be in [0, 1)")
         if not 0 < max_fraction <= 1:
@@ -253,8 +414,13 @@ class PaperPortfolio:
         fill = price * (1 + slippage_rate if side == "buy" else 1 - slippage_rate)
         gross, fee = quantity * fill, quantity * fill * fee_rate
         total = gross + fee if side == "buy" else gross - fee
+        total_eur = total * fx_rate_to_eur
+        if not all(math.isfinite(value) and value > 0 for value in (fill, gross, total, total_eur)):
+            raise PortfolioError("Calculated fill amounts must be positive finite numbers")
+        if not math.isfinite(fee) or fee < 0:
+            raise PortfolioError("Calculated execution fee must be finite and non-negative")
         if gross < minimum:
-            raise PortfolioError(f"Minimum order value is {minimum:.2f} EUR")
+            raise PortfolioError(f"Minimum order value is {minimum:.2f} {quote_currency}")
 
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -264,30 +430,75 @@ class PaperPortfolio:
                     (client_order_id,),
                 ).fetchone()
                 if existing:
-                    result = dict(existing)
-                    result["mode"] = "paper"
-                    result["idempotent_replay"] = True
-                    return result
+                    prior = dict(existing)
+                    same_intent = (
+                        prior["symbol"] == symbol
+                        and prior["side"] == side
+                        and prior["provider_id"] == provider_id
+                        and prior["instrument_id"] == instrument_id
+                        and prior["quote_currency"] == quote_currency
+                        and prior.get("strategy_id") == strategy_id
+                        and (
+                            (prior.get("stop_loss") is None and stop_loss is None)
+                            or (
+                                prior.get("stop_loss") is not None and stop_loss is not None
+                                and math.isclose(float(prior["stop_loss"]), stop_loss, rel_tol=1e-12, abs_tol=1e-12)
+                            )
+                        )
+                        and (
+                            (prior.get("take_profit") is None and take_profit is None)
+                            or (
+                                prior.get("take_profit") is not None and take_profit is not None
+                                and math.isclose(float(prior["take_profit"]), take_profit, rel_tol=1e-12, abs_tol=1e-12)
+                            )
+                        )
+                        and math.isclose(float(prior["quantity"]), quantity, rel_tol=1e-12, abs_tol=1e-12)
+                    )
+                    if not same_intent:
+                        raise PortfolioError("client_order_id was already used for a different paper order")
+                    prior["mode"] = "paper"
+                    prior["idempotent_replay"] = True
+                    return prior
 
+            db.execute(
+                "INSERT OR IGNORE INTO currency_balances(currency,balance,updated_at) VALUES(?,0,?)",
+                (quote_currency, datetime.now(timezone.utc).isoformat()),
+            )
+            balance_row = db.execute(
+                "SELECT balance FROM currency_balances WHERE currency=?",
+                (quote_currency,),
+            ).fetchone()
+            available_balance = float(balance_row["balance"])
             account = db.execute("SELECT * FROM account WHERE id=1").fetchone()
             position = db.execute(
                 "SELECT * FROM positions WHERE provider_id=? AND instrument_id=?",
                 (provider_id, instrument_id),
             ).fetchone()
 
+            if position and str(position["quote_currency"] or "EUR").upper() != quote_currency:
+                raise PortfolioError("Existing position quote currency does not match the requested instrument currency")
+
             if side == "buy":
-                pending_withdrawals = float(db.execute(
-                    "SELECT COALESCE(SUM(amount),0) FROM withdrawal_requests WHERE status='pending'"
-                ).fetchone()[0])
-                spendable_cash = max(0.0, float(account["cash"]) - pending_withdrawals)
-                if gross > spendable_cash * max_fraction:
-                    raise PortfolioError("Order exceeds maximum allocation of unreserved cash")
+                pending_withdrawals = 0.0
+                if quote_currency == "EUR":
+                    pending_withdrawals = float(db.execute(
+                        "SELECT COALESCE(SUM(amount),0) FROM withdrawal_requests WHERE status='pending'"
+                    ).fetchone()[0])
+                spendable_cash = max(0.0, available_balance - pending_withdrawals)
                 if total > spendable_cash:
-                    raise PortfolioError("Insufficient unreserved cash after pending withdrawals")
-                old_quantity = position["quantity"] if position else 0.0
-                old_cost = old_quantity * position["average_price"] if position else 0.0
+                    if quote_currency == "EUR":
+                        raise PortfolioError("Insufficient unreserved cash in EUR")
+                    raise PortfolioError(f"Insufficient unreserved {quote_currency} cash")
+                if gross > spendable_cash * max_fraction:
+                    raise PortfolioError(
+                        f"Order exceeds maximum allocation of unreserved cash in {quote_currency}"
+                    )
+                old_quantity = float(position["quantity"]) if position else 0.0
+                old_cost_native = old_quantity * float(position["average_price"]) if position else 0.0
+                old_cost_eur = old_quantity * float(position["average_price_eur"] or position["average_price"]) if position else 0.0
                 new_quantity = old_quantity + quantity
-                average_cost = (old_cost + gross + fee) / new_quantity
+                average_cost = (old_cost_native + gross + fee) / new_quantity
+                average_cost_eur = (old_cost_eur + (gross + fee) * fx_rate_to_eur) / new_quantity
                 effective_strategy = strategy_id or (position["strategy_id"] if position else None)
                 effective_stop = stop_loss if stop_loss is not None else (
                     position["stop_loss"] if position else None
@@ -295,25 +506,46 @@ class PaperPortfolio:
                 effective_target = take_profit if take_profit is not None else (
                     position["take_profit"] if position else None
                 )
-                db.execute("UPDATE account SET cash=cash-? WHERE id=1", (total,))
+                stamp = datetime.now(timezone.utc).isoformat()
                 db.execute(
-                    "INSERT INTO positions(provider_id,instrument_id,symbol,quantity,average_price,strategy_id,stop_loss,take_profit) "
-                    "VALUES(?,?,?,?,?,?,?,?) "
+                    "UPDATE currency_balances SET balance=balance-?,updated_at=? WHERE currency=?",
+                    (total, stamp, quote_currency),
+                )
+                if quote_currency == "EUR":
+                    db.execute("UPDATE account SET cash=cash-? WHERE id=1", (total,))
+                db.execute(
+                    "INSERT INTO positions(provider_id,instrument_id,symbol,quantity,average_price,strategy_id,stop_loss,take_profit,quote_currency,average_price_eur) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?) "
                     "ON CONFLICT(provider_id,instrument_id) DO UPDATE SET "
                     "symbol=excluded.symbol, quantity=excluded.quantity, average_price=excluded.average_price, "
                     "strategy_id=excluded.strategy_id, stop_loss=excluded.stop_loss, "
-                    "take_profit=excluded.take_profit",
-                    (provider_id, instrument_id, symbol, new_quantity, average_cost, effective_strategy, effective_stop, effective_target),
+                    "take_profit=excluded.take_profit, quote_currency=excluded.quote_currency, "
+                    "average_price_eur=excluded.average_price_eur",
+                    (provider_id, instrument_id, symbol, new_quantity, average_cost, effective_strategy, effective_stop, effective_target, quote_currency, average_cost_eur),
                 )
             else:
+                if not position or quote_currency != str(position["quote_currency"] or "EUR"):
+                    raise PortfolioError("No matching position exists in the requested quote currency")
                 if not position or quantity > position["quantity"] + 1e-12:
                     raise PortfolioError("Insufficient position to sell")
-                realised_pnl = (fill - position["average_price"]) * quantity - fee
+                average_cost_eur = float(position["average_price_eur"] or position["average_price"])
+                realised_pnl_eur = (fill * fx_rate_to_eur - average_cost_eur) * quantity - fee * fx_rate_to_eur
                 remaining = position["quantity"] - quantity
+                stamp = datetime.now(timezone.utc).isoformat()
                 db.execute(
-                    "UPDATE account SET cash=cash+?, realised_pnl=realised_pnl+? WHERE id=1",
-                    (total, realised_pnl),
+                    "UPDATE currency_balances SET balance=balance+?,updated_at=? WHERE currency=?",
+                    (total, stamp, quote_currency),
                 )
+                if quote_currency == "EUR":
+                    db.execute(
+                        "UPDATE account SET cash=cash+?, realised_pnl=realised_pnl+? WHERE id=1",
+                        (total, realised_pnl_eur),
+                    )
+                else:
+                    db.execute(
+                        "UPDATE account SET realised_pnl=realised_pnl+? WHERE id=1",
+                        (realised_pnl_eur,),
+                    )
                 if remaining <= 1e-12:
                     db.execute("DELETE FROM positions WHERE provider_id=? AND instrument_id=?", (provider_id, instrument_id))
                 else:
@@ -321,9 +553,9 @@ class PaperPortfolio:
 
             stamp = datetime.now(timezone.utc).isoformat()
             cursor = db.execute(
-                "INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at,client_order_id,provider_id,instrument_id) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?)",
-                (symbol, side, quantity, fill, fee, total, stamp, client_order_id, provider_id, instrument_id),
+                "INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at,client_order_id,provider_id,instrument_id,quote_currency,fx_rate_to_eur,total_eur,fx_provider_id,fx_timestamp,strategy_id,stop_loss,take_profit) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (symbol, side, quantity, fill, fee, total, stamp, client_order_id, provider_id, instrument_id, quote_currency, fx_rate_to_eur, total_eur, fx_provider_id, fx_timestamp, strategy_id, stop_loss, take_profit),
             )
             return {
                 "id": cursor.lastrowid,
@@ -335,11 +567,149 @@ class PaperPortfolio:
                 "price": fill,
                 "fee": fee,
                 "total": total,
+                "quote_currency": quote_currency,
+                "fx_rate_to_eur": fx_rate_to_eur,
+                "total_eur": total_eur,
+                "fx_provider_id": fx_provider_id,
+                "fx_timestamp": fx_timestamp,
+                "strategy_id": strategy_id,
+                "stop_loss": stop_loss,
+                "take_profit": take_profit,
                 "created_at": stamp,
                 "client_order_id": client_order_id,
                 "mode": "paper",
                 "idempotent_replay": False,
             }
+
+    def convert_currency(
+        self,
+        from_currency: str,
+        to_currency: str,
+        amount: float,
+        rate: float,
+        fee_rate: float,
+        client_conversion_id: str,
+        fx_provider_id: str,
+        fx_timestamp: int,
+    ) -> dict:
+        from_currency = str(from_currency).strip().upper()
+        to_currency = str(to_currency).strip().upper()
+        if {from_currency, to_currency} != {"EUR", "USD"}:
+            raise PortfolioError("Only explicit EUR/USD paper conversions are supported")
+        if not isinstance(client_conversion_id, str) or not client_conversion_id.strip():
+            raise PortfolioError("A conversion idempotency key is required")
+        if not isinstance(fx_provider_id, str) or not fx_provider_id.strip():
+            raise PortfolioError("An FX provider identity is required")
+        try:
+            amount, rate, fee_rate = float(amount), float(rate), float(fee_rate)
+            fx_timestamp = int(fx_timestamp)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PortfolioError("Conversion values must be finite numbers") from exc
+        if (
+            not all(math.isfinite(value) for value in (amount, rate, fee_rate))
+            or amount <= 0 or rate <= 0 or not 0 <= fee_rate < 1 or fx_timestamp <= 0
+        ):
+            raise PortfolioError("Conversion amount, rate, timestamp or fee is invalid")
+        gross_target = amount * rate
+        fee = gross_target * fee_rate
+        fee_eur = fee / rate if to_currency == "USD" else fee
+        net_target = gross_target - fee
+        if not all(math.isfinite(value) for value in (gross_target, fee, fee_eur, net_target)):
+            raise PortfolioError("Calculated conversion amounts must be finite")
+        if gross_target <= 0 or net_target <= 0 or fee < 0 or fee_eur < 0:
+            raise PortfolioError("Calculated conversion amounts must be positive after fees")
+        stamp = datetime.now(timezone.utc).isoformat()
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            existing = db.execute(
+                "SELECT * FROM currency_conversions WHERE client_conversion_id=?",
+                (client_conversion_id.strip(),),
+            ).fetchone()
+            if existing:
+                prior = dict(existing)
+                same_intent = (
+                    prior["from_currency"] == from_currency
+                    and prior["to_currency"] == to_currency
+                    and math.isclose(float(prior["from_amount"]), amount, rel_tol=1e-12, abs_tol=1e-12)
+                )
+                if not same_intent:
+                    raise PortfolioError("client_conversion_id was already used for a different conversion")
+                prior["idempotent_replay"] = True
+                return prior
+            db.execute(
+                "INSERT OR IGNORE INTO currency_balances(currency,balance,updated_at) VALUES(?,0,?)",
+                (from_currency, stamp),
+            )
+            db.execute(
+                "INSERT OR IGNORE INTO currency_balances(currency,balance,updated_at) VALUES(?,0,?)",
+                (to_currency, stamp),
+            )
+            source = db.execute(
+                "SELECT balance FROM currency_balances WHERE currency=?",
+                (from_currency,),
+            ).fetchone()
+            if float(source["balance"]) + 1e-12 < amount:
+                raise PortfolioError(f"Insufficient {from_currency} cash for conversion")
+            db.execute(
+                "UPDATE currency_balances SET balance=balance-?,updated_at=? WHERE currency=?",
+                (amount, stamp, from_currency),
+            )
+            db.execute(
+                "UPDATE currency_balances SET balance=balance+?,updated_at=? WHERE currency=?",
+                (net_target, stamp, to_currency),
+            )
+            if from_currency == "EUR":
+                db.execute("UPDATE account SET cash=cash-? WHERE id=1", (amount,))
+            if to_currency == "EUR":
+                db.execute("UPDATE account SET cash=cash+? WHERE id=1", (net_target,))
+            db.execute("UPDATE account SET realised_pnl=realised_pnl-? WHERE id=1", (fee_eur,))
+            cursor = db.execute(
+                "INSERT INTO currency_conversions("
+                "client_conversion_id,from_currency,to_currency,from_amount,gross_to_amount,"
+                "fee,fee_eur,net_to_amount,rate,fx_provider_id,fx_timestamp,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    client_conversion_id.strip(), from_currency, to_currency, amount,
+                    gross_target, fee, fee_eur, net_target, rate, fx_provider_id.strip(),
+                    fx_timestamp, stamp,
+                ),
+            )
+            return {
+                "id": cursor.lastrowid,
+                "client_conversion_id": client_conversion_id.strip(),
+                "from_currency": from_currency,
+                "to_currency": to_currency,
+                "from_amount": amount,
+                "gross_to_amount": gross_target,
+                "fee": fee,
+                "fee_eur": fee_eur,
+                "net_to_amount": net_target,
+                "rate": rate,
+                "fx_provider_id": fx_provider_id.strip(),
+                "fx_timestamp": fx_timestamp,
+                "created_at": stamp,
+                "idempotent_replay": False,
+            }
+
+    def get_conversion_by_client_conversion_id(self, client_conversion_id: str) -> dict | None:
+        if not client_conversion_id:
+            return None
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM currency_conversions WHERE client_conversion_id=?",
+                (client_conversion_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def conversion_history(self, limit: int = 50) -> list[dict]:
+        with self.connect() as db:
+            return [
+                dict(row)
+                for row in db.execute(
+                    "SELECT * FROM currency_conversions ORDER BY id DESC LIMIT ?",
+                    (limit,),
+                )
+            ]
 
     def request_withdrawal(self, amount: float) -> dict:
         try:
@@ -401,6 +771,10 @@ class PaperPortfolio:
             db.execute(
                 "UPDATE account SET cash=cash-?, withdrawn_profit=withdrawn_profit+? WHERE id=1",
                 (amount, profit_component),
+            )
+            db.execute(
+                "UPDATE currency_balances SET balance=balance-?,updated_at=? WHERE currency='EUR'",
+                (amount, stamp),
             )
             db.execute(
                 "UPDATE withdrawal_requests SET status='approved', profit_component=?, "

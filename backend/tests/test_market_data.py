@@ -100,3 +100,11 @@ def test_discovery_fails_closed_when_provider_returns_non_mapping_ticker():
     )
 
     assert adapter.discover_spot_symbols() == []
+
+
+def test_is_stale_rejects_future_and_malformed_timestamps():
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    assert CcxtMarketData.is_stale({"timestamp": now_ms + 1}, 60) is True
+    assert CcxtMarketData.is_stale({"timestamp": float("nan")}, 60) is True
+    assert CcxtMarketData.is_stale({}, 60) is True
+    assert CcxtMarketData.is_stale({"timestamp": now_ms - 1000}, 60) is False

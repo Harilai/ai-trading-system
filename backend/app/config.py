@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     max_stop_distance_fraction: float = Field(default=0.05, gt=0, le=1)
     min_order_value_eur: float = 1.0
     max_data_age_seconds: int = 60
+    max_fx_data_age_seconds: int = Field(default=300, ge=1, le=3600)
+    fx_conversion_fee_rate: float = Field(default=0.001, ge=0, lt=1)
+    equity_paper_fee_rate: float = Field(default=0.001, ge=0, lt=1)
+    equity_paper_slippage_rate: float = Field(default=0.001, ge=0, lt=1)
+    max_equity_order_fraction: float = Field(default=0.10, gt=0, le=1)
+    max_equity_position_fraction: float = Field(default=0.20, gt=0, le=1)
+    max_equity_stop_distance_fraction: float = Field(default=0.05, gt=0, le=1)
+    min_order_value_usd: float = Field(default=1.0, ge=0)
+    max_equity_spread_fraction: float = Field(default=0.02, gt=0, le=1)
     agent_control_token: str = ""
     decision_cycle_interval_seconds: int = Field(default=300, ge=60)
     equity_research_interval_seconds: int = Field(default=21600, ge=3600)

@@ -301,3 +301,70 @@ def test_request_cost_above_minute_budget_is_rejected_before_transport(tmp_path)
     with pytest.raises(MarketDataError, match="exceeds the per-minute safety budget"):
         provider._reserve_api_credit(9)
     assert transport.calls == []
+
+
+def test_exchange_rate_returns_validated_pair_rate_and_timestamp(tmp_path):
+    transport = FakeTwelveDataTransport({
+        "exchange_rate": {
+            "symbol": "EUR/USD", "rate": "1.0854", "timestamp": 1_800_000_000,
+        }
+    })
+    provider = TwelveDataProvider(
+        "test-key", opener=transport, state_path=str(tmp_path / "state.db"),
+        min_request_interval_seconds=0,
+    )
+    rate = provider.exchange_rate("eur/usd")
+    assert rate == {
+        "symbol": "EUR/USD",
+        "base_currency": "EUR",
+        "quote_currency": "USD",
+        "rate": pytest.approx(1.0854),
+        "timestamp": 1_800_000_000_000,
+        "provider_id": "twelve_data",
+    }
+    assert transport.calls[0][0] == "exchange_rate"
+    assert transport.calls[0][1]["symbol"] == ["EUR/USD"]
+
+
+def test_exchange_rate_is_cached_to_conserve_provider_credits(tmp_path):
+    transport = FakeTwelveDataTransport({
+        "exchange_rate": {
+            "symbol": "EUR/USD", "rate": "1.08", "timestamp": 1_800_000_000,
+        }
+    })
+    provider = TwelveDataProvider(
+        "test-key", opener=transport, state_path=str(tmp_path / "state.db"),
+        min_request_interval_seconds=0,
+    )
+    assert provider.exchange_rate() == provider.exchange_rate()
+    assert len(transport.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"symbol": "USD/EUR", "rate": "1.08", "timestamp": 1_800_000_000},
+        {"symbol": "EUR/USD", "rate": "0", "timestamp": 1_800_000_000},
+        {"symbol": "EUR/USD", "rate": "-1", "timestamp": 1_800_000_000},
+        {"symbol": "EUR/USD", "rate": "nan", "timestamp": 1_800_000_000},
+        {"symbol": "EUR/USD", "rate": "inf", "timestamp": 1_800_000_000},
+        {"symbol": "EUR/USD", "rate": "1.08"},
+    ],
+)
+def test_exchange_rate_rejects_invalid_provider_observations(tmp_path, payload):
+    provider = TwelveDataProvider(
+        "test-key", opener=FakeTwelveDataTransport({"exchange_rate": payload}),
+        state_path=str(tmp_path / "state.db"), min_request_interval_seconds=0,
+    )
+    with pytest.raises(MarketDataError):
+        provider.exchange_rate()
+
+
+@pytest.mark.parametrize("symbol", ["EUR", "EURUSD", "EUR/USD/GBP", "EU1/USD"])
+def test_exchange_rate_rejects_invalid_pair_identifiers(tmp_path, symbol):
+    provider = TwelveDataProvider(
+        "test-key", opener=FakeTwelveDataTransport({}),
+        state_path=str(tmp_path / "state.db"), min_request_interval_seconds=0,
+    )
+    with pytest.raises(MarketDataError, match="three-letter currency pair"):
+        provider.exchange_rate(symbol)

@@ -194,3 +194,19 @@ def test_chief_respects_cash_reserved_for_pending_withdrawal():
     assert decision.action == "hold"
     assert decision.proposal is None
     assert "No eligible strategy" in decision.rationale
+
+
+def test_chief_blocks_orders_when_multicurrency_valuation_is_incomplete():
+    decision = ChiefAgent().decide(
+        {"analyses": [{"market": {"symbol": "BTC/EUR"}}]},
+        {
+            "equity": 1000,
+            "cash": 1000,
+            "available_cash_for_manual_withdrawal": 1000,
+            "positions": [],
+            "valuation_complete": False,
+        },
+    )
+    assert decision.action == "hold"
+    assert decision.proposal is None
+    assert "valuation is incomplete" in decision.rationale.lower()

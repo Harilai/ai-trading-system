@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `e9ba320e6f196bec5c28e1f1508bddae8685d342` — handoff persistente (#39).  
+> **Último commit observado en `main`:** `daccddb37aea4fdc09f70ab53c4ecf37306e4ddf` — `main` sin cambios netos de árbol respecto al merge de #40.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -42,53 +42,63 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - Dashboard, health/readiness, controles autenticados y backups SQLite.
 - No hay ejecución real, adaptadores de órdenes live, wallets, firma blockchain, broker de acciones, derivados ni DeFi. No habilitarlos como parte de esta fase.
 
-## 4. Siguiente fase obligatoria: ciclo de vida de órdenes y conciliación
+## 4. Siguiente fase obligatoria: cartera paper multidivisa para acciones y ETF
 
-**Prioridad inmediata.** La hoja de ruta ya identifica como pendiente completar los estados legales de órdenes, conciliación y recuperación frente a fallos en cada frontera de persistencia.
+**Prioridad inmediata, antes de completar la conciliación de órdenes.** El objetivo es permitir que la cartera paper mantenga efectivo y posiciones en más de una divisa, y pueda valorar acciones/ETF estadounidenses en USD dentro de una cartera cuya divisa base continúa siendo EUR. La investigación de acciones/ETF ya existe, pero sigue siendo read-only y no debe convertirse automáticamente en elegibilidad de ejecución.
 
-### Observación de partida
+### Decisiones de arquitectura y límites
 
-En el flujo actual de `backend/app/autonomous.py`, `decision_cycle` utiliza el ID de tarea como `client_order_id`, consulta primero si existe una operación previa y, si la encuentra, evita repetir la ejecución. `PaperPortfolio.execute()` persiste la operación, el efectivo y la posición en una transacción SQLite. Sin embargo, el registro de la operación en la cartera y el marcado de la tarea como completada en `AutonomousStore.finish_task()` son pasos separados; la evidencia completa de decisión también se guarda por separado en memoria/auditoría.
+1. EUR seguirá siendo la divisa base de reporting y la moneda del capital inicial configurable (20 EUR por defecto).
+2. El efectivo se mantendrá por divisa. El saldo USD no se presumirá ni se creará automáticamente al comprar un activo cotizado en USD.
+3. La conversión EUR/USD será una operación paper explícita, auditada e idempotente, con importe origen/destino, tipo de cambio, timestamp, proveedor, coste/spread simulado y referencia de cotización.
+4. El tipo FX se obtendrá de Twelve Data mediante `/exchange_rate` cuando esté configurado. Debe respetar el limitador de cuota ya existente. No se usarán tipos hardcodeados ni tasas stale/futuras/malformadas. Sin FX verificable, se bloquea la conversión; la valoración queda incompleta y Chief/API bloquean nuevas órdenes hasta recuperar una valoración fiable.
+5. Cada posición conservará precio/coste base en su divisa de cotización. La cartera calculará equity, exposición y P/L agregado en EUR usando tipos FX identificados y timestamped; la valoración se marcará incompleta si falta cualquier cotización o conversión requerida.
+6. La ruta de acciones/ETF permanecerá paper-only y limitada a instrumentos cash equity/ETF de EE. UU. identificados por el proveedor Twelve Data. No se habilitarán brokers ni ejecución real.
+7. Risk Manager deberá validar clase de activo, tipo de mercado, divisa, efectivo disponible en la divisa de cotización, exposición y tamaño expresados de forma consistente en EUR. Los límites de crypto spot actuales no se ampliarán por defecto a equities.
+8. Retiradas paper existentes seguirán limitadas a efectivo EUR hasta que exista un diseño separado de retirada multidivisa. No se convertirá USD de forma implícita para financiar retiradas.
 
-Esto ya ofrece una protección básica contra duplicados, pero no constituye todavía una máquina de estados de órdenes ni una conciliación explícita de todas las fronteras de persistencia. No dar por resuelto este punto solo porque exista idempotencia.
+### Progreso de implementación — PR #41 (rama, todavía no integrada)
 
-### Objetivo
-
-Hacer que cada decisión ejecutable tenga un ciclo de vida durable, auditable y recuperable. La implementación debe seguir siendo paper-only.
+- Rama: `phase/multicurrency-paper-portfolio`.
+- PR: https://github.com/Harilai/ai-trading-system/pull/41
+- Último head revisado al actualizar este handoff: `d1cd33fe633b340ab773c160c1cb2511729652c2`.
+- Se ha añadido ledger EUR/USD, migración aditiva desde `account.cash`, conversión paper idempotente y auditada, FX Twelve Data con caché/cuota y validación estricta de timestamp/tasa.
+- La posición conserva coste medio nativo y coste medio EUR; cada fill USD registra tasa, proveedor y timestamp FX. P/L de ventas USD se calcula en EUR. Los costes de conversión reducen el P/L realizado EUR.
+- Se ha añadido ruta manual, autenticada y paper-only para cash equities/ETF USD descubiertos por Twelve Data. Requiere saldo USD preconvertido, mercado abierto, cotización fresca, spread máximo cuando bid/ask están disponibles, slippage paper explícito, clave idempotente y aprobación del Risk Manager.
+- El perfil equity tiene límites separados configurables: 10% máximo por orden, 20% de concentración por instrumento y 5% de distancia máxima de stop, además de comisión, slippage y spread propios.
+- El Chief y el `decision_cycle` continúan limitados a crypto spot EUR. Las acciones/ETF no entran en selección autónoma.
+- El dashboard muestra saldos por divisa y moneda nativa de precios. El formulario de conversión/órdenes no está integrado en la UI; solo existe API autenticada.
+- **Limitación importante:** el stop-loss de una posición equity se almacena como nivel protector, pero el worker todavía no lo monitoriza/ejecuta automáticamente. La venta paper debe ser manual hasta que se implemente la supervisión de equities; no presentar ese stop como una orden activa.
+- Se han añadido pruebas unitarias e integración; el CI del último head está en cola/ejecución. No fusionar hasta confirmar suite completa, Docker hardening y revisión independiente en el SHA exacto.
 
 ### Plan de implementación
 
-1. **Definir estados y transiciones legales** para una orden paper (por ejemplo: `intent_created`, `risk_approved`, `paper_filled`, `rejected`, `failed` y `reconciliation_required`). Documentar qué transiciones están permitidas y cuáles son terminales. No simular estados de broker live que aún no existen.
-2. **Persistir una intención de orden antes de ejecutarla**, con `task_id` único, proveedor/instrumento, lado, cantidad solicitada, precio de referencia, estrategia, stop/take, decisión del Chief y evidencia de aprobación/rechazo del Risk Manager. No guardar secretos.
-3. **Garantizar idempotencia y consistencia transaccional.** Evaluar si intención, fill paper, actualización de cartera y finalización de tarea pueden compartir una transacción SQLite; si no, definir una secuencia de recuperación explícita y segura. Mantener una restricción única por clave idempotente.
-4. **Implementar conciliación al arrancar y/o al recuperar leases.** Detectar intenciones sin fill, fills persistidos con tarea aún running, tareas completadas sin resultado consistente y estados imposibles. Nunca volver a ejecutar a ciegas una orden cuyo resultado sea incierto.
-5. **Añadir pruebas de inyección de fallos** en cada frontera: antes de persistir intención, después de intención, después de aprobación de riesgo, después de persistir fill/cartera y antes de finalizar la tarea; además, retry duplicado, lease expirado y reinicio del worker.
-6. **Criterios de aceptación:** como máximo un fill por intención; efectivo, posiciones, trades y estado de orden coherentes; ninguna compra sin aprobación del Risk Manager y stop-loss; ninguna entrada si la conciliación es incierta; recuperación determinista después de reinicio; CI verde sobre el commit exacto.
-7. Actualizar `docs/ROADMAP.md`, este handoff y `README.md` con los estados realmente implementados. No marcar una tarea como terminada antes de superar las pruebas.
+1. Añadir contrato y adaptador FX Twelve Data, incluyendo caché/cuotas, validación de tasa positiva/finita, timestamp y antigüedad máxima.
+2. Evolucionar SQLite con saldos por divisa, registro de conversiones y metadatos FX en trades/posiciones; conservar migración segura de bases existentes y compatibilidad de API donde proceda.
+3. Añadir conversión paper explícita EUR/USD con coste configurable, control de fondos, idempotencia y auditoría.
+4. Añadir valoración multidivisa: efectivo, posiciones, equity, exposición y P/L en EUR, con desglose original por moneda y estado de valoración completa/incompleta.
+5. Extender contratos de instrumentos y Risk Manager para permitir únicamente cash equities/ETFs USD de Twelve Data en paper, manteniendo bloqueados otros activos, mercados y proveedores sin soporte.
+6. Mantener la investigación como read-only hasta que todos los gates de cartera, FX, sesión bursátil, liquidez, costes, stop/riesgo y pruebas estén satisfechos. No activar todavía órdenes autónomas de equities en esta primera entrega.
+7. Añadir pruebas de migración, FX stale/futuro/malformado, falta de cuota, conversiones duplicadas, saldo insuficiente, movimientos entre divisas, valoración parcial, cambios de FX, comisiones y regresión crypto EUR.
+8. Tras completar esta fase, abordar el ciclo de vida y conciliación de órdenes como siguiente prioridad.
 
-### Archivos principales a revisar
+### Criterios de aceptación
 
-- `backend/app/autonomous.py`
-- `backend/app/portfolio.py`
-- `backend/app/agents/contracts.py`
-- `backend/app/agents/risk.py`
-- `backend/app/agent_api.py`
-- `backend/tests/test_autonomous.py`
-- `backend/tests/test_portfolio.py`
-- `backend/tests/test_chief.py`
+- Las bases existentes migran sin alterar el saldo EUR ni las posiciones crypto actuales.
+- EUR y USD se contabilizan por separado; ninguna compra gasta una divisa distinta de la cotizada sin conversión paper explícita.
+- Toda conversión conserva evidencia reproducible de tipo, proveedor, timestamp, costes e importes.
+- Equity y exposición se reportan en EUR sin ocultar los saldos/valores originales en USD.
+- Una cotización FX ausente, stale, futura, no finita o no positiva bloquea conversiones y produce valoración incompleta; nunca se inventa un tipo.
+- El Risk Manager sigue siendo obligatorio y no permite shorting, margin, derivados, broker live ni wallets.
+- La suite completa y CI deben pasar en el SHA exacto de la PR antes del merge.
 
-No modificar todos estos archivos por obligación: limitar el cambio al mínimo necesario tras inspeccionar el flujo completo.
+## 5. Fases posteriores — orden de prioridad acordado
 
-## 5. Fases posteriores — no adelantar a la fase inmediata
-
-Una vez completado y validado el ciclo de órdenes:
-
-1. **Capital y retiradas:** mínimos, costes y tiempos de retirada por proveedor; recalcular capital disponible y límites de riesgo después de retiradas. Las claves de trading nunca tendrán permisos de retirada.
-2. **Acciones/ETF:** diseñar soporte de cartera multi-divisa, FX verificable, horarios, reglas de mercado y Risk Manager específico antes de permitir que Chief considere esos activos. Mantenerlo read-only hasta validar toda la cadena.
-3. **Más fuentes de señal:** News/Sentiment con fuentes atribuibles, timestamps, frescura y controles contra datos manipulados.
-4. **Dashboard:** vistas detalladas de investigación, historial de estrategias, curva de equity y retiradas; solo mostrar métricas que estén calculadas y verificadas.
-5. **Operación VPS:** despliegue, TLS/reverse proxy, copia off-host, monitorización y medición de disponibilidad real. No exponer el puerto API directamente a Internet.
-6. **Nuevos mercados:** wallets read-only y monitorización blockchain antes de cualquier firma; DEX, FX, índices, commodities y derivados solo con adaptadores, riesgos y conciliación específicos.
+1. Completar el ciclo de vida, conciliación y recuperación de órdenes/fills, incluida la recuperación de tareas y leases expirados.
+2. Implementar copias de seguridad externas fuera del volumen/servidor de Docker, con verificación de integridad y restauración probada.
+3. Ampliar el dashboard con gráficos, investigación y gestión de retiradas, mostrando solo métricas verificadas.
+4. Preparar despliegue persistente 24/7 en VPS: persistencia, TLS/reverse proxy, monitorización, alertas, readiness, recuperación, backups off-host y medición de disponibilidad.
+5. Solo después, evaluar nuevos mercados y proveedores mediante adaptadores, reglas de riesgo y conciliación específicos.
 
 ## 6. Límites que no se deben saltar
 
@@ -96,7 +106,8 @@ Una vez completado y validado el ciclo de órdenes:
 - Live trading no puede activarse desde agentes, LLM, dashboard ni configuración accidental.
 - No solicitar ni guardar seeds, claves privadas ni credenciales en Git, logs o frontend.
 - No dar permisos de retirada a claves de trading.
-- Solo crypto spot EUR está habilitado para decisiones y órdenes paper en la implementación actual.
+- Solo crypto spot EUR está habilitado para decisiones autónomas. El branch PR #41 añade órdenes manuales paper para cash equities/ETF USD, siempre owner-authenticated y con conversión explícita; no habilita equities en Chief.
+- El stop-loss/take-profit de equities queda guardado como metadato y no está monitorizado por el worker todavía; las salidas deben ser manuales.
 - Datos stale, inconsistentes o conciliación incierta deben bloquear nuevas entradas.
 - No prometer rentabilidad; backtests y paper trading no prueban rentabilidad futura.
 

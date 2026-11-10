@@ -3,6 +3,7 @@ from enum import Enum
 
 class RiskProfileName(str, Enum):
     SPOT = "spot"
+    CASH_EQUITY = "cash_equity"
     MARGIN = "margin"
     FUTURES = "futures"
     OPTIONS = "options"
@@ -16,6 +17,18 @@ RISK_PROFILES = {
         "max_leverage": 1.0,
         "shorting": False,
         "controls": ["cash_only", "max_order_fraction", "stop_loss", "fees", "slippage"],
+    },
+    RiskProfileName.CASH_EQUITY: {
+        "enabled": True,
+        "max_leverage": 1.0,
+        "shorting": False,
+        "manual_paper_only": True,
+        "autonomous_enabled": False,
+        "controls": [
+            "usd_cash_only", "explicit_fx_conversion", "fresh_fx_rate",
+            "market_session", "quote_freshness", "spread_guard_if_available", "max_spread",
+            "max_order_fraction", "max_position_fraction", "stop_loss", "fees", "slippage",
+        ],
     },
     RiskProfileName.MARGIN: {
         "enabled": False,

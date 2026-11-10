@@ -524,3 +524,65 @@ def test_market_scan_task_persists_strategy_candidates(tmp_path):
     assert len(history) == 1
     assert history[0]["task_id"] == "scan-task-1"
     assert history[0]["strategy_id"] == "ema_12_26"
+
+
+def test_autonomous_crypto_cycle_values_usd_cash_with_fresh_fx(tmp_path):
+    import asyncio
+    from datetime import datetime, timezone
+
+    from app.portfolio import PaperPortfolio
+
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+
+    class FakeFxProvider:
+        def exchange_rate(self, symbol):
+            assert symbol == "EUR/USD"
+            return {
+                "symbol": "EUR/USD", "rate": 1.1,
+                "timestamp": timestamp, "provider_id": "twelve_data",
+            }
+
+    class FakeMarketData:
+        def get(self, provider_id):
+            assert provider_id == "twelve_data"
+            return FakeFxProvider()
+
+    class FakeScout:
+        market_data = FakeMarketData()
+
+        def scan(self, include_symbols=None):
+            return {"analyses": [], "included_positions": include_symbols or []}
+
+    class FakeDecision:
+        action = "hold"
+        proposal = None
+        risk = None
+
+        def model_dump(self):
+            return {"action": "hold", "rationale": "No entry candidate"}
+
+    class CapturingChief:
+        portfolio_snapshot = None
+
+        def decide(self, scan, portfolio):
+            self.portfolio_snapshot = portfolio
+            return FakeDecision()
+
+    portfolio = PaperPortfolio(str(tmp_path / "multi-currency-worker.db"), 100)
+    portfolio.convert_currency(
+        "EUR", "USD", 50, 1.1, 0, "worker-usd-cash", "twelve_data", timestamp,
+    )
+    chief = CapturingChief()
+    store = AutonomousStore(str(tmp_path / "multi-currency-agent.db"))
+    worker = AutonomousAgent(store, scout=FakeScout(), chief=chief, portfolio=portfolio)
+
+    result = asyncio.run(worker._execute({
+        "id": "multi-currency-decision",
+        "kind": "decision_cycle",
+        "payload": {},
+    }))
+
+    assert result["execution"] == "no_order"
+    assert chief.portfolio_snapshot["valuation_complete"] is True
+    assert chief.portfolio_snapshot["equity"] == pytest.approx(100)
+    assert chief.portfolio_snapshot["fx_observations"]["USD"]["provider_id"] == "twelve_data"

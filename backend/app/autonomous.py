@@ -9,6 +9,8 @@ from typing import Any
 from uuid import uuid4
 
 from .config import settings
+from .fx import invert_fx_observation, validate_fx_observation
+from .market_data import MarketDataError
 
 
 def utcnow() -> datetime:
@@ -564,7 +566,63 @@ class AutonomousAgent:
                 price = market.get("bid") or market.get("last")
                 if instrument_id in held_instruments and price is not None and float(price) > 0:
                     valuation_prices[instrument_id] = float(price)
-            portfolio = await asyncio.to_thread(self.portfolio.snapshot, valuation_prices)
+            fx_rates = {}
+            has_usd = any(
+                item.get("currency") == "USD" and abs(float(item.get("balance", 0))) > 1e-12
+                for item in unvalued_portfolio.get("cash_balances", [])
+            ) or any(
+                str(item.get("quote_currency") or "EUR").upper() == "USD"
+                for item in unvalued_portfolio.get("positions", [])
+            )
+            if has_usd:
+                try:
+                    fx_provider = await asyncio.to_thread(
+                        self.scout.market_data.get, "twelve_data"
+                    )
+                    eur_usd = await asyncio.to_thread(fx_provider.exchange_rate, "EUR/USD")
+                    validated_fx = validate_fx_observation(
+                        eur_usd,
+                        "EUR/USD",
+                        max_age_seconds=settings.max_fx_data_age_seconds,
+                    )
+                    fx_rates["USD"] = invert_fx_observation(validated_fx)
+                except MarketDataError:
+                    # Keep valuation incomplete; Chief will fail closed.
+                    pass
+
+            # USD positions need a fresh Twelve Data mark as well as FX before
+            # the EUR portfolio can be used for autonomous crypto risk sizing.
+            for position in unvalued_portfolio.get("positions", []):
+                if str(position.get("quote_currency") or "EUR").upper() != "USD":
+                    continue
+                instrument_id = position.get("instrument_id")
+                try:
+                    quote = await asyncio.to_thread(
+                        self.scout.market_data.ticker,
+                        position["symbol"],
+                        provider_id=position.get("provider_id") or "twelve_data",
+                    )
+                    if (
+                        quote.get("last") is not None
+                        and (not quote.get("symbol") or str(quote["symbol"]).upper() == str(position["symbol"]).upper())
+                        and (not quote.get("currency") or str(quote["currency"]).upper() == "USD")
+                        and not self.scout.market_data.is_stale(quote, settings.max_data_age_seconds)
+                    ):
+                        valuation_prices[instrument_id] = float(quote["last"])
+                except (MarketDataError, TypeError, ValueError, OverflowError):
+                    continue
+
+            if fx_rates:
+                portfolio = await asyncio.to_thread(
+                    self.portfolio.snapshot,
+                    valuation_prices,
+                    fx_rates,
+                )
+            else:
+                portfolio = await asyncio.to_thread(
+                    self.portfolio.snapshot,
+                    valuation_prices,
+                )
             decision = self.chief.decide(scan, portfolio)
             order = None
             execution = "no_order"

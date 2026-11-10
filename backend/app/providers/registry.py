@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import math
+from datetime import datetime, timezone
 from threading import RLock
 from typing import Iterable
-
-from datetime import datetime, timezone
 
 from ..market_data import MarketDataError
 
@@ -123,8 +123,15 @@ class ProviderRegistry:
 
     @staticmethod
     def is_stale(ticker: dict, max_age_seconds: int) -> bool:
-        age = datetime.now(timezone.utc).timestamp() * 1000 - ticker["timestamp"]
-        return age > max_age_seconds * 1000
+        try:
+            timestamp = float(ticker["timestamp"])
+            max_age_seconds = float(max_age_seconds)
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return True
+        if not math.isfinite(timestamp) or timestamp <= 0 or not math.isfinite(max_age_seconds) or max_age_seconds <= 0:
+            return True
+        age_ms = datetime.now(timezone.utc).timestamp() * 1000 - timestamp
+        return age_ms < 0 or age_ms > max_age_seconds * 1000
 
     def describe(self) -> dict:
         return {

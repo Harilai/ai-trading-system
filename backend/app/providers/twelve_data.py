@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import hashlib
 import sqlite3
 import time
@@ -84,7 +85,7 @@ class TwelveDataProvider:
 
     @staticmethod
     def _cache_ttl(endpoint: str, params: dict) -> int:
-        if endpoint == "market_state":
+        if endpoint in {"market_state", "exchange_rate"}:
             return 60
         if endpoint in {"stocks", "etfs/list"}:
             return 86400
@@ -361,6 +362,31 @@ class TwelveDataProvider:
                     states[key.strip().casefold()] = state
         return states
 
+    def exchange_rate(self, symbol: str = "EUR/USD") -> dict:
+        """Return a validated, timestamped FX observation; this adapter never converts cash."""
+        normalized = str(symbol).strip().upper()
+        parts = normalized.split("/")
+        if len(parts) != 2 or not all(len(part) == 3 and part.isalpha() for part in parts):
+            raise MarketDataError("FX symbol must be a three-letter currency pair such as EUR/USD")
+        data = self._request("exchange_rate", {"symbol": normalized})
+        if not isinstance(data, dict) or str(data.get("symbol") or "").upper() != normalized:
+            raise MarketDataError("Twelve Data returned an unexpected FX symbol")
+        try:
+            rate = float(data["rate"])
+            timestamp = self._timestamp_ms(data.get("timestamp"))
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise MarketDataError("Twelve Data returned malformed FX data") from exc
+        if not math.isfinite(rate) or rate <= 0 or timestamp <= 0:
+            raise MarketDataError("Twelve Data returned a non-positive or non-finite FX observation")
+        return {
+            "symbol": normalized,
+            "base_currency": parts[0],
+            "quote_currency": parts[1],
+            "rate": rate,
+            "timestamp": timestamp,
+            "provider_id": self.provider_id,
+        }
+
     def ticker(self, symbol: str) -> dict:
         data = self._request("quote", {"symbol": symbol})
         last_value = data.get("close") or data.get("price")
@@ -383,6 +409,7 @@ class TwelveDataProvider:
             "averageVolume": float(average_volume) if average_volume is not None else None,
             "provider_id": self.provider_id,
             "exchange": data.get("exchange"),
+            "mic_code": data.get("mic_code"),
             "currency": data.get("currency"),
             "is_market_open": data.get("is_market_open"),
         }

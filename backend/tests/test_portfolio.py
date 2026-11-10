@@ -95,6 +95,19 @@ def test_duplicate_client_order_id_does_not_execute_twice(portfolio):
     assert len(portfolio.history()) == 1
 
 
+def test_idempotency_key_cannot_be_reused_for_a_different_trade(portfolio):
+    portfolio.execute(
+        "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
+        client_order_id="immutable-order-key",
+    )
+    with pytest.raises(PortfolioError, match="different paper order"):
+        portfolio.execute(
+            "ETH/EUR", "buy", 0.001, 1000, 0.001, 0, 1, 1,
+            client_order_id="immutable-order-key",
+        )
+    assert len(portfolio.history()) == 1
+
+
 def test_trade_can_be_recovered_by_idempotency_key(portfolio):
     trade = portfolio.execute(
         "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
@@ -123,10 +136,46 @@ def test_legacy_database_is_migrated_with_protection_and_idempotency_columns(tmp
         position_columns = {row[1] for row in db.execute("PRAGMA table_info(positions)")}
         trade_columns = {row[1] for row in db.execute("PRAGMA table_info(trades)")}
     assert {"provider_id", "instrument_id", "strategy_id", "stop_loss", "take_profit"} <= position_columns
-    assert {"client_order_id", "provider_id", "instrument_id"} <= trade_columns
+    assert {"client_order_id", "provider_id", "instrument_id", "quote_currency", "fx_rate_to_eur", "total_eur", "fx_provider_id", "fx_timestamp", "strategy_id", "stop_loss", "take_profit"} <= trade_columns
     with sqlite3.connect(path) as db:
         withdrawal_columns = {row[1] for row in db.execute("PRAGMA table_info(withdrawal_requests)")}
     assert {"profit_component", "non_reserved_component"} <= withdrawal_columns
+
+
+def test_idempotency_key_cannot_change_protective_levels(portfolio):
+    portfolio.execute(
+        "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
+        client_order_id="protective-level-key", stop_loss=9500, take_profit=11000,
+    )
+    with pytest.raises(PortfolioError, match="different paper order"):
+        portfolio.execute(
+            "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
+            client_order_id="protective-level-key", stop_loss=9400, take_profit=11000,
+        )
+
+
+def test_populated_legacy_database_migrates_eur_balance_and_position_cost_basis(tmp_path):
+    path = str(tmp_path / "populated-legacy.db")
+    import sqlite3
+
+    with sqlite3.connect(path) as db:
+        db.execute("CREATE TABLE positions (symbol TEXT PRIMARY KEY, quantity REAL, average_price REAL)")
+        db.execute("INSERT INTO positions VALUES('BTC/EUR',0.25,40000)")
+        db.execute("CREATE TABLE trades (id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, side TEXT, quantity REAL, price REAL, fee REAL, total REAL, created_at TEXT)")
+        db.execute("INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at) VALUES('BTC/EUR','buy',0.25,40000,10,10010,'2026-01-01T00:00:00+00:00')")
+        db.execute("CREATE TABLE account (id INTEGER PRIMARY KEY CHECK(id=1), initial_cash REAL, cash REAL, realised_pnl REAL DEFAULT 0)")
+        db.execute("INSERT INTO account(id,initial_cash,cash,realised_pnl) VALUES(1,20,17.5,0)")
+    portfolio = PaperPortfolio(path, 999)
+    snapshot = portfolio.snapshot()
+    assert snapshot["cash"] == pytest.approx(17.5)
+    assert snapshot["cash_balances"][0]["currency"] == "EUR"
+    assert snapshot["cash_balances"][0]["balance"] == pytest.approx(17.5)
+    position = snapshot["positions"][0]
+    assert position["quote_currency"] == "EUR"
+    assert position["average_price_eur"] == pytest.approx(40000)
+    trade = portfolio.history()[0]
+    assert trade["quote_currency"] == "EUR"
+    assert trade["total_eur"] == pytest.approx(10010)
 
 
 def test_market_valuation_distinguishes_realised_and_unrealised_pnl(portfolio):
@@ -322,3 +371,158 @@ def test_execution_rejects_non_finite_protective_levels(portfolio):
             stop_loss=float("nan"),
         )
     assert portfolio.history() == []
+
+
+def test_currency_conversion_is_atomic_auditable_and_idempotent(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "multi-currency.db"), 100)
+    first = portfolio.convert_currency(
+        "EUR", "USD", 50, 1.10, 0.01, "fx-conversion-1", "twelve_data", 1_800_000_000_000,
+    )
+    replay = portfolio.convert_currency(
+        "EUR", "USD", 50, 1.10, 0.01, "fx-conversion-1", "twelve_data", 1_800_000_000_000,
+    )
+    assert first["net_to_amount"] == pytest.approx(54.45)
+    assert replay["id"] == first["id"]
+    assert replay["idempotent_replay"] is True
+    balances = {row["currency"]: row["balance"] for row in portfolio.cash_balances()}
+    assert balances["EUR"] == pytest.approx(50)
+    assert balances["USD"] == pytest.approx(54.45)
+    assert len(portfolio.conversion_history()) == 1
+    assert portfolio.snapshot()["realised_pnl"] == pytest.approx(-0.5)
+    reopened = PaperPortfolio(str(tmp_path / "multi-currency.db"), 999)
+    assert {row["currency"]: row["balance"] for row in reopened.cash_balances()} == {
+        "EUR": pytest.approx(50),
+        "USD": pytest.approx(54.45),
+    }
+    assert len(reopened.conversion_history()) == 1
+    with pytest.raises(PortfolioError, match="different conversion"):
+        reopened.convert_currency(
+            "EUR", "USD", 51, 1.10, 0.01, "fx-conversion-1", "twelve_data", 1_800_000_000_000,
+        )
+
+
+def test_currency_conversion_rejects_insufficient_cash_without_mutation(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "multi-currency.db"), 20)
+    with pytest.raises(PortfolioError, match="Insufficient EUR"):
+        portfolio.convert_currency(
+            "EUR", "USD", 21, 1.1, 0, "too-large", "twelve_data", 1_800_000_000_000,
+        )
+    balances = {row["currency"]: row["balance"] for row in portfolio.cash_balances()}
+    assert balances == {"EUR": pytest.approx(20)}
+
+
+def test_currency_conversion_rejects_invalid_fx_and_unsupported_pairs(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "multi-currency.db"), 20)
+    with pytest.raises(PortfolioError):
+        portfolio.convert_currency(
+            "EUR", "USD", 5, float("nan"), 0, "bad-rate", "twelve_data", 1_800_000_000_000,
+        )
+    with pytest.raises(PortfolioError, match="Only explicit EUR/USD"):
+        portfolio.convert_currency(
+            "EUR", "GBP", 5, 0.8, 0, "unsupported", "twelve_data", 1_800_000_000_000,
+        )
+    assert portfolio.cash_balances()[0]["balance"] == pytest.approx(20)
+
+
+def test_usd_paper_fill_requires_timestamped_fx_provenance(portfolio):
+    with pytest.raises(PortfolioError, match="FX provider identity"):
+        portfolio.execute(
+            "AAPL", "buy", 1, 100, 0.001, 0, 1, 1,
+            provider_id="twelve_data", instrument_id="twelve_data:cash_equity:AAPL",
+            quote_currency="USD", fx_rate_to_eur=0.9, stop_loss=95,
+        )
+
+
+def test_usd_paper_fill_requires_usd_cash_and_keeps_eur_cost_basis(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "multi-currency.db"), 300)
+    with pytest.raises(PortfolioError, match="Insufficient unreserved USD"):
+        portfolio.execute(
+            "AAPL", "buy", 1, 100, 0.001, 0, 1, 1,
+            provider_id="twelve_data", instrument_id="twelve_data:cash_equity:AAPL",
+            quote_currency="USD", fx_rate_to_eur=0.9, fx_provider_id="twelve_data", fx_timestamp=1_800_000_000_000, stop_loss=95,
+        )
+    portfolio.convert_currency(
+        "EUR", "USD", 250, 1.1, 0, "convert-usd", "twelve_data", 1_800_000_000_000,
+    )
+    trade = portfolio.execute(
+        "AAPL", "buy", 2, 100, 0.001, 0, 1, 1,
+        provider_id="twelve_data", instrument_id="twelve_data:cash_equity:AAPL",
+        quote_currency="USD", fx_rate_to_eur=0.9, fx_provider_id="twelve_data", fx_timestamp=1_800_000_000_000, stop_loss=95,
+    )
+    assert trade["quote_currency"] == "USD"
+    assert trade["total"] == pytest.approx(200.2)
+    assert trade["total_eur"] == pytest.approx(180.18)
+    assert trade["fx_provider_id"] == "twelve_data"
+    assert trade["fx_timestamp"] == 1_800_000_000_000
+    position = portfolio.snapshot()["positions"][0]
+    assert position["average_price"] == pytest.approx(100.1)
+    assert position["average_price_eur"] == pytest.approx(90.09)
+    balances = {row["currency"]: row["balance"] for row in portfolio.cash_balances()}
+    assert balances["EUR"] == pytest.approx(50)
+    assert balances["USD"] == pytest.approx(74.8)
+
+
+def test_usd_position_valuation_and_realised_pnl_use_fx_in_eur(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "multi-currency.db"), 300)
+    portfolio.convert_currency(
+        "EUR", "USD", 250, 1.1, 0, "convert-usd", "twelve_data", 1_800_000_000_000,
+    )
+    portfolio.execute(
+        "AAPL", "buy", 2, 100, 0.001, 0, 1, 1,
+        provider_id="twelve_data", instrument_id="twelve_data:cash_equity:AAPL",
+        quote_currency="USD", fx_rate_to_eur=0.9, fx_provider_id="twelve_data", fx_timestamp=1_800_000_000_000, stop_loss=95,
+    )
+    snapshot = portfolio.snapshot(
+        {"twelve_data:cash_equity:AAPL": 110},
+        {"USD": {
+            "symbol": "USD/EUR", "rate": 0.92,
+            "timestamp": 1_800_000_000_000, "provider_id": "twelve_data",
+            "inverted": True,
+        }},
+    )
+    position = snapshot["positions"][0]
+    assert position["market_value_eur"] == pytest.approx(202.4)
+    assert position["unrealised_pnl"] == pytest.approx(22.22)
+    assert position["fx_provider_id"] == "twelve_data"
+    assert position["fx_timestamp"] == 1_800_000_000_000
+    usd_cash = next(item for item in snapshot["cash_balances"] if item["currency"] == "USD")
+    assert usd_cash["value_eur"] == pytest.approx(68.816)
+    assert usd_cash["fx_provider_id"] == "twelve_data"
+    assert snapshot["fx_observations"]["USD"]["inverted"] is True
+    assert snapshot["valuation_complete"] is True
+    sold = portfolio.execute(
+        "AAPL", "sell", 2, 110, 0.001, 0, 1, 1,
+        provider_id="twelve_data", instrument_id="twelve_data:cash_equity:AAPL",
+        quote_currency="USD", fx_rate_to_eur=0.92, fx_provider_id="twelve_data", fx_timestamp=1_800_000_000_000,
+    )
+    assert sold["total_eur"] == pytest.approx(202.1976)
+    assert portfolio.snapshot()["realised_pnl"] == pytest.approx(22.0176)
+    assert portfolio.snapshot()["positions"] == []
+
+
+def test_usd_cash_without_fx_marks_portfolio_valuation_incomplete(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "multi-currency.db"), 100)
+    portfolio.convert_currency(
+        "EUR", "USD", 10, 1.1, 0, "convert-usd", "twelve_data", 1_800_000_000_000,
+    )
+    snapshot = portfolio.snapshot()
+    assert snapshot["valuation_complete"] is False
+    assert snapshot["cash"] == pytest.approx(90)
+    assert snapshot["cash_total_eur"] == pytest.approx(90)
+
+
+def test_usd_to_eur_conversion_uses_inverse_rate_and_charges_eur_fee(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "reverse-fx.db"), 100)
+    portfolio.convert_currency(
+        "EUR", "USD", 50, 1.1, 0, "fund-usd", "twelve_data", 1_800_000_000_000,
+    )
+    conversion = portfolio.convert_currency(
+        "USD", "EUR", 10, 1 / 1.1, 0.01, "return-eur", "twelve_data", 1_800_000_000_000,
+    )
+    assert conversion["gross_to_amount"] == pytest.approx(10 / 1.1)
+    assert conversion["fee_eur"] == pytest.approx((10 / 1.1) * 0.01)
+    assert conversion["net_to_amount"] == pytest.approx((10 / 1.1) * 0.99)
+    balances = {row["currency"]: row["balance"] for row in portfolio.cash_balances()}
+    assert balances["USD"] == pytest.approx(45)
+    assert balances["EUR"] == pytest.approx(50 + (10 / 1.1) * 0.99)
+    assert portfolio.snapshot()["realised_pnl"] == pytest.approx(-((10 / 1.1) * 0.01))
