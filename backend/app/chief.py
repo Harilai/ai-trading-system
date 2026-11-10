@@ -161,7 +161,11 @@ class ChiefAgent:
                     allow_experimental=self.allow_experimental_strategies,
                 )
                 if candidate is not None and not candidate.get("current_hold_signal", False):
-                    exit_reason = "validated strategy exit signal"
+                    exit_reason = (
+                        "experimental strategy exit signal"
+                        if str(position.get("strategy_id") or "").startswith("experimental:")
+                        else "validated strategy exit signal"
+                    )
             if exit_reason is None:
                 continue
 
