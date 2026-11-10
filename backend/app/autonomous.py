@@ -11,6 +11,7 @@ from uuid import uuid4
 from .config import settings
 from .fx import invert_fx_observation, validate_fx_observation
 from .market_data import MarketDataError
+from .portfolio import PortfolioError
 
 
 def utcnow() -> datetime:
@@ -89,6 +90,9 @@ class AutonomousStore:
                 db.execute('ALTER TABLE agent_state ADD COLUMN last_decision_enqueued_at TEXT')
             if 'last_equity_research_enqueued_at' not in columns:
                 db.execute('ALTER TABLE agent_state ADD COLUMN last_equity_research_enqueued_at TEXT')
+            task_columns = {row['name'] for row in db.execute('PRAGMA table_info(agent_tasks)')}
+            if 'lease_token' not in task_columns:
+                db.execute('ALTER TABLE agent_tasks ADD COLUMN lease_token TEXT')
         # Recover expired work on startup as well as during the worker loop.
         self.recover_expired_tasks()
 
@@ -110,7 +114,7 @@ class AutonomousStore:
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             recovered = db.execute(
-                "UPDATE agent_tasks SET status='pending', lease_until=NULL, updated_at=? "
+                "UPDATE agent_tasks SET status='pending', lease_until=NULL, lease_token=NULL, updated_at=? "
                 "WHERE status='running' AND (lease_until IS NULL OR lease_until < ?)",
                 (now, now),
             ).rowcount
@@ -255,40 +259,126 @@ class AutonomousStore:
             ).fetchone()
             if row is None:
                 return None
+            lease_token = str(uuid4())
             changed = db.execute(
-                "UPDATE agent_tasks SET status='running', attempts=attempts+1, lease_until=?, updated_at=? "
+                "UPDATE agent_tasks SET status='running', attempts=attempts+1, lease_until=?, lease_token=?, updated_at=? "
                 "WHERE id=? AND status='pending'",
-                (lease, now.isoformat(), row["id"]),
+                (lease, lease_token, now.isoformat(), row["id"]),
             ).rowcount
             if changed != 1:
                 return None
             task = dict(row)
             task["attempts"] += 1
+            task["lease_token"] = lease_token
             task["payload"] = json.loads(task["payload"])
             return task
 
-    def finish_task(self, task_id: str, result: dict[str, Any]) -> None:
+    def extend_task_lease(
+        self,
+        task_id: str,
+        lease_token: str,
+        lease_seconds: int = 120,
+    ) -> bool:
+        if not lease_token or lease_seconds < 1:
+            return False
+        now = utcnow()
+        lease = (now + timedelta(seconds=lease_seconds)).isoformat()
+        with self.connect() as db:
+            changed = db.execute(
+                "UPDATE agent_tasks SET lease_until=?, updated_at=? "
+                "WHERE id=? AND status='running' AND lease_token=? AND lease_until>=?",
+                (lease, now.isoformat(), task_id, lease_token, now.isoformat()),
+            ).rowcount
+        return changed == 1
+
+    def active_task_ids(self) -> set[str]:
         now = utcnow().isoformat()
         with self.connect() as db:
-            db.execute(
-                "UPDATE agent_tasks SET status='completed', result=?, lease_until=NULL, updated_at=? "
-                "WHERE id=? AND status='running'",
-                (json.dumps(result, ensure_ascii=False), now, task_id),
-            )
-        self.audit("task_completed", {"task_id": task_id, "result": result})
+            rows = db.execute(
+                "SELECT id FROM agent_tasks WHERE status='running' AND lease_until>=?",
+                (now,),
+            ).fetchall()
+        return {str(row["id"]) for row in rows}
 
-    def fail_task(self, task: dict[str, Any], error: str, max_attempts: int = 3) -> None:
+    def finish_task(
+        self,
+        task_id: str,
+        result: dict[str, Any],
+        lease_token: str,
+    ) -> bool:
+        if not lease_token:
+            return False
+        now = utcnow().isoformat()
+        with self.connect() as db:
+            changed = db.execute(
+                "UPDATE agent_tasks SET status='completed', result=?, lease_until=NULL, lease_token=NULL, updated_at=? "
+                "WHERE id=? AND status='running' AND lease_token=? AND lease_until>=?",
+                (json.dumps(result, ensure_ascii=False), now, task_id, lease_token, now),
+            ).rowcount
+        if changed != 1:
+            return False
+        self.audit("task_completed", {"task_id": task_id, "result": result})
+        return True
+
+    def fail_task(
+        self,
+        task: dict[str, Any],
+        error: str,
+        max_attempts: int = 3,
+    ) -> bool:
+        lease_token = task.get("lease_token")
+        if not lease_token:
+            return False
         now = utcnow()
         retry = task["attempts"] < max_attempts
         due = (now + timedelta(seconds=min(300, 15 * 2 ** (task["attempts"] - 1)))).isoformat()
         with self.connect() as db:
-            db.execute(
-                "UPDATE agent_tasks SET status=?, due_at=?, error=?, lease_until=NULL, updated_at=? "
-                "WHERE id=? AND status='running'",
-                ("pending" if retry else "failed", due, error[:2000], now.isoformat(), task["id"]),
-            )
+            changed = db.execute(
+                "UPDATE agent_tasks SET status=?, due_at=?, error=?, lease_until=NULL, lease_token=NULL, updated_at=? "
+                "WHERE id=? AND status='running' AND lease_token=? AND lease_until>=?",
+                ("pending" if retry else "failed", due, error[:2000], now.isoformat(), task["id"], lease_token, now.isoformat()),
+            ).rowcount
+        if changed != 1:
+            return False
         self.audit("task_retry_scheduled" if retry else "task_failed",
                    {"task_id": task["id"], "error": error[:500]})
+        return True
+
+    def task_state(self, task_id: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT id,kind,status,attempts,lease_until,lease_token FROM agent_tasks WHERE id=?",
+                (task_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def requeue_failed_decision_task(
+        self,
+        task_id: str,
+        max_total_attempts: int = 6,
+    ) -> bool:
+        """Retry a durable approved order with backoff and a finite recovery budget."""
+        now = utcnow()
+        with self.lock, self.connect() as db:
+            row = db.execute(
+                "SELECT attempts FROM agent_tasks WHERE id=? AND kind='decision_cycle' AND status='failed'",
+                (task_id,),
+            ).fetchone()
+            if row is None or int(row["attempts"]) >= max_total_attempts:
+                return False
+            attempts = int(row["attempts"])
+            delay = min(600, 30 * (2 ** max(0, attempts - 1)))
+            due = (now + timedelta(seconds=delay)).isoformat()
+            changed = db.execute(
+                "UPDATE agent_tasks SET status='pending',due_at=?,lease_until=NULL,lease_token=NULL,"
+                "error=NULL,updated_at=? WHERE id=? AND kind='decision_cycle' AND status='failed'",
+                (due, now.isoformat(), task_id),
+            ).rowcount
+        if changed:
+            self.audit("approved_order_task_requeued", {
+                "task_id": task_id, "attempts": attempts, "retry_delay_seconds": delay,
+            })
+        return changed == 1
 
     def remember(self, category: str, content: dict[str, Any], validated: bool = False) -> int:
         with self.connect() as db:
@@ -444,6 +534,7 @@ class AutonomousAgent:
         self.chief = chief
         self.portfolio = portfolio
         self.equity_research = equity_research
+        self.lease_seconds = 120
         self._task: asyncio.Task | None = None
         self._stopping = asyncio.Event()
 
@@ -465,17 +556,76 @@ class AutonomousAgent:
                 self.store.recover_expired_tasks()
                 state = self.store.state()
                 self.store.heartbeat()
+                if self.portfolio is not None:
+                    reconciliation = await asyncio.to_thread(
+                        self.portfolio.reconcile_order_intents
+                    )
+                    if reconciliation["reconciled_filled"] or reconciliation["reconciliation_required"]:
+                        self.store.audit("paper_order_reconciliation", reconciliation)
+                    for intent in await asyncio.to_thread(self.portfolio.list_order_intents, 1000):
+                        if intent["status"] != "risk_approved":
+                            continue
+                        client_order_id = intent["client_order_id"]
+                        fresh = await asyncio.to_thread(
+                            self.portfolio.order_intent_is_fresh,
+                            client_order_id,
+                            settings.max_data_age_seconds,
+                            settings.max_fx_data_age_seconds,
+                        )
+                        if not fresh:
+                            await asyncio.to_thread(
+                                self.portfolio.expire_order_intent,
+                                client_order_id,
+                                "Market or FX evidence became stale before the approved paper order was filled",
+                            )
+                            self.store.audit("approved_order_intent_expired", {
+                                "client_order_id": client_order_id,
+                                "reason": "stale_market_or_fx_evidence",
+                            })
+                            continue
+                        if self.store.requeue_failed_decision_task(client_order_id):
+                            continue
+                        task_state = self.store.task_state(client_order_id)
+                        exhausted = (
+                            task_state is None
+                            or task_state["status"] == "completed"
+                            or (
+                                task_state["status"] == "failed"
+                                and int(task_state["attempts"]) >= 6
+                            )
+                        )
+                        if exhausted:
+                            await asyncio.to_thread(
+                                self.portfolio.expire_order_intent,
+                                client_order_id,
+                                "Owning decision task is missing, completed inconsistently, or exhausted its recovery retry budget",
+                            )
+                            self.store.audit("approved_order_intent_expired", {
+                                "client_order_id": client_order_id,
+                                "task_state": task_state,
+                            })
                 if state["enabled"] and not state["emergency_stop"]:
                     self.store.schedule_decision_cycle(settings.decision_cycle_interval_seconds)
                     if self.equity_research is not None:
                         self.store.schedule_equity_research(settings.equity_research_interval_seconds)
-                    task = self.store.claim_due_task()
+                    task = self.store.claim_due_task(lease_seconds=self.lease_seconds)
                     if task:
+                        heartbeat = asyncio.create_task(self._heartbeat_task_lease(task))
                         try:
                             result = await self._execute(task)
-                            self.store.finish_task(task["id"], result)
+                            completed = self.store.finish_task(
+                                task["id"], result, task["lease_token"]
+                            )
+                            if not completed:
+                                self.store.audit("task_lease_lost", {"task_id": task["id"]})
                         except Exception as exc:
                             self.store.fail_task(task, str(exc))
+                        finally:
+                            heartbeat.cancel()
+                            try:
+                                await heartbeat
+                            except asyncio.CancelledError:
+                                pass
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -492,6 +642,28 @@ class AutonomousAgent:
                 )
             except asyncio.TimeoutError:
                 pass
+
+    async def _heartbeat_task_lease(self, task: dict[str, Any]) -> None:
+        interval = max(1.0, self.lease_seconds / 3)
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                extended = await asyncio.to_thread(
+                    self.store.extend_task_lease,
+                    task["id"],
+                    task["lease_token"],
+                    self.lease_seconds,
+                )
+            except Exception as exc:
+                try:
+                    self.store.audit("task_lease_heartbeat_error", {
+                        "task_id": task["id"], "error": str(exc)[:500],
+                    })
+                except Exception:
+                    pass
+                return
+            if not extended:
+                return
 
     async def _execute(self, task: dict[str, Any]) -> dict[str, Any]:
         if task["kind"] == "health_check":
@@ -524,12 +696,26 @@ class AutonomousAgent:
             if self.scout is None or self.chief is None or self.portfolio is None:
                 raise RuntimeError("Decision cycle dependencies are not configured")
 
-            # A retry after a process crash must not place a second paper order.
+            # Reconcile the durable intent against the trade ledger before doing
+            # any new research. A retry resumes the exact approved request.
+            await asyncio.to_thread(self.portfolio.reconcile_order_intents)
+            existing_intent = await asyncio.to_thread(
+                self.portfolio.get_order_intent,
+                task["id"],
+            )
             previous_order = await asyncio.to_thread(
                 self.portfolio.get_trade_by_client_order_id,
                 task["id"],
             )
+            if existing_intent is not None and existing_intent["status"] == "reconciliation_required":
+                raise RuntimeError(
+                    f"Order intent {task['id']} requires manual reconciliation; no replay is permitted"
+                )
             if previous_order is not None:
+                if existing_intent is not None and existing_intent["status"] != "filled":
+                    raise RuntimeError(
+                        f"Trade exists while order intent is {existing_intent['status']}; manual reconciliation required"
+                    )
                 result = {
                     "execution": "paper_order_replayed",
                     "order": previous_order,
@@ -537,6 +723,80 @@ class AutonomousAgent:
                 }
                 self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
                 return result
+            if existing_intent is not None:
+                if existing_intent["status"] == "risk_approved":
+                    fresh = await asyncio.to_thread(
+                        self.portfolio.order_intent_is_fresh,
+                        task["id"],
+                        settings.max_data_age_seconds,
+                        settings.max_fx_data_age_seconds,
+                    )
+                    if not fresh:
+                        await asyncio.to_thread(
+                            self.portfolio.expire_order_intent,
+                            task["id"],
+                            "Market or FX observation expired before the paper fill could be resumed",
+                        )
+                        result = {
+                            "execution": "expired",
+                            "order_intent": await asyncio.to_thread(
+                                self.portfolio.get_order_intent, task["id"],
+                            ),
+                        }
+                    else:
+                        try:
+                            resumed_order = await asyncio.to_thread(
+                                self.portfolio.execute,
+                                **existing_intent["request"],
+                            )
+                        except PortfolioError as exc:
+                            await asyncio.to_thread(
+                                self.portfolio.reject_order_intent,
+                                task["id"],
+                                str(exc),
+                            )
+                            result = {
+                                "execution": "rejected",
+                                "order_intent": await asyncio.to_thread(
+                                    self.portfolio.get_order_intent, task["id"],
+                                ),
+                            }
+                        else:
+                            result = {
+                                "execution": "paper_order_resumed",
+                                "order": resumed_order,
+                                "idempotent_replay": True,
+                            }
+                    self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
+                    return result
+                if existing_intent["status"] == "expired":
+                    result = {
+                        "execution": "expired",
+                        "order_intent": existing_intent,
+                    }
+                    self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
+                    return result
+                if existing_intent["status"] == "rejected":
+                    result = {
+                        "execution": "rejected",
+                        "order_intent": existing_intent,
+                    }
+                    self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
+                    return result
+                raise RuntimeError(
+                    f"Order intent {task['id']} is in {existing_intent['status']} state; manual reconciliation required"
+                )
+
+            unresolved_intents = [
+                item for item in await asyncio.to_thread(self.portfolio.list_order_intents, 1000)
+                if item["client_order_id"] != task["id"]
+                and item["status"] in ("risk_approved", "reconciliation_required")
+            ]
+            if unresolved_intents:
+                raise RuntimeError(
+                    "New decision cycle blocked by unresolved paper order intent "
+                    + unresolved_intents[0]["client_order_id"]
+                )
 
             unvalued_portfolio = await asyncio.to_thread(self.portfolio.snapshot)
             held_positions = [
@@ -633,24 +893,72 @@ class AutonomousAgent:
                 and decision.risk.accepted
             ):
                 proposal = decision.proposal
-                order = await asyncio.to_thread(
-                    self.portfolio.execute,
-                    proposal.symbol,
-                    proposal.side,
-                    decision.risk.approved_quantity,
-                    proposal.reference_price,
-                    settings.fee_rate,
-                    settings.slippage_rate,
-                    settings.max_order_fraction,
-                    settings.min_order_value_eur,
-                    client_order_id=task["id"],
-                    provider_id=proposal.provider_id,
-                    instrument_id=proposal.instrument_id,
-                    strategy_id=decision.strategy_id if proposal.side == "buy" else None,
-                    stop_loss=proposal.stop_loss,
-                    take_profit=proposal.take_profit,
+                proposal_symbol = proposal.symbol.strip().upper()
+                proposal_provider = proposal.provider_id or "ccxt:kraken"
+                proposal_instrument = proposal.instrument_id or f"{proposal_provider}:spot:{proposal_symbol}"
+                market_observation = next(
+                    (
+                        item.get("market", {})
+                        for item in scan.get("analyses", [])
+                        if str(item.get("market", {}).get("symbol", "")).upper() == proposal_symbol
+                        and str(item.get("market", {}).get("provider_id") or "ccxt:kraken") == proposal_provider
+                        and str(item.get("market", {}).get("instrument_id") or proposal_instrument) == proposal_instrument
+                    ),
+                    None,
                 )
-                execution = "paper_order"
+                try:
+                    market_timestamp = int(
+                        market_observation.get("ticker_timestamp_ms")
+                        or market_observation.get("timestamp")
+                    ) if market_observation else 0
+                except (TypeError, ValueError, OverflowError):
+                    market_timestamp = 0
+                if market_timestamp <= 0:
+                    raise RuntimeError("Risk-approved proposal has no valid source market timestamp")
+                execution_request = {
+                    "symbol": proposal.symbol,
+                    "side": proposal.side,
+                    "quantity": decision.risk.approved_quantity,
+                    "price": proposal.reference_price,
+                    "fee_rate": settings.fee_rate,
+                    "slippage_rate": settings.slippage_rate,
+                    "max_fraction": settings.max_order_fraction,
+                    "minimum": settings.min_order_value_eur,
+                    "client_order_id": task["id"],
+                    "provider_id": proposal.provider_id,
+                    "instrument_id": proposal.instrument_id,
+                    "strategy_id": decision.strategy_id if proposal.side == "buy" else None,
+                    "stop_loss": proposal.stop_loss,
+                    "take_profit": proposal.take_profit,
+                    "market_timestamp": market_timestamp,
+                    "quote_currency": str(
+                        market_observation.get("quote_currency")
+                        or (proposal_symbol.rsplit("/", 1)[-1] if "/" in proposal_symbol else "EUR")
+                    ).upper(),
+                    "fx_rate_to_eur": float(market_observation.get("fx_rate_to_eur", 1.0)),
+                    "fx_provider_id": market_observation.get("fx_provider_id"),
+                    "fx_timestamp": market_observation.get("fx_timestamp"),
+                }
+                await asyncio.to_thread(
+                    self.portfolio.record_order_intent,
+                    task["id"],
+                    execution_request,
+                    decision.model_dump(),
+                )
+                try:
+                    order = await asyncio.to_thread(
+                        self.portfolio.execute,
+                        **execution_request,
+                    )
+                except PortfolioError as exc:
+                    await asyncio.to_thread(
+                        self.portfolio.reject_order_intent,
+                        task["id"],
+                        str(exc),
+                    )
+                    execution = "rejected"
+                else:
+                    execution = "paper_order"
             result = {
                 "scan": scan,
                 "decision": decision.model_dump(),

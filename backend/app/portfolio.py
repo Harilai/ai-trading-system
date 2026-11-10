@@ -1,3 +1,4 @@
+import json
 import math
 import sqlite3
 from datetime import datetime, timezone
@@ -41,6 +42,29 @@ class PaperPortfolio:
                 "price REAL, fee REAL, total REAL, created_at TEXT, client_order_id TEXT)"
             )
             db.execute(
+                "CREATE TABLE IF NOT EXISTS order_intents ("
+                "client_order_id TEXT PRIMARY KEY, status TEXT NOT NULL, "
+                "request_json TEXT NOT NULL, decision_json TEXT, "
+                "trade_id INTEGER, rejection_reason TEXT, fill_json TEXT, "
+                "created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS order_intent_events ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, client_order_id TEXT NOT NULL, "
+                "from_status TEXT, to_status TEXT NOT NULL, details_json TEXT, "
+                "created_at TEXT NOT NULL)"
+            )
+            db.execute(
+                "CREATE TRIGGER IF NOT EXISTS order_intent_events_no_update "
+                "BEFORE UPDATE ON order_intent_events BEGIN "
+                "SELECT RAISE(ABORT, 'order intent events are append-only'); END"
+            )
+            db.execute(
+                "CREATE TRIGGER IF NOT EXISTS order_intent_events_no_delete "
+                "BEFORE DELETE ON order_intent_events BEGIN "
+                "SELECT RAISE(ABORT, 'order intent events are append-only'); END"
+            )
+            db.execute(
                 "CREATE TABLE IF NOT EXISTS currency_balances ("
                 "currency TEXT PRIMARY KEY, balance REAL NOT NULL CHECK(balance >= 0), "
                 "updated_at TEXT NOT NULL)"
@@ -77,6 +101,7 @@ class PaperPortfolio:
             self._ensure_column(db, "trades", "strategy_id", "TEXT")
             self._ensure_column(db, "trades", "stop_loss", "REAL")
             self._ensure_column(db, "trades", "take_profit", "REAL")
+            self._ensure_column(db, "trades", "market_timestamp", "INTEGER")
             self._ensure_column(db, "currency_conversions", "fee_eur", "REAL NOT NULL DEFAULT 0")
             self._ensure_column(
                 db, "withdrawal_requests", "non_reserved_component", "REAL NOT NULL DEFAULT 0"
@@ -325,6 +350,357 @@ class PaperPortfolio:
             ).fetchone()
         return dict(row) if row else None
 
+    @staticmethod
+    def _normalize_order_request(request: dict) -> dict:
+        if not isinstance(request, dict):
+            raise PortfolioError("Order request must be an object")
+        try:
+            symbol = str(request["symbol"]).strip().upper()
+            provider_id = str(request.get("provider_id") or "ccxt:kraken").strip()
+            client_order_id = request.get("client_order_id")
+            if client_order_id is not None:
+                client_order_id = str(client_order_id).strip()
+            quote_currency = str(
+                request.get("quote_currency")
+                or (symbol.rsplit("/", 1)[-1] if "/" in symbol else "EUR")
+            ).strip().upper()
+            instrument_id = request.get("instrument_id") or f"{provider_id}:spot:{symbol}"
+            normalized = {
+                "symbol": symbol,
+                "side": str(request["side"]).strip().lower(),
+                "quantity": float(request["quantity"]),
+                "price": float(request["price"]),
+                "fee_rate": float(request["fee_rate"]),
+                "slippage_rate": float(request["slippage_rate"]),
+                "max_fraction": float(request["max_fraction"]),
+                "minimum": float(request["minimum"]),
+                "client_order_id": client_order_id,
+                "provider_id": provider_id,
+                "instrument_id": str(instrument_id),
+                "strategy_id": request.get("strategy_id"),
+                "stop_loss": float(request["stop_loss"]) if request.get("stop_loss") is not None else None,
+                "take_profit": float(request["take_profit"]) if request.get("take_profit") is not None else None,
+                "quote_currency": quote_currency,
+                "fx_rate_to_eur": float(request.get("fx_rate_to_eur", 1.0)),
+                "fx_provider_id": request.get("fx_provider_id"),
+                "fx_timestamp": request.get("fx_timestamp"),
+                "market_timestamp": (
+                    int(request["market_timestamp"])
+                    if request.get("market_timestamp") is not None else None
+                ),
+            }
+            if quote_currency == "USD" and normalized["fx_timestamp"] is not None:
+                normalized["fx_timestamp"] = int(normalized["fx_timestamp"])
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise PortfolioError("Order request contains missing or invalid fields") from exc
+        if not symbol or not provider_id or not normalized["instrument_id"]:
+            raise PortfolioError("Order request requires symbol, provider and instrument identity")
+        return normalized
+
+    @staticmethod
+    def _canonical_json(value: dict) -> str:
+        try:
+            return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PortfolioError("Order intent must contain finite JSON-compatible values") from exc
+
+    def record_order_intent(
+        self,
+        client_order_id: str,
+        request: dict,
+        decision: dict | None = None,
+    ) -> dict:
+        """Durably persist a risk-approved paper order before attempting its fill."""
+        if not isinstance(client_order_id, str) or not client_order_id.strip():
+            raise PortfolioError("Order intent requires a non-blank client_order_id")
+        normalized_request = self._normalize_order_request(request)
+        if normalized_request.get("client_order_id") != client_order_id:
+            raise PortfolioError("Order intent request must carry the matching client_order_id")
+        request_json = self._canonical_json(normalized_request)
+        decision_json = self._canonical_json(decision) if decision is not None else None
+        stamp = datetime.now(timezone.utc).isoformat()
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            existing = db.execute(
+                "SELECT * FROM order_intents WHERE client_order_id=?",
+                (client_order_id,),
+            ).fetchone()
+            if existing:
+                if existing["request_json"] != request_json:
+                    raise PortfolioError("client_order_id was already used for a different order intent")
+                if decision_json is not None and existing["decision_json"] not in (None, decision_json):
+                    raise PortfolioError("client_order_id was already used for a different approved decision")
+                return self._decode_order_intent(existing)
+            if str(request.get("side", "")).lower() == "buy":
+                unresolved = db.execute(
+                    "SELECT client_order_id FROM order_intents "
+                    "WHERE status IN ('risk_approved','reconciliation_required') "
+                    "AND client_order_id != ? LIMIT 1",
+                    (client_order_id,),
+                ).fetchone()
+                if unresolved:
+                    raise PortfolioError(
+                        f"New entries are blocked by unresolved order intent {unresolved['client_order_id']}"
+                    )
+            trade = db.execute(
+                "SELECT id FROM trades WHERE client_order_id=?",
+                (client_order_id,),
+            ).fetchone()
+            status = "filled" if trade else "risk_approved"
+            db.execute(
+                "INSERT INTO order_intents(client_order_id,status,request_json,decision_json,trade_id,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (
+                    client_order_id, status, request_json, decision_json,
+                    int(trade["id"]) if trade else None, stamp, stamp,
+                ),
+            )
+            self._insert_order_intent_event(
+                db, client_order_id, None, status,
+                {"decision": decision, "trade_id": int(trade["id"]) if trade else None},
+                stamp,
+            )
+        return self.get_order_intent(client_order_id)
+
+    @staticmethod
+    def _insert_order_intent_event(
+        db,
+        client_order_id: str,
+        from_status: str | None,
+        to_status: str,
+        details: dict | None,
+        stamp: str,
+    ) -> None:
+        db.execute(
+            "INSERT INTO order_intent_events(client_order_id,from_status,to_status,details_json,created_at) "
+            "VALUES(?,?,?,?,?)",
+            (
+                client_order_id,
+                from_status,
+                to_status,
+                PaperPortfolio._canonical_json(details or {}),
+                stamp,
+            ),
+        )
+
+    @staticmethod
+    def _decode_order_intent(row) -> dict:
+        result = dict(row)
+        result["request"] = json.loads(result.pop("request_json"))
+        raw_decision = result.pop("decision_json")
+        result["decision"] = json.loads(raw_decision) if raw_decision else None
+        raw_fill = result.pop("fill_json")
+        result["fill"] = json.loads(raw_fill) if raw_fill else None
+        return result
+
+    def get_order_intent(self, client_order_id: str) -> dict | None:
+        if not isinstance(client_order_id, str) or not client_order_id.strip():
+            return None
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM order_intents WHERE client_order_id=?",
+                (client_order_id.strip(),),
+            ).fetchone()
+        return self._decode_order_intent(row) if row else None
+
+    def order_intent_is_fresh(
+        self,
+        client_order_id: str,
+        max_data_age_seconds: int,
+        max_fx_age_seconds: int,
+        now_ms: int | None = None,
+    ) -> bool:
+        intent = self.get_order_intent(client_order_id)
+        if not intent or intent["status"] != "risk_approved":
+            return False
+        request = intent["request"]
+        now = int(now_ms if now_ms is not None else datetime.now(timezone.utc).timestamp() * 1000)
+        try:
+            market_timestamp = int(request.get("market_timestamp"))
+            max_data_age = int(max_data_age_seconds) * 1000
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if market_timestamp <= 0 or market_timestamp > now or now - market_timestamp > max_data_age:
+            return False
+        if str(request.get("quote_currency") or "EUR").upper() == "USD":
+            try:
+                fx_timestamp = int(request.get("fx_timestamp"))
+                max_fx_age = int(max_fx_age_seconds) * 1000
+            except (TypeError, ValueError, OverflowError):
+                return False
+            if fx_timestamp <= 0 or fx_timestamp > now or now - fx_timestamp > max_fx_age:
+                return False
+        return True
+
+    def expire_order_intent(self, client_order_id: str, reason: str) -> bool:
+        if not isinstance(reason, str) or not reason.strip():
+            raise PortfolioError("Order intent expiry requires a reason")
+        with self.lock, self.connect() as db:
+            stamp = datetime.now(timezone.utc).isoformat()
+            current = db.execute(
+                "SELECT status FROM order_intents WHERE client_order_id=?",
+                (client_order_id,),
+            ).fetchone()
+            if current is None:
+                return False
+            if current["status"] == "expired":
+                return True
+            if current["status"] != "risk_approved":
+                return False
+            changed = db.execute(
+                "UPDATE order_intents SET status='expired',rejection_reason=?,updated_at=? "
+                "WHERE client_order_id=? AND status='risk_approved'",
+                (reason.strip()[:2000], stamp, client_order_id),
+            ).rowcount
+            if changed == 1:
+                self._insert_order_intent_event(
+                    db, client_order_id, "risk_approved", "expired",
+                    {"reason": reason.strip()[:500]}, stamp,
+                )
+            return changed == 1
+
+    def list_order_intent_events(self, client_order_id: str) -> list[dict]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM order_intent_events WHERE client_order_id=? ORDER BY id",
+                (client_order_id,),
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["details"] = json.loads(item.pop("details_json") or "{}")
+            result.append(item)
+        return result
+
+    def list_order_intents(self, limit: int = 100) -> list[dict]:
+        if not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise PortfolioError("Order intent limit must be between 1 and 1000")
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM order_intents ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [self._decode_order_intent(row) for row in rows]
+
+    def reject_order_intent(self, client_order_id: str, reason: str) -> None:
+        if not isinstance(reason, str) or not reason.strip():
+            raise PortfolioError("Order rejection requires a reason")
+        with self.lock, self.connect() as db:
+            stamp = datetime.now(timezone.utc).isoformat()
+            current = db.execute(
+                "SELECT status FROM order_intents WHERE client_order_id=?",
+                (client_order_id,),
+            ).fetchone()
+            if current is None:
+                raise PortfolioError("Order intent does not exist")
+            changed = db.execute(
+                "UPDATE order_intents SET status='rejected', rejection_reason=?, updated_at=? "
+                "WHERE client_order_id=? AND status='risk_approved'",
+                (reason.strip()[:2000], stamp, client_order_id),
+            ).rowcount
+            if changed == 1:
+                self._insert_order_intent_event(
+                    db, client_order_id, current["status"], "rejected",
+                    {"reason": reason.strip()[:500]}, stamp,
+                )
+            elif current["status"] != "rejected":
+                raise PortfolioError("Order intent cannot transition to rejected from its current state")
+
+    @staticmethod
+    def _trade_matches_order_intent(trade, request: dict) -> bool:
+        try:
+            side = str(request["side"]).lower()
+            quantity = float(request["quantity"])
+            reference_price = float(request["price"])
+            fee_rate = float(request["fee_rate"])
+            slippage_rate = float(request["slippage_rate"])
+            fill_price = reference_price * (1 + slippage_rate if side == "buy" else 1 - slippage_rate)
+            gross = quantity * fill_price
+            fee = gross * fee_rate
+            total = gross + fee if side == "buy" else gross - fee
+            expected = {
+                "symbol": str(request["symbol"]).upper(),
+                "side": side,
+                "provider_id": request["provider_id"],
+                "instrument_id": request["instrument_id"],
+                "quote_currency": request["quote_currency"],
+                "strategy_id": request.get("strategy_id"),
+                "fx_provider_id": request.get("fx_provider_id"),
+                "fx_timestamp": request.get("fx_timestamp"),
+                "market_timestamp": request.get("market_timestamp"),
+                "stop_loss": request.get("stop_loss"),
+                "take_profit": request.get("take_profit"),
+            }
+            if any(trade.get(key) != value for key, value in expected.items()):
+                return False
+            numeric = (
+                ("quantity", quantity),
+                ("price", fill_price),
+                ("fee", fee),
+                ("total", total),
+                ("total_eur", total * float(request.get("fx_rate_to_eur", 1.0))),
+                ("fx_rate_to_eur", float(request.get("fx_rate_to_eur", 1.0))),
+            )
+            return all(
+                math.isclose(float(trade[key]), value, rel_tol=1e-12, abs_tol=1e-12)
+                for key, value in numeric
+            )
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return False
+
+    def reconcile_order_intents(self) -> dict:
+        """Reconcile persisted paper intents against the atomic trade ledger."""
+        now = datetime.now(timezone.utc).isoformat()
+        filled = 0
+        uncertain = 0
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            rows = db.execute(
+                "SELECT client_order_id,status,trade_id,request_json FROM order_intents "
+                "WHERE status IN ('risk_approved','filled','rejected','expired','reconciliation_required')"
+            ).fetchall()
+            for row in rows:
+                trade = db.execute(
+                    "SELECT * FROM trades WHERE client_order_id=?",
+                    (row["client_order_id"],),
+                ).fetchone()
+                reason = None
+                if trade is not None:
+                    request = json.loads(row["request_json"])
+                    if row["status"] in ("rejected", "expired"):
+                        reason = f"Trade exists for terminal {row['status']} order intent"
+                    elif not self._trade_matches_order_intent(dict(trade), request):
+                        reason = "Trade ledger row does not match the immutable approved order intent"
+                elif row["status"] == "filled":
+                    reason = "Filled intent has no matching trade ledger row"
+
+                if reason:
+                    if row["status"] != "reconciliation_required":
+                        db.execute(
+                            "UPDATE order_intents SET status='reconciliation_required',"
+                            "rejection_reason=?,updated_at=? WHERE client_order_id=?",
+                            (reason, now, row["client_order_id"]),
+                        )
+                        self._insert_order_intent_event(
+                            db, row["client_order_id"], row["status"], "reconciliation_required",
+                            {"reason": reason, "trade_id": trade["id"] if trade is not None else None}, now,
+                        )
+                    uncertain += 1
+                elif trade is not None and (
+                    row["status"] != "filled" or row["trade_id"] != trade["id"]
+                ):
+                    db.execute(
+                        "UPDATE order_intents SET status='filled',trade_id=?,rejection_reason=NULL,updated_at=? "
+                        "WHERE client_order_id=?",
+                        (trade["id"], now, row["client_order_id"]),
+                    )
+                    self._insert_order_intent_event(
+                        db, row["client_order_id"], row["status"], "filled",
+                        {"trade_id": trade["id"], "reconciled": True}, now,
+                    )
+                    filled += 1
+        return {"reconciled_filled": filled, "reconciliation_required": uncertain}
+
     def execute(
         self,
         symbol,
@@ -346,6 +722,7 @@ class PaperPortfolio:
         fx_rate_to_eur: float = 1.0,
         fx_provider_id: str | None = None,
         fx_timestamp: int | None = None,
+        market_timestamp: int | None = None,
     ):
         if not isinstance(symbol, str) or not isinstance(provider_id, str):
             raise PortfolioError("Symbol and provider identity must be text")
@@ -380,6 +757,8 @@ class PaperPortfolio:
                 stop_loss = float(stop_loss)
             if take_profit is not None:
                 take_profit = float(take_profit)
+            if market_timestamp is not None:
+                market_timestamp = int(market_timestamp)
         except (TypeError, ValueError, OverflowError) as exc:
             raise PortfolioError("Execution values must be finite numbers") from exc
         numeric_values = [quantity, price, fee_rate, slippage_rate, max_fraction, minimum, fx_rate_to_eur]
@@ -422,9 +801,48 @@ class PaperPortfolio:
         if gross < minimum:
             raise PortfolioError(f"Minimum order value is {minimum:.2f} {quote_currency}")
 
+        request_payload = self._normalize_order_request({
+            "symbol": symbol, "side": side, "quantity": quantity, "price": price,
+            "fee_rate": fee_rate, "slippage_rate": slippage_rate,
+            "max_fraction": max_fraction, "minimum": minimum,
+            "client_order_id": client_order_id, "provider_id": provider_id,
+            "instrument_id": instrument_id, "strategy_id": strategy_id,
+            "stop_loss": stop_loss, "take_profit": take_profit,
+            "quote_currency": quote_currency, "fx_rate_to_eur": fx_rate_to_eur,
+            "fx_provider_id": fx_provider_id, "fx_timestamp": fx_timestamp,
+            "market_timestamp": market_timestamp,
+        })
+        request_json = self._canonical_json(request_payload) if client_order_id else None
+
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            intent_row = None
+            if side == "buy":
+                unresolved = db.execute(
+                    "SELECT client_order_id,status FROM order_intents "
+                    "WHERE status IN ('risk_approved','reconciliation_required') "
+                    "AND client_order_id != ? LIMIT 1",
+                    (client_order_id or "",),
+                ).fetchone()
+                if unresolved:
+                    raise PortfolioError(
+                        f"New entries are blocked by unresolved order intent {unresolved['client_order_id']}"
+                    )
             if client_order_id:
+                intent_row = db.execute(
+                    "SELECT * FROM order_intents WHERE client_order_id=?",
+                    (client_order_id,),
+                ).fetchone()
+                if intent_row:
+                    if intent_row["request_json"] != request_json:
+                        raise PortfolioError("client_order_id was already used for a different order intent")
+                    if intent_row["status"] == "rejected":
+                        raise PortfolioError("This order intent was already rejected")
+                    if intent_row["status"] == "expired":
+                        raise PortfolioError("This order intent expired and cannot be executed")
+                    if intent_row["status"] == "reconciliation_required":
+                        raise PortfolioError("This order intent requires reconciliation before execution")
+
                 existing = db.execute(
                     "SELECT * FROM trades WHERE client_order_id=?",
                     (client_order_id,),
@@ -438,27 +856,58 @@ class PaperPortfolio:
                         and prior["instrument_id"] == instrument_id
                         and prior["quote_currency"] == quote_currency
                         and prior.get("strategy_id") == strategy_id
-                        and (
-                            (prior.get("stop_loss") is None and stop_loss is None)
-                            or (
-                                prior.get("stop_loss") is not None and stop_loss is not None
-                                and math.isclose(float(prior["stop_loss"]), stop_loss, rel_tol=1e-12, abs_tol=1e-12)
-                            )
-                        )
-                        and (
-                            (prior.get("take_profit") is None and take_profit is None)
-                            or (
-                                prior.get("take_profit") is not None and take_profit is not None
-                                and math.isclose(float(prior["take_profit"]), take_profit, rel_tol=1e-12, abs_tol=1e-12)
-                            )
-                        )
                         and math.isclose(float(prior["quantity"]), quantity, rel_tol=1e-12, abs_tol=1e-12)
+                        and math.isclose(float(prior["price"]), fill, rel_tol=1e-12, abs_tol=1e-12)
+                        and math.isclose(float(prior["fee"]), fee, rel_tol=1e-12, abs_tol=1e-12)
+                        and math.isclose(float(prior["total"]), total, rel_tol=1e-12, abs_tol=1e-12)
+                        and math.isclose(float(prior["fx_rate_to_eur"]), fx_rate_to_eur, rel_tol=1e-12, abs_tol=1e-12)
+                        and prior.get("fx_provider_id") == fx_provider_id
+                        and prior.get("fx_timestamp") == fx_timestamp
+                        and prior.get("market_timestamp") == market_timestamp
+                        and prior.get("stop_loss") == stop_loss
+                        and prior.get("take_profit") == take_profit
                     )
                     if not same_intent:
                         raise PortfolioError("client_order_id was already used for a different paper order")
+                    stamp = datetime.now(timezone.utc).isoformat()
+                    if not intent_row:
+                        db.execute(
+                            "INSERT INTO order_intents(client_order_id,status,request_json,trade_id,fill_json,created_at,updated_at) "
+                            "VALUES(?,'filled',?,?,?,?,?)",
+                            (client_order_id, request_json, prior["id"], self._canonical_json(prior), stamp, stamp),
+                        )
+                        self._insert_order_intent_event(
+                            db, client_order_id, None, "filled",
+                            {"trade_id": prior["id"], "legacy_trade_replay": True}, stamp,
+                        )
+                    else:
+                        db.execute(
+                            "UPDATE order_intents SET status='filled',trade_id=?,fill_json=?,updated_at=? "
+                            "WHERE client_order_id=?",
+                            (prior["id"], self._canonical_json(prior), stamp, client_order_id),
+                        )
+                        if intent_row["status"] != "filled":
+                            self._insert_order_intent_event(
+                                db, client_order_id, intent_row["status"], "filled",
+                                {"trade_id": prior["id"], "reconciled": True}, stamp,
+                            )
                     prior["mode"] = "paper"
                     prior["idempotent_replay"] = True
                     return prior
+
+                if intent_row and intent_row["status"] == "filled":
+                    raise PortfolioError("Filled order intent has no matching trade; reconciliation is required")
+                if not intent_row:
+                    stamp = datetime.now(timezone.utc).isoformat()
+                    db.execute(
+                        "INSERT INTO order_intents(client_order_id,status,request_json,created_at,updated_at) "
+                        "VALUES(?,'risk_approved',?,?,?)",
+                        (client_order_id, request_json, stamp, stamp),
+                    )
+                    self._insert_order_intent_event(
+                        db, client_order_id, None, "risk_approved",
+                        {"source": "atomic_manual_paper_execution", "request": request_payload}, stamp,
+                    )
 
             db.execute(
                 "INSERT OR IGNORE INTO currency_balances(currency,balance,updated_at) VALUES(?,0,?)",
@@ -553,11 +1002,11 @@ class PaperPortfolio:
 
             stamp = datetime.now(timezone.utc).isoformat()
             cursor = db.execute(
-                "INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at,client_order_id,provider_id,instrument_id,quote_currency,fx_rate_to_eur,total_eur,fx_provider_id,fx_timestamp,strategy_id,stop_loss,take_profit) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (symbol, side, quantity, fill, fee, total, stamp, client_order_id, provider_id, instrument_id, quote_currency, fx_rate_to_eur, total_eur, fx_provider_id, fx_timestamp, strategy_id, stop_loss, take_profit),
+                "INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at,client_order_id,provider_id,instrument_id,quote_currency,fx_rate_to_eur,total_eur,fx_provider_id,fx_timestamp,strategy_id,stop_loss,take_profit,market_timestamp) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (symbol, side, quantity, fill, fee, total, stamp, client_order_id, provider_id, instrument_id, quote_currency, fx_rate_to_eur, total_eur, fx_provider_id, fx_timestamp, strategy_id, stop_loss, take_profit, market_timestamp),
             )
-            return {
+            result = {
                 "id": cursor.lastrowid,
                 "symbol": symbol,
                 "provider_id": provider_id,
@@ -572,6 +1021,7 @@ class PaperPortfolio:
                 "total_eur": total_eur,
                 "fx_provider_id": fx_provider_id,
                 "fx_timestamp": fx_timestamp,
+                "market_timestamp": market_timestamp,
                 "strategy_id": strategy_id,
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
@@ -580,6 +1030,18 @@ class PaperPortfolio:
                 "mode": "paper",
                 "idempotent_replay": False,
             }
+            if client_order_id:
+                changed = db.execute(
+                    "UPDATE order_intents SET status='filled',trade_id=?,fill_json=?,rejection_reason=NULL,updated_at=? "
+                    "WHERE client_order_id=? AND status='risk_approved'",
+                    (cursor.lastrowid, self._canonical_json(result), stamp, client_order_id),
+                ).rowcount
+                if changed == 1:
+                    self._insert_order_intent_event(
+                        db, client_order_id, "risk_approved", "filled",
+                        {"trade_id": cursor.lastrowid, "fill": result}, stamp,
+                    )
+            return result
 
     def convert_currency(
         self,

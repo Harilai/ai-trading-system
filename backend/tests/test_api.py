@@ -748,3 +748,72 @@ def test_fx_conversion_api_supports_usd_to_eur_using_inverse_rate(monkeypatch, t
     assert payload["rate"] == pytest.approx(1 / 1.1)
     assert payload["net_to_amount"] == pytest.approx((10 / 1.1) * 0.999)
     assert payload["fee_eur"] == pytest.approx(10 / 1.1 * 0.001)
+
+
+def test_order_intent_history_api_requires_owner_token_and_returns_audit_events(monkeypatch, tmp_path):
+    paper = PaperPortfolio(str(tmp_path / "order-intents-api.db"), initial_cash=20)
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "api-order-intent",
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": "ema_12_26", "stop_loss": 9800, "take_profit": 10400,
+    }
+    paper.record_order_intent("api-order-intent", request, {"risk_accepted": True})
+    monkeypatch.setattr("app.main.portfolio", paper)
+    headers = configure_order_auth(monkeypatch)
+
+    unauthorized = client.get(
+        "/api/agent/order-intents",
+        params={"client_order_id": "api-order-intent"},
+    )
+    assert unauthorized.status_code == 401
+
+    fill = paper.execute(**paper.get_order_intent("api-order-intent")["request"])
+    response = client.get(
+        "/api/agent/order-intents",
+        params={"client_order_id": "api-order-intent"},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["item"]["status"] == "filled"
+    assert payload["item"]["trade_id"] == fill["id"]
+    assert [event["to_status"] for event in payload["events"]] == ["risk_approved", "filled"]
+
+
+def test_manual_crypto_order_replay_returns_original_fill_without_new_quote(monkeypatch, tmp_path):
+    from datetime import datetime, timezone
+
+    headers = configure_order_auth(monkeypatch)
+    paper = PaperPortfolio(str(tmp_path / "crypto-order-replay.db"), initial_cash=100)
+    monkeypatch.setattr("app.main.portfolio", paper)
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+    calls = []
+
+    def ticker(symbol, provider_id=None):
+        calls.append(symbol)
+        last = 10000 if len(calls) == 1 else 11000
+        return {
+            "symbol": symbol, "last": last, "bid": last - 1, "ask": last + 1,
+            "timestamp": timestamp, "provider_id": provider_id,
+        }
+
+    monkeypatch.setattr("app.main.market.ticker", ticker)
+    payload = {
+        "symbol": "BTC/EUR", "provider_id": "ccxt:kraken",
+        "side": "buy", "quantity": 0.001, "stop_loss": 9800,
+        "client_order_id": "crypto-manual-replay",
+    }
+    first = client.post("/api/orders", json=payload, headers=headers)
+    replay = client.post("/api/orders", json=payload, headers=headers)
+
+    assert first.status_code == 201, first.text
+    assert replay.status_code == 201, replay.text
+    assert replay.json()["id"] == first.json()["id"]
+    assert replay.json()["idempotent_replay"] is True
+    assert len(calls) == 1
+    assert len(paper.history()) == 1
+    assert [event["to_status"] for event in paper.list_order_intent_events("crypto-manual-replay")] == [
+        "risk_approved", "filled",
+    ]

@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -21,7 +21,7 @@ def test_task_queue_persists_and_completes(tmp_path):
     restarted = AutonomousStore(path)
     claimed = restarted.claim_due_task()
     assert claimed["id"] == task["id"]
-    restarted.finish_task(task["id"], {"ok": True})
+    assert restarted.finish_task(task["id"], {"ok": True}, claimed["lease_token"]) is True
     assert restarted.overview()["tasks"][0]["status"] == "completed"
 
 
@@ -93,6 +93,15 @@ def test_decision_cycle_persists_proposal_only_result(tmp_path):
         def snapshot(self, valuation_prices=None):
             return {"cash": 20}
 
+        def reconcile_order_intents(self):
+            return {"reconciled_filled": 0, "reconciliation_required": 0}
+
+        def get_order_intent(self, client_order_id):
+            return None
+
+        def list_order_intents(self, limit=100):
+            return []
+
         def get_trade_by_client_order_id(self, client_order_id):
             return None
 
@@ -109,12 +118,25 @@ def test_decision_cycle_persists_proposal_only_result(tmp_path):
 def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
     import asyncio
 
+    from datetime import datetime, timezone
     from app.agents.contracts import RiskDecision, TradeProposal
     from app.chief import ChiefDecision
 
+    market_timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+
     class FakeScout:
         def scan(self, include_symbols=None):
-            return {"analyses": [], "included_positions": include_symbols or []}
+            return {
+                "analyses": [{
+                    "market": {
+                        "symbol": "BTC/EUR",
+                        "provider_id": "ccxt:kraken",
+                        "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+                        "ticker_timestamp_ms": market_timestamp,
+                    },
+                }],
+                "included_positions": include_symbols or [],
+            }
 
     class FakeChief:
         def decide(self, scan, portfolio):
@@ -145,10 +167,33 @@ def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
     class FakePortfolio:
         def __init__(self):
             self.order = None
+            self.intent = None
             self.execute_calls = 0
 
         def snapshot(self, valuation_prices=None):
             return {"cash": 20, "equity": 20, "positions": []}
+
+        def reconcile_order_intents(self):
+            return {"reconciled_filled": 0, "reconciliation_required": 0}
+
+        def get_order_intent(self, client_order_id):
+            return self.intent
+
+        def list_order_intents(self, limit=100):
+            return [self.intent] if self.intent else []
+
+        def record_order_intent(self, client_order_id, request, decision):
+            self.intent = {
+                "client_order_id": client_order_id,
+                "status": "risk_approved",
+                "request": request,
+                "decision": decision,
+            }
+            return self.intent
+
+        def reject_order_intent(self, client_order_id, reason):
+            self.intent["status"] = "rejected"
+            self.intent["rejection_reason"] = reason
 
         def get_trade_by_client_order_id(self, client_order_id):
             if self.order and self.order["client_order_id"] == client_order_id:
@@ -158,13 +203,14 @@ def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
         def execute(self, *args, **kwargs):
             self.execute_calls += 1
             self.order = {
-                "symbol": args[0],
-                "side": args[1],
+                "symbol": kwargs["symbol"],
+                "side": kwargs["side"],
                 "client_order_id": kwargs["client_order_id"],
                 "strategy_id": kwargs["strategy_id"],
                 "stop_loss": kwargs["stop_loss"],
                 "take_profit": kwargs["take_profit"],
             }
+            self.intent["status"] = "filled"
             return self.order
 
     store = AutonomousStore(str(tmp_path / "paper-cycle.db"))
@@ -187,7 +233,9 @@ def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
 
 def test_end_to_end_paper_buy_then_stop_loss_exit(tmp_path):
     import asyncio
+    from datetime import datetime, timezone
 
+    market_timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
     from app.chief import ChiefAgent
     from app.portfolio import PaperPortfolio
 
@@ -205,6 +253,7 @@ def test_end_to_end_paper_buy_then_stop_loss_exit(tmp_path):
                             "ask": 100.0,
                             "bid": 99.9,
                             "quote_volume_24h": 10000,
+                            "ticker_timestamp_ms": market_timestamp,
                         },
                         "analysis": {"close": 100.0, "indicators": {"atr_14": 1.0}},
                         "strategy_research": {
@@ -233,6 +282,7 @@ def test_end_to_end_paper_buy_then_stop_loss_exit(tmp_path):
                         "ask": 97.1,
                         "bid": 97.0,
                         "quote_volume_24h": 10000,
+                        "ticker_timestamp_ms": market_timestamp,
                     },
                     "analysis": {"close": 97.0, "indicators": {"atr_14": 1.0}},
                     "strategy_research": {"recommended_strategy": None, "candidates": []},
@@ -284,7 +334,7 @@ def test_scheduler_respects_interval_and_enqueues_again_after_due_time(tmp_path)
     store.set_enabled(True)
     first = store.schedule_decision_cycle(300)
     claimed = store.claim_due_task()
-    store.finish_task(claimed["id"], {"execution": "no_order"})
+    assert store.finish_task(claimed["id"], {"execution": "no_order"}, claimed["lease_token"]) is True
 
     assert store.schedule_decision_cycle(300) is None
     with store.connect() as db:
@@ -321,7 +371,7 @@ def test_equity_research_scheduler_is_independent_and_low_frequency(tmp_path):
 
     claimed = store.claim_due_task()
     assert claimed["kind"] == "equity_research"
-    store.finish_task(claimed["id"], {"analysed": 2})
+    assert store.finish_task(claimed["id"], {"analysed": 2}, claimed["lease_token"]) is True
     assert store.schedule_equity_research(21600) is None
     with store.connect() as db:
         db.execute(
@@ -586,3 +636,227 @@ def test_autonomous_crypto_cycle_values_usd_cash_with_fresh_fx(tmp_path):
     assert chief.portfolio_snapshot["valuation_complete"] is True
     assert chief.portfolio_snapshot["equity"] == pytest.approx(100)
     assert chief.portfolio_snapshot["fx_observations"]["USD"]["provider_id"] == "twelve_data"
+
+
+def test_old_worker_cannot_finish_or_fail_after_lease_reclaim(tmp_path):
+    store = AutonomousStore(str(tmp_path / "lease-fencing.db"))
+    task = store.enqueue("health_check", {})
+    old_claim = store.claim_due_task()
+    assert old_claim["lease_token"]
+
+    with store.connect() as db:
+        db.execute(
+            "UPDATE agent_tasks SET lease_until='2000-01-01T00:00:00+00:00' WHERE id=?",
+            (task["id"],),
+        )
+    assert store.recover_expired_tasks() == 1
+    new_claim = store.claim_due_task()
+    assert new_claim["lease_token"] != old_claim["lease_token"]
+
+    assert store.finish_task(task["id"], {"from": "old"}, old_claim["lease_token"]) is False
+    assert store.fail_task(old_claim, "stale worker failure") is False
+    assert store.finish_task(task["id"], {"from": "new"}, new_claim["lease_token"]) is True
+    assert store.overview()["tasks"][0]["status"] == "completed"
+
+
+def test_task_lease_heartbeat_extends_only_the_current_claim(tmp_path):
+    store = AutonomousStore(str(tmp_path / "lease-heartbeat.db"))
+    task = store.enqueue("health_check", {})
+    claimed = store.claim_due_task(lease_seconds=5)
+    assert store.active_task_ids() == {task["id"]}
+    assert store.extend_task_lease(task["id"], claimed["lease_token"], 120) is True
+    assert store.extend_task_lease(task["id"], "wrong-token", 120) is False
+
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT lease_until,lease_token FROM agent_tasks WHERE id=?",
+            (task["id"],),
+        ).fetchone()
+    assert row["lease_token"] == claimed["lease_token"]
+    assert (datetime.fromisoformat(row["lease_until"]) - utcnow()).total_seconds() > 60
+
+
+def test_recovered_task_clears_old_lease_token(tmp_path):
+    store = AutonomousStore(str(tmp_path / "lease-recover.db"))
+    task = store.enqueue("health_check", {})
+    first = store.claim_due_task()
+    with store.connect() as db:
+        db.execute(
+            "UPDATE agent_tasks SET lease_until='2000-01-01T00:00:00+00:00' WHERE id=?",
+            (task["id"],),
+        )
+    assert store.recover_expired_tasks() == 1
+    with store.connect() as db:
+        row = db.execute("SELECT lease_token FROM agent_tasks WHERE id=?", (task["id"],)).fetchone()
+    assert row["lease_token"] is None
+    second = store.claim_due_task()
+    assert second["lease_token"] != first["lease_token"]
+
+
+def test_expired_lease_cannot_be_renewed_or_completed_before_reclaim(tmp_path):
+    store = AutonomousStore(str(tmp_path / "expired-lease.db"))
+    task = store.enqueue("health_check", {})
+    claimed = store.claim_due_task()
+    with store.connect() as db:
+        db.execute(
+            "UPDATE agent_tasks SET lease_until='2000-01-01T00:00:00+00:00' WHERE id=?",
+            (task["id"],),
+        )
+    assert store.extend_task_lease(task["id"], claimed["lease_token"], 120) is False
+    assert store.finish_task(task["id"], {"ok": True}, claimed["lease_token"]) is False
+    assert store.fail_task(claimed, "late failure") is False
+
+
+def test_legacy_task_table_migrates_lease_token_column(tmp_path):
+    import sqlite3
+
+    path = str(tmp_path / "legacy-agent.db")
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "CREATE TABLE agent_tasks ("
+            "id TEXT PRIMARY KEY,kind TEXT NOT NULL,payload TEXT NOT NULL,status TEXT NOT NULL,"
+            "due_at TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,lease_until TEXT,"
+            "result TEXT,error TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)"
+        )
+    store = AutonomousStore(path)
+    with store.connect() as db:
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(agent_tasks)")}
+    assert "lease_token" in columns
+
+
+def test_decision_cycle_resumes_persisted_risk_approved_intent_without_rescanning(tmp_path):
+    import asyncio
+    from datetime import datetime, timezone
+
+    from app.portfolio import PaperPortfolio
+
+    market_timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+    path = str(tmp_path / "resume-approved-order.db")
+    task_id = "resume-approved-task"
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": task_id,
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": "ema_12_26", "stop_loss": 9800, "take_profit": 10400,
+        "market_timestamp": market_timestamp,
+    }
+    portfolio = PaperPortfolio(path, 20)
+    portfolio.record_order_intent(
+        task_id, request, {"action": "buy", "risk": {"accepted": True}},
+    )
+
+    class ScoutMustNotRescan:
+        def scan(self, *args, **kwargs):
+            raise AssertionError("A persisted approved intent must resume without new market research")
+
+    store = AutonomousStore(path)
+    worker = AutonomousAgent(
+        store, scout=ScoutMustNotRescan(), chief=object(), portfolio=portfolio,
+    )
+    result = asyncio.run(worker._execute({
+        "id": task_id, "kind": "decision_cycle", "payload": {},
+    }))
+
+    assert result["execution"] == "paper_order_resumed"
+    assert result["order"]["client_order_id"] == task_id
+    assert portfolio.get_order_intent(task_id)["status"] == "filled"
+    assert len(portfolio.history()) == 1
+
+
+def test_failed_decision_task_is_requeued_when_approved_order_is_unresolved(tmp_path):
+    store = AutonomousStore(str(tmp_path / "requeue.db"))
+    task = store.enqueue("decision_cycle", {}, due_at=utcnow() - timedelta(seconds=1))
+    claimed = store.claim_due_task()
+    assert claimed["id"] == task["id"]
+    store.fail_task(claimed, "temporary database interruption", max_attempts=1)
+    assert store.overview()["tasks"][0]["status"] == "failed"
+
+    assert store.requeue_failed_decision_task(task["id"]) is True
+    recovered = store.overview()["tasks"][0]
+    assert recovered["status"] == "pending"
+    assert recovered["attempts"] == 1
+    assert store.requeue_failed_decision_task(task["id"]) is False
+
+
+def test_failed_decision_task_requeue_has_a_finite_attempt_budget(tmp_path):
+    store = AutonomousStore(str(tmp_path / "requeue-budget.db"))
+    task = store.enqueue("decision_cycle", {}, due_at=utcnow() - timedelta(seconds=1))
+    claimed = store.claim_due_task()
+    store.fail_task(claimed, "temporary failure", max_attempts=1)
+    with store.connect() as db:
+        db.execute(
+            "UPDATE agent_tasks SET attempts=6 WHERE id=?",
+            (task["id"],),
+        )
+    assert store.requeue_failed_decision_task(task["id"], max_total_attempts=6) is False
+    state = store.task_state(task["id"])
+    assert state["status"] == "failed"
+    assert state["attempts"] == 6
+
+
+def test_decision_cycle_blocks_new_scan_when_another_intent_needs_reconciliation(tmp_path):
+    import asyncio
+
+    from app.portfolio import PaperPortfolio, PortfolioError
+
+    path = str(tmp_path / "blocked-new-entry.db")
+    portfolio = PaperPortfolio(path, 20)
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "older-unresolved-intent",
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": None, "stop_loss": None, "take_profit": None,
+    }
+    portfolio.record_order_intent(
+        "older-unresolved-intent", request, {"risk_accepted": True},
+    )
+
+    class ScoutMustNotRun:
+        def scan(self, *args, **kwargs):
+            raise AssertionError("New market scan must be blocked while another intent is unresolved")
+
+    worker = AutonomousAgent(
+        AutonomousStore(path), scout=ScoutMustNotRun(), chief=object(), portfolio=portfolio,
+    )
+    with pytest.raises(RuntimeError, match="blocked by unresolved"):
+        asyncio.run(worker._execute({
+            "id": "new-decision-task", "kind": "decision_cycle", "payload": {},
+        }))
+
+
+def test_decision_cycle_expires_stale_approved_intent_instead_of_filling(tmp_path):
+    import asyncio
+    from datetime import datetime, timezone
+
+    from app.portfolio import PaperPortfolio
+
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    task_id = "stale-approved-task"
+    path = str(tmp_path / "stale-approved-order.db")
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": task_id,
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": "ema_12_26", "stop_loss": 9800, "take_profit": 10400,
+        "market_timestamp": now_ms - 600_000,
+    }
+    portfolio = PaperPortfolio(path, 20)
+    portfolio.record_order_intent(task_id, request, {"action": "buy", "risk": {"accepted": True}})
+
+    class ScoutMustNotRescan:
+        def scan(self, *args, **kwargs):
+            raise AssertionError("Stale approved intent must expire without new scan")
+
+    worker = AutonomousAgent(
+        AutonomousStore(path), scout=ScoutMustNotRescan(), chief=object(), portfolio=portfolio,
+    )
+    result = asyncio.run(worker._execute({
+        "id": task_id, "kind": "decision_cycle", "payload": {},
+    }))
+
+    assert result["execution"] == "expired"
+    assert portfolio.get_order_intent(task_id)["status"] == "expired"
+    assert portfolio.history() == []
