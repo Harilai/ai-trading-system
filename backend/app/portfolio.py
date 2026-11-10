@@ -92,6 +92,7 @@ class PaperPortfolio:
             self._ensure_column(db, "trades", "stop_loss", "REAL")
             self._ensure_column(db, "trades", "take_profit", "REAL")
             self._ensure_column(db, "trades", "market_timestamp", "INTEGER")
+            self._ensure_column(db, "trades", "market_timestamp", "INTEGER")
             self._ensure_column(db, "currency_conversions", "fee_eur", "REAL NOT NULL DEFAULT 0")
             self._ensure_column(
                 db, "withdrawal_requests", "non_reserved_component", "REAL NOT NULL DEFAULT 0"
@@ -647,6 +648,7 @@ class PaperPortfolio:
         fx_rate_to_eur: float = 1.0,
         fx_provider_id: str | None = None,
         fx_timestamp: int | None = None,
+        market_timestamp: int | None = None,
     ):
         if not isinstance(symbol, str) or not isinstance(provider_id, str):
             raise PortfolioError("Symbol and provider identity must be text")
@@ -691,6 +693,14 @@ class PaperPortfolio:
             raise PortfolioError("Quantity, price and FX rate must be positive")
         if quote_currency == "EUR" and not math.isclose(fx_rate_to_eur, 1.0, rel_tol=0, abs_tol=1e-12):
             raise PortfolioError("EUR-quoted instruments must use an EUR conversion rate of 1")
+        if market_timestamp is not None:
+            try:
+                market_timestamp = int(market_timestamp)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise PortfolioError("Paper fills require a valid market timestamp") from exc
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            if market_timestamp <= 0 or market_timestamp > now_ms:
+                raise PortfolioError("Paper fills require a positive non-future market timestamp")
         if quote_currency == "USD":
             if not isinstance(fx_provider_id, str) or not fx_provider_id.strip():
                 raise PortfolioError("USD fills require an FX provider identity")
@@ -732,6 +742,7 @@ class PaperPortfolio:
             "stop_loss": stop_loss, "take_profit": take_profit,
             "quote_currency": quote_currency, "fx_rate_to_eur": fx_rate_to_eur,
             "fx_provider_id": fx_provider_id, "fx_timestamp": fx_timestamp,
+            "market_timestamp": market_timestamp,
         })
         request_json = self._canonical_json(request_payload) if client_order_id else None
 
@@ -761,6 +772,10 @@ class PaperPortfolio:
                         raise PortfolioError("This order intent was already rejected")
                     if intent_row["status"] == "reconciliation_required":
                         raise PortfolioError("This order intent requires reconciliation before execution")
+                    if intent_row["status"] == "expired":
+                        raise PortfolioError("This order intent expired and cannot be executed")
+                    if intent_row["status"] == "filled":
+                        raise PortfolioError("Filled order intent has no matching trade; reconciliation is required")
 
                 existing = db.execute(
                     "SELECT * FROM trades WHERE client_order_id=?",
@@ -782,6 +797,7 @@ class PaperPortfolio:
                         and math.isclose(float(prior["fx_rate_to_eur"]), fx_rate_to_eur, rel_tol=1e-12, abs_tol=1e-12)
                         and prior.get("fx_provider_id") == fx_provider_id
                         and prior.get("fx_timestamp") == fx_timestamp
+                        and prior.get("market_timestamp") == market_timestamp
                         and prior.get("stop_loss") == stop_loss
                         and prior.get("take_profit") == take_profit
                     )
@@ -794,12 +810,22 @@ class PaperPortfolio:
                             "VALUES(?,'filled',?,?,?,?,?)",
                             (client_order_id, request_json, prior["id"], self._canonical_json(prior), stamp, stamp),
                         )
+                        self._insert_order_intent_event(
+                            db, client_order_id, None, "filled",
+                            {"trade_id": prior["id"], "legacy_replay": True}, stamp,
+                        )
                     else:
+                        old_status = intent_row["status"]
                         db.execute(
                             "UPDATE order_intents SET status='filled',trade_id=?,fill_json=?,updated_at=? "
                             "WHERE client_order_id=?",
                             (prior["id"], self._canonical_json(prior), stamp, client_order_id),
                         )
+                        if old_status != "filled":
+                            self._insert_order_intent_event(
+                                db, client_order_id, old_status, "filled",
+                                {"trade_id": prior["id"], "reconciled_existing_trade": True}, stamp,
+                            )
                     prior["mode"] = "paper"
                     prior["idempotent_replay"] = True
                     return prior
@@ -812,6 +838,10 @@ class PaperPortfolio:
                         "INSERT INTO order_intents(client_order_id,status,request_json,created_at,updated_at) "
                         "VALUES(?,'risk_approved',?,?,?)",
                         (client_order_id, request_json, stamp, stamp),
+                    )
+                    self._insert_order_intent_event(
+                        db, client_order_id, None, "risk_approved",
+                        {"legacy_auto_approval": True}, stamp,
                     )
 
             db.execute(
@@ -907,9 +937,9 @@ class PaperPortfolio:
 
             stamp = datetime.now(timezone.utc).isoformat()
             cursor = db.execute(
-                "INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at,client_order_id,provider_id,instrument_id,quote_currency,fx_rate_to_eur,total_eur,fx_provider_id,fx_timestamp,strategy_id,stop_loss,take_profit) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (symbol, side, quantity, fill, fee, total, stamp, client_order_id, provider_id, instrument_id, quote_currency, fx_rate_to_eur, total_eur, fx_provider_id, fx_timestamp, strategy_id, stop_loss, take_profit),
+                "INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at,client_order_id,provider_id,instrument_id,quote_currency,fx_rate_to_eur,total_eur,fx_provider_id,fx_timestamp,strategy_id,stop_loss,take_profit,market_timestamp) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (symbol, side, quantity, fill, fee, total, stamp, client_order_id, provider_id, instrument_id, quote_currency, fx_rate_to_eur, total_eur, fx_provider_id, fx_timestamp, strategy_id, stop_loss, take_profit, market_timestamp),
             )
             result = {
                 "id": cursor.lastrowid,
@@ -926,6 +956,7 @@ class PaperPortfolio:
                 "total_eur": total_eur,
                 "fx_provider_id": fx_provider_id,
                 "fx_timestamp": fx_timestamp,
+                "market_timestamp": market_timestamp,
                 "strategy_id": strategy_id,
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
@@ -939,6 +970,10 @@ class PaperPortfolio:
                     "UPDATE order_intents SET status='filled',trade_id=?,fill_json=?,rejection_reason=NULL,updated_at=? "
                     "WHERE client_order_id=? AND status='risk_approved'",
                     (cursor.lastrowid, self._canonical_json(result), stamp, client_order_id),
+                )
+                self._insert_order_intent_event(
+                    db, client_order_id, "risk_approved", "filled",
+                    {"trade_id": cursor.lastrowid, "fill": result}, stamp,
                 )
             return result
 
