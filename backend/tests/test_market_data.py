@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from app.market_data import CcxtMarketData
+from app.market_data import CcxtMarketData, _normalize_discovered_spot_ticker
 
 
 class FakeExchange:
@@ -108,3 +108,29 @@ def test_is_stale_rejects_future_and_malformed_timestamps():
     assert CcxtMarketData.is_stale({"timestamp": float("nan")}, 60) is True
     assert CcxtMarketData.is_stale({}, 60) is True
     assert CcxtMarketData.is_stale({"timestamp": now_ms - 1000}, 60) is False
+
+
+def test_discovery_requires_explicit_receipt_timestamp_provenance():
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    row = {
+        "last": 100,
+        "bid": 99.9,
+        "ask": 100.1,
+        "quoteVolume": 5000,
+        "timestamp_source": "retrieved_at",
+        "observed_at_ms": now_ms,
+    }
+
+    normalized = _normalize_discovered_spot_ticker(
+        "BTC/EUR", row, now_ms=now_ms,
+        max_spread_fraction=0.02, min_quote_volume=1000,
+    )
+
+    assert normalized["ticker_timestamp_ms"] == now_ms
+    assert normalized["ticker_timestamp_source"] == "retrieved_at"
+    without_receipt = {key: value for key, value in row.items() if key != "observed_at_ms"}
+    assert _normalize_discovered_spot_ticker(
+        "BTC/EUR", without_receipt, now_ms=now_ms,
+        max_spread_fraction=0.02, min_quote_volume=1000,
+    ) is None
+
