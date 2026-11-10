@@ -370,8 +370,10 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
         raw_status = str(response.get("status") or "").lower()
         filled = self._amount_text(self._decimal(response.get("filled") or "0", "filled") if response.get("filled") not in (None, 0, "0") else Decimal("0"))
         remaining_value = response.get("remaining")
-        remaining = self._amount_text(
-            self._decimal(remaining_value, "remaining") if remaining_value not in (None, 0, "0") else Decimal("0")
+        remaining = (
+            self._amount_text(self._decimal(remaining_value, "remaining"))
+            if remaining_value not in (None, 0, "0")
+            else ("0" if remaining_value in (0, "0") else None)
         )
         average_value = response.get("average")
         average = self._amount_text(
@@ -387,7 +389,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             status = "rejected"
         elif raw_status == "open":
             filled_value = Decimal(filled or "0")
-            remaining_decimal = Decimal(remaining or "0")
+            remaining_decimal = Decimal(remaining) if remaining is not None else None
             if filled_value > 0 and remaining_decimal == 0:
                 status = "filled"
             elif filled_value > 0:
