@@ -229,6 +229,16 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
         })
         return result
 
+    def fetch_balances(self) -> dict:
+        result = super().fetch_balances()
+        result.update({
+            "read_only": False,
+            "execution_enabled": True,
+            "withdrawals_enabled": False,
+            "demo_only": True,
+        })
+        return result
+
     @staticmethod
     def _decimal(value: Any, field: str) -> Decimal:
         if not isinstance(value, str) or not re.fullmatch(r"\\d+(?:\\.\\d+)?", value):
