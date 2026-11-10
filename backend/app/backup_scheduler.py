@@ -129,6 +129,8 @@ def run_backup_cycle(
                         continue
                     file_timestamp = datetime.fromtimestamp(stat.st_mtime, timezone.utc)
                     uploaded = external_store.upload(local_backup, created_at=file_timestamp)
+                    if uploaded.get("verified") is not True:
+                        raise BackupError("External store did not confirm read-back verification")
                     uploaded_sources[local_backup.name] = {
                         "key": uploaded["key"],
                         "sha256": uploaded["sha256"],
