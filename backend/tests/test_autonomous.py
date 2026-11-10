@@ -699,3 +699,40 @@ def test_legacy_task_table_migrates_lease_token_column(tmp_path):
     with store.connect() as db:
         columns = {row["name"] for row in db.execute("PRAGMA table_info(agent_tasks)")}
     assert "lease_token" in columns
+
+
+def test_decision_cycle_resumes_persisted_risk_approved_intent_without_rescanning(tmp_path):
+    import asyncio
+
+    from app.portfolio import PaperPortfolio
+
+    path = str(tmp_path / "resume-approved-order.db")
+    task_id = "resume-approved-task"
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": task_id,
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": "ema_12_26", "stop_loss": 9800, "take_profit": 10400,
+    }
+    portfolio = PaperPortfolio(path, 20)
+    portfolio.record_order_intent(
+        task_id, request, {"action": "buy", "risk": {"accepted": True}},
+    )
+
+    class ScoutMustNotRescan:
+        def scan(self, *args, **kwargs):
+            raise AssertionError("A persisted approved intent must resume without new market research")
+
+    store = AutonomousStore(path)
+    worker = AutonomousAgent(
+        store, scout=ScoutMustNotRescan(), chief=object(), portfolio=portfolio,
+    )
+    result = asyncio.run(worker._execute({
+        "id": task_id, "kind": "decision_cycle", "payload": {},
+    }))
+
+    assert result["execution"] == "paper_order_resumed"
+    assert result["order"]["client_order_id"] == task_id
+    assert portfolio.get_order_intent(task_id)["status"] == "filled"
+    assert len(portfolio.history()) == 1
