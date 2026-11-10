@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, Literal
+import math
 
 from pydantic import BaseModel, Field
 
@@ -217,6 +218,7 @@ class ChiefAgent:
                 if candidate.get("eligible")
                 and candidate.get("current_entry_signal")
                 and isinstance(candidate.get("score"), (int, float))
+                and math.isfinite(float(candidate["score"]))
             ]
             experimental = False
             if validated_candidates:
@@ -229,6 +231,7 @@ class ChiefAgent:
                     if candidate.get("experimental_eligible")
                     and candidate.get("current_entry_signal")
                     and isinstance(candidate.get("experimental_score"), (int, float))
+                    and math.isfinite(float(candidate["experimental_score"]))
                 ]
                 if not experimental_candidates:
                     continue
