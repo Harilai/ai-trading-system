@@ -340,6 +340,7 @@ def reconcile_binance_demo_order(
                 symbol=order["symbol"],
                 client_order_id=client_order_id,
                 expected_amount=order["amount"],
+                expected_side=order["side"],
             )
     except BinanceDemoError as exc:
         raise HTTPException(502, str(exc)) from exc
