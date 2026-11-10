@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `6fb6350fb904dd1df7d27cd86f02637a7fb49cf8` — merge de PR #61, conector Binance Spot Demo Trading aislado.  
+> **Último commit observado en `main`:** `013f44f7be1da1a8c540bf01722be91e05560efe` — merge de PR #63, ciclo de vida de órdenes Binance Spot Demo.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -41,7 +41,7 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - Ciclo de vida paper de órdenes con intentos risk-approved persistidos, fills atómicos, eventos append-only, reconciliación contra el ledger y bloqueo fail-closed ante discrepancias.
 - Órdenes paper con comisión, slippage, stop-loss/take-profit e idempotencia por `client_order_id`.
 - Dashboard, health/readiness, controles autenticados y backups SQLite.
-- No hay ejecución real, adaptadores de órdenes live, wallets, firma blockchain, broker de acciones, derivados ni DeFi. No habilitarlos como parte de esta fase.
+- No hay ejecución en producción/live, wallets, firma blockchain, broker de acciones, derivados ni DeFi. Binance Spot Demo permite únicamente órdenes limit en el entorno virtual; el conector Binance de producción sigue siendo read-only.
 
 ## 4. Fases completadas: cartera multidivisa y conciliación de órdenes
 
@@ -82,7 +82,7 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 5. [x] Extender contratos de instrumentos y Risk Manager para permitir únicamente cash equities/ETFs USD de Twelve Data en paper, manteniendo bloqueados otros activos, mercados y proveedores sin soporte.
 6. [x] Mantener la investigación read-only para el Chief; permitir solo órdenes manuales paper tras los gates de cartera, FX, sesión bursátil, costes y riesgo. No activar órdenes autónomas de equities.
 7. [x] Añadir pruebas de migración, FX stale/futuro/malformado, falta de cuota, conversiones duplicadas, saldo insuficiente, movimientos entre divisas, valoración parcial, cambios de FX, comisiones y regresión crypto EUR.
-8. [x] PR #44 completa el ciclo de vida y conciliación paper; la siguiente fase pendiente son backups externos y restauración.
+8. [x] PR #44 completa el ciclo de vida y conciliación paper; PR #48 completa backups externos y PR #63 completa el lifecycle de órdenes Binance Spot Demo.
 
 ### Criterios de aceptación
 
@@ -204,8 +204,24 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - Comprueba que las rutas REST Spot públicas/privadas usan `demo-api.binance.com` y falla si detecta `api.binance.com` de producción.
 - Variables separadas: `BINANCE_SPOT_DEMO_ENABLED`, `BINANCE_SPOT_DEMO_API_KEY`, `BINANCE_SPOT_DEMO_API_SECRET`; desactivado por defecto.
 - Endpoints owner-authenticated: `GET /api/demo/binance/spot/balances` y `GET /api/demo/binance/spot/markets`.
-- El conector todavía no expone create/cancel order, transferencias, retiradas ni wallet signing.
+- El conector base Demo fue ampliado por PR #63 con limit orders, consulta, cancelación y conciliación persistente. No expone órdenes market, transferencias, retiradas ni wallet signing.
 - Claves Demo separadas de las de producción; no están configuradas en el entorno operativo.
+
+### Fase completada — ciclo de vida de órdenes Binance Spot Demo (PR #63)
+
+- PR: https://github.com/Harilai/ai-trading-system/pull/63
+- Merge commit: `013f44f7be1da1a8c540bf01722be91e05560efe`.
+- Head validado: `0ad80bcd0ca98175cf60891766304057fc38961d`.
+- CI: 400 pruebas Python correctas; Compose, build de imagen API y verificación non-root correctos.
+- Adaptador de ejecución aislado en CCXT Demo Trading; verificación del host demo, sin fallback a producción.
+- Limit orders Spot solamente; inputs decimales exactos, mercado activo, precisión/ticks y límites min/max de cantidad/coste.
+- Cap por orden de 25 unidades de la moneda quote por defecto, configurable hasta 1000; allowlist inicial USDT/USDC/FDUSD/TUSD/EUR.
+- Intentos inmutables persistidos antes de la llamada externa; client order IDs estables; timeout/crash nunca provocan reenvío ciego.
+- Estados open/partial/filled/cancelled/expired/rejected/submission_unknown/reconciliation_required con eventos append-only.
+- Conciliación valida client ID, exchange ID, símbolo, lado, importe solicitado y cantidades acumuladas; los fills no pueden retroceder y el remaining no puede aumentar.
+- Solo un intent sin resolver a la vez. Las discrepancias bloquean nuevas órdenes y conservan el último snapshot conocido como válido.
+- Endpoints owner-authenticated para crear, listar, consultar, reconciliar, cancelar y auditar órdenes Demo.
+- **No hay ejecución real:** balances Demo virtuales separados de Binance real y de la cartera paper; no market orders, transfers, withdrawals ni wallet signing.
 
 ## 5. Objetivo de producto y siguientes fases
 
@@ -216,19 +232,19 @@ La arquitectura de referencia está en `docs/MARKET_EXPANSION_ARCHITECTURE.md`.
 Siguiente secuencia:
 1. **Completado — backups externos y restauración (PR #48):** replicación S3-compatible verificada, status API y descarga/validación de restore candidate. Falta configurar el proveedor real en el entorno operativo.
 2. **Completado en PR #50 — dashboard ampliado:** velas OHLC, salud de conectores/readiness, investigación, historial de estrategias, intents/fills paper, backup status y retiradas paper.
-3. **Completado — contrato normalizado de instrumentos v2 (PR #52):** precision mode, ticks/steps, límites, venue y metadatos de contratos con validación estricta.
-4. **Completado — catálogo persistente venue-aware (PR #54):** snapshots, first/last seen, identidad canónica paralela, filtros, discovery history y fallos sanitizados.
-5. **Completado — preparación de operación 24/7 (PR #56):** healthcheck del servicio de backups, reintentos acotados, rotación de logs, runbook VPS y unidad systemd. El despliegue real en un VPS todavía no está realizado.
-6. **Completado — conector Binance Spot read-only (PR #57):** balances autenticados bajo owner token, credenciales `SecretStr`, importes como strings decimales y sin métodos de órdenes/transferencias/retiradas. La API key no está configurada en el entorno operativo.
-7. **Completado — snapshots y conciliación de cuentas reales en modo lectura (PR #59):** historial inmutable por cuenta, deltas exactos y separación de la cartera paper.
-8. **Siguiente fase — Binance Spot testnet/sandbox:** adaptador aislado de testnet, limit orders, client order IDs, estado de órdenes, partial fills, cancelación y conciliación; no debe existir fallback a producción.
-9. Después, generalizar contratos de ejecución y account/portfolio reconciliation para otros venues y clases de activo antes de live.
+3. **Completado — contrato normalizado de instrumentos v2 (PR #52)** y **catálogo persistente venue-aware (PR #54)**.
+4. **Completado — preparación operativa 24/7 (PR #56):** healthcheck, reintentos, rotación de logs, runbook VPS y unidad systemd. El VPS real todavía no está desplegado.
+5. **Completado — Binance Spot read-only y snapshots (PR #57/#59):** balances reales en modo lectura e historial/conciliación inmutable, separados de la cartera paper.
+6. **Completado — Binance Spot Demo connector y lifecycle de órdenes (PR #61/#63):** limit orders, idempotencia, reconciliación, cancelación y fail-closed. No existe ruta de órdenes a producción.
+7. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** configurar las credenciales Demo únicamente en el servidor, verificar respuestas reales, filtros de mercado, precisión, comisiones, partial fills, cancelación, timeout y reconciliación tras restart. No compartir claves en el chat ni guardarlas en Git. No usar claves de producción.
+8. Generalizar contratos de ejecución, balances, posiciones, permisos y account/portfolio reconciliation para otros CEX/brokers y clases de activo.
 9. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
-10. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+10. Completar despliegue persistente 24/7 en VPS y configurar el proveedor externo de backups en el entorno operativo.
+11. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## 6. Límites que no se deben saltar
 
-- Mantener paper trading como único modo operativo hasta que cada venue/clase supere su proceso de madurez y el propietario habilite explícitamente live.
+- Mantener paper trading como único modo operativo en producción. Binance Spot Demo es un entorno virtual independiente, limitado a órdenes limit y con cap por orden.
 - Live trading no puede activarse desde agentes, LLM, dashboard ni configuración accidental.
 - No solicitar ni guardar seeds, claves privadas ni credenciales en Git, logs o frontend.
 - No dar permisos de retirada a claves de trading.

@@ -23,10 +23,12 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 7. **Completado — preparación de operación 24/7 (PR #56):** healthcheck de backups, reintentos, rotación de logs, runbook VPS y systemd unit. El VPS real aún no está desplegado.
 8. **Completado — Binance Spot read-only (PR #57):** consulta autenticada de balances con permisos mínimos, sin órdenes ni retiradas; requiere configurar una API key read-only en el servidor.
 9. **Completado — account snapshot ledger y conciliación read-only (PR #59):** historial inmutable por cuenta/venue, snapshots por activo, deltas exactos y separación de la cartera paper.
-10. **Completado — Binance Spot Demo Trading connector (PR #61):** CCXT Demo mode, verificación estricta de `demo-api.binance.com`, balances virtuales y discovery Spot; sin órdenes.
-11. **Siguiente — lifecycle de órdenes Demo:** intents persistentes, clientOrderId, timeout/unknown-state reconciliation, partial fills, cancelación y recuperación tras restart. Demo-only, fail-closed y sin fallback a producción.
-12. **Generalización multi-venue:** contratos de ejecución, balances, posiciones, permisos y conciliación para otros CEX/brokers y clases de activo.
-13. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+10. **Completado — Binance Spot Demo Trading connector (PR #61):** CCXT Demo mode, verificación estricta de `demo-api.binance.com`, balances virtuales y discovery Spot.
+11. **Completado — lifecycle de órdenes Binance Spot Demo (PR #63):** limit orders, intents persistentes, clientOrderId, timeout/unknown-state reconciliation, partial fills, cancelación, auditoría append-only y fail-closed. No existe fallback a producción.
+12. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** verificar respuestas reales, filtros/precisión, comisiones, partial fills, cancelación, timeout y reconciliación tras restart. Las credenciales deben configurarse solo en el servidor y ser exclusivamente Demo.
+13. **Generalización multi-venue:** contratos de ejecución, balances, posiciones, permisos y conciliación para otros CEX/brokers y clases de activo.
+14. **Supervisión paper equity y operación 24/7:** stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
+15. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## Estado integrado
 
@@ -36,7 +38,8 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 | Preparación operativa 24/7 | Implementada en PR #56 (`c892ff3`); 330 tests y Docker hardening correctos; VPS pendiente |
 | Binance Spot account connector (read-only) | Implementado en PR #57 (`8773d75`); 345 tests y Docker hardening correctos; API key no configurada |
 | Snapshots y conciliación read-only de cuentas | Implementado en PR #59 (`b3cca3d`); 360 tests y Docker hardening correctos; no altera cartera paper |
-| Binance Spot Demo Trading | Implementado en PR #61 (`6fb6350`); 372 tests y Docker hardening correctos; desactivado por defecto y sin órdenes |
+| Binance Spot Demo Trading | Implementado en PR #61; balances virtuales y discovery Spot. PR #63 añade limit orders Demo con lifecycle persistente; desactivado por defecto y sin ruta de producción |
+| Binance Spot Demo order lifecycle | Implementado y fusionado en PR #63 (`013f44f`); 400 tests y Docker hardening correctos; Demo-only, limit orders y cap 25 quote por defecto |
 
 
 
@@ -141,7 +144,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [ ] Evaluar Oracle Cloud Always Free y alternativas en el momento del despliegue; no asumir disponibilidad permanente.
 - [ ] Mantener operación sin APIs de inferencia de pago; LLM local opcional y lógica determinista como fallback.
 - [x] Añadir liveness y readiness con verificación SQLite y heartbeat del worker, integrado en el healthcheck Docker.
-- [x] Añadir backup SQLite online con integrity_check, restauración con copia previa y servicio Docker aislado de backup diario con retención local de 14 días; copia off-host sigue pendiente.
+- [x] Añadir backup SQLite online con integrity_check, restauración con copia previa, servicio Docker aislado de backup diario y replicación S3-compatible cifrada con verificación SHA-256. Configuración del proveedor y restore drills en el VPS siguen pendientes.
 - [x] Proteger el endpoint manual de órdenes paper con token y gate obligatorio del Risk Manager; compras con stop-loss explícito.
 - [x] Ejecutar Docker como usuario no root, rootfs read-only, eliminar capacidades y enlazar el puerto a localhost por defecto.
 - [ ] Configurar TLS/reverse proxy para acceso remoto; no exponer directamente el puerto API.
@@ -151,7 +154,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 
 - Paper trading hasta completar pruebas y revisión separada de live execution.
 - Un provider solo se considera disponible si está registrado, sus capacidades están declaradas y se han probado; no inferir ejecución desde datos públicos.
-- Las capacidades no implementadas (balances, órdenes, cancelación, partial fills, reconciliación, withdrawals, signing) deben permanecer false.
+- Las capacidades no implementadas por venue deben permanecer false. Binance Spot Demo admite únicamente limit orders; Binance de producción sigue read-only. Transfers, withdrawals, wallet signing y live execution permanecen deshabilitados.
 - Live trading deshabilitado por defecto y nunca activable por agentes o LLM.
 - Ningún agente puede cambiar sus propios límites de riesgo.
 - No incluir claves de exchange/broker en Git, logs ni frontend.
