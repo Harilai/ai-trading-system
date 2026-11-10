@@ -363,6 +363,8 @@ class PaperPortfolio:
             if existing:
                 if existing["request_json"] != request_json:
                     raise PortfolioError("client_order_id was already used for a different order intent")
+                if decision_json is not None and existing["decision_json"] not in (None, decision_json):
+                    raise PortfolioError("client_order_id was already used for a different approved decision")
                 return self._decode_order_intent(existing)
             trade = db.execute(
                 "SELECT id FROM trades WHERE client_order_id=?",
@@ -572,6 +574,17 @@ class PaperPortfolio:
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             intent_row = None
+            if side == "buy":
+                unresolved = db.execute(
+                    "SELECT client_order_id,status FROM order_intents "
+                    "WHERE status IN ('risk_approved','reconciliation_required') "
+                    "AND client_order_id != ? LIMIT 1",
+                    (client_order_id or "",),
+                ).fetchone()
+                if unresolved:
+                    raise PortfolioError(
+                        f"New entries are blocked by unresolved order intent {unresolved['client_order_id']}"
+                    )
             if client_order_id:
                 intent_row = db.execute(
                     "SELECT * FROM order_intents WHERE client_order_id=?",
