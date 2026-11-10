@@ -761,6 +761,7 @@ def test_order_intent_history_api_requires_owner_token_and_returns_audit_events(
     }
     paper.record_order_intent("api-order-intent", request, {"risk_accepted": True})
     monkeypatch.setattr("app.main.portfolio", paper)
+    headers = configure_order_auth(monkeypatch)
 
     unauthorized = client.get(
         "/api/agent/order-intents",
@@ -768,7 +769,6 @@ def test_order_intent_history_api_requires_owner_token_and_returns_audit_events(
     )
     assert unauthorized.status_code == 401
 
-    headers = configure_order_auth(monkeypatch)
     fill = paper.execute(**paper.get_order_intent("api-order-intent")["request"])
     response = client.get(
         "/api/agent/order-intents",
