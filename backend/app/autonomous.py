@@ -656,29 +656,55 @@ class AutonomousAgent:
             )
             if existing_intent is not None:
                 if existing_intent["status"] == "risk_approved":
-                    try:
-                        resumed_order = await asyncio.to_thread(
-                            self.portfolio.execute,
-                            **existing_intent["request"],
-                        )
-                    except PortfolioError as exc:
+                    fresh = await asyncio.to_thread(
+                        self.portfolio.order_intent_is_fresh,
+                        task["id"],
+                        settings.max_data_age_seconds,
+                        settings.max_fx_data_age_seconds,
+                    )
+                    if not fresh:
                         await asyncio.to_thread(
-                            self.portfolio.reject_order_intent,
+                            self.portfolio.expire_order_intent,
                             task["id"],
-                            str(exc),
+                            "Market or FX observation expired before the paper fill could be resumed",
                         )
                         result = {
-                            "execution": "rejected",
+                            "execution": "expired",
                             "order_intent": await asyncio.to_thread(
                                 self.portfolio.get_order_intent, task["id"],
                             ),
                         }
                     else:
-                        result = {
-                            "execution": "paper_order_resumed",
-                            "order": resumed_order,
-                            "idempotent_replay": True,
-                        }
+                        try:
+                            resumed_order = await asyncio.to_thread(
+                                self.portfolio.execute,
+                                **existing_intent["request"],
+                            )
+                        except PortfolioError as exc:
+                            await asyncio.to_thread(
+                                self.portfolio.reject_order_intent,
+                                task["id"],
+                                str(exc),
+                            )
+                            result = {
+                                "execution": "rejected",
+                                "order_intent": await asyncio.to_thread(
+                                    self.portfolio.get_order_intent, task["id"],
+                                ),
+                            }
+                        else:
+                            result = {
+                                "execution": "paper_order_resumed",
+                                "order": resumed_order,
+                                "idempotent_replay": True,
+                            }
+                    self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
+                    return result
+                if existing_intent["status"] == "expired":
+                    result = {
+                        "execution": "expired",
+                        "order_intent": existing_intent,
+                    }
                     self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
                     return result
                 if existing_intent["status"] == "rejected":
@@ -798,6 +824,28 @@ class AutonomousAgent:
                 and decision.risk.accepted
             ):
                 proposal = decision.proposal
+                proposal_symbol = proposal.symbol.strip().upper()
+                proposal_provider = proposal.provider_id or "ccxt:kraken"
+                proposal_instrument = proposal.instrument_id or f"{proposal_provider}:spot:{proposal_symbol}"
+                market_observation = next(
+                    (
+                        item.get("market", {})
+                        for item in scan.get("analyses", [])
+                        if str(item.get("market", {}).get("symbol", "")).upper() == proposal_symbol
+                        and str(item.get("market", {}).get("provider_id") or "ccxt:kraken") == proposal_provider
+                        and str(item.get("market", {}).get("instrument_id") or proposal_instrument) == proposal_instrument
+                    ),
+                    None,
+                )
+                try:
+                    market_timestamp = int(
+                        market_observation.get("ticker_timestamp_ms")
+                        or market_observation.get("timestamp")
+                    ) if market_observation else 0
+                except (TypeError, ValueError, OverflowError):
+                    market_timestamp = 0
+                if market_timestamp <= 0:
+                    raise RuntimeError("Risk-approved proposal has no valid source market timestamp")
                 execution_request = {
                     "symbol": proposal.symbol,
                     "side": proposal.side,
@@ -813,6 +861,14 @@ class AutonomousAgent:
                     "strategy_id": decision.strategy_id if proposal.side == "buy" else None,
                     "stop_loss": proposal.stop_loss,
                     "take_profit": proposal.take_profit,
+                    "market_timestamp": market_timestamp,
+                    "quote_currency": str(
+                        market_observation.get("quote_currency")
+                        or (proposal_symbol.rsplit("/", 1)[-1] if "/" in proposal_symbol else "EUR")
+                    ).upper(),
+                    "fx_rate_to_eur": float(market_observation.get("fx_rate_to_eur", 1.0)),
+                    "fx_provider_id": market_observation.get("fx_provider_id"),
+                    "fx_timestamp": market_observation.get("fx_timestamp"),
                 }
                 await asyncio.to_thread(
                     self.portfolio.record_order_intent,
