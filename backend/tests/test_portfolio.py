@@ -698,3 +698,51 @@ def test_rejected_order_intent_is_terminal(portfolio):
             "rejected-intent", {**request, "quantity": 0.002},
             {"risk_accepted": True},
         )
+
+
+def test_reconciliation_detects_trade_payload_mismatch_and_blocks_new_buys(portfolio):
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "mismatched-ledger-trade",
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": None, "stop_loss": None, "take_profit": None,
+    }
+    portfolio.record_order_intent(
+        "mismatched-ledger-trade", request, {"risk_accepted": True},
+    )
+    portfolio.execute(**request)
+    with portfolio.connect() as db:
+        db.execute(
+            "UPDATE trades SET quantity=0.002 WHERE client_order_id=?",
+            ("mismatched-ledger-trade",),
+        )
+
+    result = portfolio.reconcile_order_intents()
+    assert result["reconciliation_required"] == 1
+    intent = portfolio.get_order_intent("mismatched-ledger-trade")
+    assert intent["status"] == "reconciliation_required"
+    assert "does not match" in intent["rejection_reason"].lower()
+    assert portfolio.list_order_intent_events("mismatched-ledger-trade")[-1]["to_status"] == "reconciliation_required"
+
+    second = {**request, "client_order_id": "blocked-by-ledger-mismatch"}
+    with pytest.raises(PortfolioError, match="blocked by unresolved"):
+        portfolio.record_order_intent("blocked-by-ledger-mismatch", second, {"risk_accepted": True})
+
+
+def test_order_intent_events_are_append_only(portfolio):
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "immutable-events",
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": None, "stop_loss": None, "take_profit": None,
+    }
+    portfolio.record_order_intent("immutable-events", request, {"risk_accepted": True})
+    import sqlite3
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        with portfolio.connect() as db:
+            db.execute(
+                "UPDATE order_intent_events SET to_status='rejected' WHERE client_order_id=?",
+                ("immutable-events",),
+            )
