@@ -229,7 +229,7 @@
         const headers = {...(options.headers || {})};
         if (secured && controlToken) headers["X-Agent-Token"] = controlToken;
         if (options.body) headers["Content-Type"] = "application/json";
-        const response = await fetch(path, {...options, headers});
+        const response = await fetch(path, {...options, headers, ...(secured ? {cache:"no-store"} : {})});
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.detail || ("HTTP " + response.status));
         return data;
@@ -397,7 +397,7 @@
       $("connect").addEventListener("click",async()=>{
         controlToken=$("token").value.trim();
         if(!controlToken){setMessage("control-message","Introduce el token de control.","error");return;}
-        try{const status=await api("/api/agent/status",{},true);renderAgent(status);$("connection").textContent="Controles autenticados";setMessage("control-message","Token validado. No se guarda en el navegador.","success");
+        try{const status=await api("/api/agent/status",{},true);renderAgent(status);$("connection").textContent="Controles autenticados";$("token").value="";setMessage("control-message","Token validado. Se mantiene solo en memoria durante esta sesión.","success");
           $("run-equity-research").disabled=false;$("load-strategy-history").disabled=false;$("withdrawal-amount").disabled=false;$("request-withdrawal").disabled=false;await loadSecuredPanels();}
         catch(error){controlToken="";$("agent-state").textContent="Token requerido";document.querySelectorAll("[data-task],#pause,#resume,#stop,#reset-stop,#run-equity-research,#load-strategy-history,#withdrawal-amount,#request-withdrawal").forEach(button=>button.disabled=true);setMessage("control-message","Token no válido: "+error.message,"error");}
       });
