@@ -137,7 +137,7 @@
       <div class="panel">
         <div class="section-head"><h2>Últimas operaciones</h2><span id="trade-count" class="badge">0</span></div>
         <div class="table-wrap">
-          <table><thead><tr><th>Fecha</th><th>Activo</th><th>Lado</th><th>Cantidad</th><th>Precio fill</th><th>Comisión</th><th>Total</th></tr></thead><tbody id="trades"><tr><td colspan="7" class="empty">Cargando…</td></tr></tbody></table>
+          <table><thead><tr><th>Fecha</th><th>Activo</th><th>Lado</th><th>Estrategia</th><th>Cantidad</th><th>Precio fill</th><th>Comisión</th><th>Total</th></tr></thead><tbody id="trades"><tr><td colspan="7" class="empty">Cargando…</td></tr></tbody></table>
         </div>
       </div>
       <div class="panel">
@@ -257,8 +257,8 @@
       }
       function renderTrades(items) {
         const body=$("trades");body.replaceChildren();$("trade-count").textContent=String(items.length);
-        if(!items.length){const row=document.createElement("tr"),td=document.createElement("td");td.colSpan=7;td.className="empty";td.textContent="Todavía no hay operaciones";row.appendChild(td);body.appendChild(row);return;}
-        for(const t of items){const row=document.createElement("tr");cell(row,date(t.created_at));cell(row,t.symbol);cell(row,String(t.side||"").toUpperCase());cell(row,number(t.quantity));const currency=t.quote_currency||"EUR";cell(row,money(t.price,currency));cell(row,money(t.fee,currency));cell(row,money(t.total,currency));body.appendChild(row);}
+        if(!items.length){const row=document.createElement("tr"),td=document.createElement("td");td.colSpan=8;td.className="empty";td.textContent="Todavía no hay operaciones";row.appendChild(td);body.appendChild(row);return;}
+        for(const t of items){const row=document.createElement("tr");cell(row,date(t.created_at));cell(row,t.symbol);cell(row,String(t.side||"").toUpperCase());const strategy=String(t.strategy_id||"manual");cell(row,strategy.startsWith("experimental:")?"EXPERIMENTAL · "+strategy.slice("experimental:".length):strategy);cell(row,number(t.quantity));const currency=t.quote_currency||"EUR";cell(row,money(t.price,currency));cell(row,money(t.fee,currency));cell(row,money(t.total,currency));body.appendChild(row);}
       }
       function statusRow(label,value){const row=document.createElement("div");row.className="status-row";const left=document.createElement("span"),right=document.createElement("strong");left.textContent=label;right.textContent=value;row.append(left,right);return row;}
       function renderAgent(data){
