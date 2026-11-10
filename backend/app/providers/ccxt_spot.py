@@ -175,14 +175,21 @@ class CcxtSpotProvider:
             data = self.exchange.fetch_ticker(symbol)
         except Exception as exc:
             raise MarketDataError(f"{self.provider_id} ticker failed for {symbol}: {exc}") from exc
-        if data.get("timestamp") is None:
-            raise MarketDataError("Ticker has no timestamp")
+        timestamp = data.get("timestamp")
+        timestamp_source = "exchange"
+        if timestamp is None:
+            # Kraken's public ticker response omits an exchange event time. For
+            # paper decisions, preserve the local receipt time and its source
+            # explicitly instead of inventing an exchange timestamp.
+            timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+            timestamp_source = "retrieved_at"
         return {
             "symbol": symbol,
             "last": data.get("last"),
             "bid": data.get("bid"),
             "ask": data.get("ask"),
-            "timestamp": int(data["timestamp"]),
+            "timestamp": int(timestamp),
+            "timestamp_source": timestamp_source,
             "quoteVolume": data.get("quoteVolume"),
             "baseVolume": data.get("baseVolume"),
         }
@@ -219,9 +226,14 @@ class CcxtSpotProvider:
         now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
         ranked = []
         for symbol in symbols:
+            ticker = tickers.get(symbol)
+            if isinstance(ticker, dict) and ticker.get("timestamp") is None:
+                # The API returned this quote in the current batch response,
+                # but did not provide a per-ticker event timestamp.
+                ticker = {**ticker, "timestamp": now_ms, "timestamp_source": "retrieved_at"}
             row = _normalize_discovered_spot_ticker(
                 symbol,
-                tickers.get(symbol),
+                ticker,
                 provider_id=self.provider_id,
                 now_ms=now_ms,
                 max_spread_fraction=max_spread_fraction,
@@ -245,3 +257,4 @@ class CcxtSpotProvider:
     def is_stale(ticker: dict, max_age_seconds: int) -> bool:
         age = datetime.now(timezone.utc).timestamp() * 1000 - ticker["timestamp"]
         return age > max_age_seconds * 1000
+

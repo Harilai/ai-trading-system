@@ -767,7 +767,14 @@ def research_equities(
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "mode": "paper", "live_trading_enabled": False}
+    return {
+        "status": "ok",
+        "mode": "paper",
+        "live_trading_enabled": False,
+        "experimental_paper_enabled": (
+            settings.paper_demo_mode and settings.paper_experimental_strategies_enabled
+        ),
+    }
 
 
 @app.get("/api/health/ready")
@@ -797,6 +804,9 @@ def readiness():
         "worker": "ok",
         "worker_heartbeat_age_seconds": round(age_seconds, 2),
         "live_trading_enabled": False,
+        "experimental_paper_enabled": (
+            settings.paper_demo_mode and settings.paper_experimental_strategies_enabled
+        ),
     }
 
 @app.get("/api/market/{symbol:path}/ticker")
@@ -1145,6 +1155,7 @@ def _paper_equity_order(order: OrderRequest):
             fx_provider_id=fx["provider_id"],
             fx_timestamp=fx["timestamp"],
             market_timestamp=int(quote["timestamp"]),
+            market_timestamp_source=str(quote.get("timestamp_source") or "provider"),
         )
     except PortfolioError as exc:
         raise HTTPException(422, str(exc)) from exc
@@ -1258,6 +1269,7 @@ def paper_order(
             quote_currency="EUR",
             fx_rate_to_eur=1.0,
             market_timestamp=int(quote["timestamp"]),
+            market_timestamp_source=str(quote.get("timestamp_source") or "provider"),
         )
     except PortfolioError as exc:
         raise HTTPException(422, str(exc)) from exc
@@ -1281,9 +1293,14 @@ scout = ScoutAgent(
 )
 chief = ChiefAgent(
     max_order_fraction=settings.max_order_fraction,
+    max_stop_distance_fraction=settings.max_stop_distance_fraction,
+    risk_per_trade_fraction=settings.risk_per_trade_fraction,
     estimated_fee_rate=settings.fee_rate,
     estimated_slippage_rate=settings.slippage_rate,
     minimum_order_value_eur=settings.min_order_value_eur,
+    allow_experimental_strategies=(
+        settings.paper_demo_mode and settings.paper_experimental_strategies_enabled
+    ),
 )
 equity_research_agent = (
     EquityEtfResearchAgent(

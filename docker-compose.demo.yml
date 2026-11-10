@@ -12,6 +12,11 @@ services:
     environment:
       DATABASE_PATH: /app/data/trading.db
       INITIAL_CASH_EUR: "10000"
+      PAPER_DEMO_MODE: "true"
+      PAPER_EXPERIMENTAL_STRATEGIES_ENABLED: "true"
+      MAX_ORDER_FRACTION: "0.05"
+      MAX_STOP_DISTANCE_FRACTION: "0.03"
+      RISK_PER_TRADE_FRACTION: "0.0025"
       EXCHANGE_ID: kraken
       MARKET_DATA_PROVIDER_IDS: kraken
       BINANCE_READONLY_API_KEY: ""
