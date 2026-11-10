@@ -54,12 +54,16 @@ class S3BackupStore:
                 raise BackupError("External backup endpoint must use HTTPS")
             if parsed.scheme not in ("https", "http") or not parsed.netloc:
                 raise BackupError("External backup endpoint URL is invalid")
+            if parsed.username or parsed.password or parsed.query or parsed.fragment:
+                raise BackupError("External backup endpoint URL must not embed credentials or query parameters")
 
         access_key = config.backup_s3_access_key_id.strip()
         secret_key = config.backup_s3_secret_access_key.strip()
         session_token = config.backup_s3_session_token.strip()
         if bool(access_key) != bool(secret_key):
             raise BackupError("Both S3 access key ID and secret access key must be configured together")
+        if session_token and not access_key:
+            raise BackupError("An S3 session token requires a static access key pair")
 
         try:
             import boto3
@@ -105,7 +109,9 @@ class S3BackupStore:
     def _validate_key(self, key: str) -> str:
         if not isinstance(key, str) or not key.strip():
             raise BackupError("Remote backup key is required")
-        normalized = key.strip().lstrip("/")
+        normalized = key.strip()
+        if normalized.startswith("/"):
+            raise BackupError("Remote backup key must be relative to the configured prefix")
         if any(part in (".", "..") for part in normalized.split("/")):
             raise BackupError("Remote backup key contains an unsafe path segment")
         if self.prefix and not normalized.startswith(self.prefix + "/"):
