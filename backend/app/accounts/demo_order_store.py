@@ -278,6 +278,69 @@ class BinanceDemoOrderStore:
             if to_status not in _ALLOWED_TRANSITIONS[current]:
                 raise DemoOrderStoreError(f"Illegal Demo order transition: {current} -> {to_status}")
 
+            # Treat exchange snapshots as monotonic evidence. A lower cumulative
+            # fill, increased remaining quantity, changed exchange ID or impossible
+            # quantity sum is not a harmless stale update: quarantine the order.
+            next_filled = filled if filled is not None else row["filled"]
+            next_remaining = remaining if remaining is not None else row["remaining"]
+            next_average = average if average is not None else row["average"]
+            inconsistent = False
+            reason = None
+            if exchange_order_id and row["exchange_order_id"] and exchange_order_id != row["exchange_order_id"]:
+                inconsistent = True
+                reason = "Exchange order ID changed for an immutable client order ID"
+            try:
+                amount_value = Decimal(row["amount"])
+                filled_value = Decimal(next_filled or "0")
+                remaining_value = Decimal(next_remaining) if next_remaining is not None else None
+                old_filled_value = Decimal(row["filled"] or "0")
+                old_remaining_value = Decimal(row["remaining"]) if row["remaining"] is not None else None
+                if not filled_value.is_finite() or filled_value < old_filled_value:
+                    inconsistent = True
+                    reason = reason or "Cumulative filled quantity regressed or became invalid"
+                if remaining_value is not None and (
+                    not remaining_value.is_finite()
+                    or remaining_value < 0
+                    or (old_remaining_value is not None and remaining_value > old_remaining_value)
+                ):
+                    inconsistent = True
+                    reason = reason or "Remaining quantity increased or became invalid"
+                if remaining_value is not None and filled_value + remaining_value != amount_value:
+                    inconsistent = True
+                    reason = reason or "Filled plus remaining quantity differs from immutable order amount"
+                if to_status == "filled" and (
+                    filled_value != amount_value or remaining_value != 0
+                ):
+                    inconsistent = True
+                    reason = reason or "Filled terminal state does not account for the full order amount"
+                if to_status == "partially_filled" and (
+                    filled_value <= 0 or remaining_value is None or remaining_value <= 0
+                ):
+                    inconsistent = True
+                    reason = reason or "Partial-fill state lacks consistent positive filled and remaining quantities"
+                if to_status == "open" and filled_value > 0:
+                    inconsistent = True
+                    reason = reason or "Open state cannot discard an observed partial fill"
+                if to_status == "rejected" and filled_value > 0:
+                    inconsistent = True
+                    reason = reason or "Rejected order unexpectedly reports a fill"
+                if next_average is not None:
+                    average_value = Decimal(next_average)
+                    if not average_value.is_finite() or average_value < 0:
+                        inconsistent = True
+                        reason = reason or "Average fill price is invalid"
+            except (InvalidOperation, ValueError, TypeError):
+                inconsistent = True
+                reason = reason or "Exchange order quantities are malformed"
+
+            if inconsistent and to_status != "reconciliation_required":
+                to_status = "reconciliation_required"
+                error = reason or "Exchange order snapshot is inconsistent"
+
+            if to_status not in _ALLOWED_TRANSITIONS[current]:
+                raise DemoOrderStoreError(f"Illegal Demo order transition: {current} -> {to_status}")
+
+            quarantine = to_status == "reconciliation_required"
             db.execute(
                 """
                 UPDATE binance_demo_orders SET
@@ -292,11 +355,24 @@ class BinanceDemoOrderStore:
                 WHERE client_order_id=?
                 """,
                 (
-                    to_status, exchange_order_id, exchange_status, filled,
-                    remaining, average, error, stamp, client_order_id,
+                    to_status,
+                    None if quarantine and row["exchange_order_id"] else exchange_order_id,
+                    exchange_status,
+                    None if quarantine else filled,
+                    None if quarantine else remaining,
+                    None if quarantine else average,
+                    error, stamp, client_order_id,
                 ),
             )
             event_payload = dict(payload or {})
+            if filled is not None:
+                event_payload["observed_filled"] = filled
+            if remaining is not None:
+                event_payload["observed_remaining"] = remaining
+            if average is not None:
+                event_payload["observed_average"] = average
+            if exchange_order_id is not None:
+                event_payload["observed_exchange_order_id"] = exchange_order_id
             if error:
                 event_payload["error"] = error
             self._insert_event(db, client_order_id, current, to_status, event_payload, stamp)
