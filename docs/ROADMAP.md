@@ -39,6 +39,13 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 23. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario. Sigue fuera del alcance de esta fase.
 
 
+## En curso — trazabilidad experimental paper
+
+- Corregir persistencia y presentación de aptitud experimental, con compatibilidad explícita para registros legacy.
+- Añadir evidencia estructurada de las causas de decisiones `hold` en Chief y pruebas de regresión.
+- No relajar gates cuantitativos ni límites de riesgo para forzar operaciones.
+- Estado: implementación en rama `fix/experimental-research-diagnostics`; pendiente CI, revisión y merge a `demo`.
+
 ## Estado integrado
 
 | Área | Estado |
