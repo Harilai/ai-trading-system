@@ -865,3 +865,32 @@ def test_dashboard_chart_ohlcv_route_accepts_encoded_slash_symbol(monkeypatch):
     assert response.status_code == 200, response.text
     assert calls == [("BTC/EUR", "1h", 120, "ccxt:kraken")]
     assert response.json()["candles"][0]["close"] == 103
+
+
+def test_markets_api_exposes_normalized_instrument_contract_fields(monkeypatch):
+    from app.providers.base import AssetClass, MarketInstrument, MarketType, PrecisionMode
+
+    instrument = MarketInstrument(
+        provider_id="ccxt:example", symbol="BTC/EUR",
+        asset_class=AssetClass.CRYPTO, market_type=MarketType.SPOT,
+        base="BTC", quote="EUR", active=True,
+        venue_id="example", native_symbol="BTC/EUR",
+        precision_mode=PrecisionMode.TICK_SIZE,
+        price_tick=0.01, amount_step=0.0001,
+        min_amount=0.00001, max_amount=2,
+        min_cost=5, max_cost=10000,
+        contract_type="spot", trading_status="active",
+    )
+    monkeypatch.setattr("app.main.market.discover_markets", lambda: ([instrument], []))
+
+    response = client.get("/api/markets")
+
+    assert response.status_code == 200
+    item = response.json()["instruments"][0]
+    assert item["venue_id"] == "example"
+    assert item["native_symbol"] == "BTC/EUR"
+    assert item["precision_mode"] == "tick_size"
+    assert item["price_tick"] == pytest.approx(0.01)
+    assert item["amount_step"] == pytest.approx(0.0001)
+    assert item["maximum_amount"] == pytest.approx(2)
+    assert item["trading_status"] == "active"
