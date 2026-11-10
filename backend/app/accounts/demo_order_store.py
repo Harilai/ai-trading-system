@@ -163,6 +163,20 @@ class BinanceDemoOrderStore:
                     raise DemoOrderConflict("client_order_id is already bound to a different immutable intent")
                 return self._row_dict(existing), False
 
+            unresolved = db.execute(
+                """
+                SELECT COUNT(*) AS count FROM binance_demo_orders
+                WHERE status IN (
+                    'intent_created','submission_unknown','open','partially_filled',
+                    'reconciliation_required'
+                )
+                """
+            ).fetchone()["count"]
+            if int(unresolved) > 0:
+                raise DemoOrderConflict(
+                    "A previous Demo order is still open or requires reconciliation"
+                )
+
             db.execute(
                 """
                 INSERT INTO binance_demo_orders(
