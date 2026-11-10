@@ -78,6 +78,7 @@ Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de 
 - [x] Conectar Risk Manager como puerta obligatoria para propuestas del Chief y órdenes paper.
 - [x] Añadir idempotencia de órdenes paper mediante `client_order_id` vinculado a la tarea.
 - [ ] Completar estados legales de órdenes, conciliación y recuperación frente a fallos en cada frontera de persistencia.
+- [ ] Añadir monitorización paper de stop-loss/take-profit equity con cotizaciones USD y FX frescas, cierres idempotentes y recuperación tras reinicio.
 - [x] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
 - [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
 
