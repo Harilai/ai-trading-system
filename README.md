@@ -45,7 +45,7 @@ El backend parte de una cartera simulada de **20 EUR**. EUR es la divisa base de
 - **Portfolio Manager:** gestiona exposición, posiciones y asignación de beneficios.
 - **Risk Manager:** valida propuestas con reglas deterministas y no eludibles.
 - **Trading Engine:** gestiona órdenes y posiciones paper/live separadas.
-- **Dashboard:** presenta cartera, actividad de agentes y rendimiento.
+- **Dashboard:** cartera y posiciones, gráfico OHLC, salud/readiness de proveedores, investigación read-only, historial de estrategias, órdenes paper y conciliación, estado de backups locales/off-host y solicitudes de retirada paper. El token de control se mantiene solo en memoria, y las retiradas nunca mueven dinero real.
 
 Los mensajes entre agentes usan esquemas tipados. Un LLM no puede ejecutar operaciones ni saltarse el Risk Manager. El funcionamiento esencial debe poder continuar sin un LLM.
 
