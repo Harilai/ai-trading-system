@@ -441,6 +441,11 @@ class PaperPortfolio:
                     int(trade["id"]) if trade else None, stamp, stamp,
                 ),
             )
+            self._insert_order_intent_event(
+                db, client_order_id, None, status,
+                {"decision": decision, "trade_id": int(trade["id"]) if trade else None},
+                stamp,
+            )
         return self.get_order_intent(client_order_id)
 
     @staticmethod
