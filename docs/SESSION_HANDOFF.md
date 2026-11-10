@@ -2,7 +2,7 @@
 
 > **Última revisión del repositorio:** 2026-11-11 Europe/Madrid
 > **Rama base revisada:** `main`
-> **Último commit integrado en `main`:** `bf426d77286dce9a15dc8c067e2eab7caa4d11d8` — PR #80.
+> **Último commit integrado en `main`:** `0c5c9b402557af49746e8f0d37f23eab4a4a2681` — PR #77.
 > **Rama `demo`:** `bd34ff5114dd952b5d58fb8c93c470387f4eeaba`, con PR #91–#93 integradas.
 > **Estado de ejecución:** paper trading únicamente; Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
@@ -11,14 +11,14 @@
 - PR #78 fusionada: contratos normalizados de órdenes y fills.
 - PR #79 fusionada: ledger SQLite append-only de órdenes y ejecuciones individuales, idempotencia, aislamiento por cuenta/entorno/mercado y cobertura explícita.
 - PR #80 fusionada: historial de fills con completitud explícita y reconciliación read-only de órdenes conocidas; no envía, cancela ni reintenta órdenes.
-- PR #77 en revisión: monitor paper de stop-loss/take-profit para acciones/ETF USD de Twelve Data. Head actual `be3b3376aa0bfd71653a73a6c5042db7528d94f5`; CI en ejecución. El monitor exige instrumento, cotización, FX y sesión válidos; mantiene los datos de procedencia y el dashboard de estrategias.
+- PR #77 en revisión: monitor paper de stop-loss/take-profit para acciones/ETF USD de Twelve Data. Fusionada en `0c5c9b402557af49746e8f0d37f23eab4a4a2681`; CI exacto: 524 tests passed y Docker hardening passed. El monitor exige instrumento, cotización, FX y sesión válidos; mantiene los datos de procedencia y el dashboard de estrategias.
 - En `demo`, PR #91 endurece salidas paper y PR #92–#93 incorporan snapshots externos append-only e integración API. Los adaptadores existentes aún declaran `positions=false`; no hay captura real habilitada en esos conectores.
 - PR #74 se reabrió para preservar y revisar sus aportaciones de snapshots combinados de balances/posiciones y scope multi-market. No se fusionará sin resolver su solapamiento arquitectónico con #92–#93.
 - No se ha levantado ni reiniciado una demo local en esta sesión; no se han usado credenciales ni fondos reales.
 
 ## Siguiente acción
 
-Completar CI y revisión independiente de PR #77. Después revisar la arquitectura de snapshots unificados frente al ledger separado de posiciones, y continuar con un adaptador real read-only de posiciones que declare cobertura verificable. Mantener paper-only y no habilitar live trading.
+PR #77 completada. Siguiente: revisar la arquitectura de snapshots unificados de PR #74 frente al ledger separado #92–#93; conservar sus garantías únicas sin duplicar persistencia. Después implementar un adaptador real read-only de posiciones con cobertura verificable. Mantener paper-only y no habilitar live trading.
 
 ## Fase completada — Demo local paper (PR #75)
 
