@@ -122,3 +122,41 @@ def test_ccxt_readonly_adapter_sanitizes_exchange_errors():
         provider.fetch_balances()
     assert "do-not-leak" not in str(error.value)
     assert "RuntimeError" in str(error.value)
+
+
+def test_ccxt_readonly_adapter_exposes_no_write_operations():
+    provider = CcxtReadOnlyAccount(
+        "kraken", "key", "secret", exchange_factory=lambda _options: FakeExchange(),
+    )
+    for method in ("create_order", "cancel_order", "withdraw", "transfer"):
+        assert not hasattr(provider, method)
+
+
+def test_ccxt_readonly_adapter_rejects_malformed_empty_balance_collections():
+    exchange = FakeExchange(response={"free": [], "used": {}, "total": {}})
+    provider = CcxtReadOnlyAccount(
+        "kraken", "key", "secret", exchange_factory=lambda _: exchange,
+    )
+    with pytest.raises(CcxtReadOnlyAccountError, match="malformed balance collections"):
+        provider.fetch_balances()
+
+
+def test_ccxt_readonly_adapter_rejects_duplicate_case_normalized_assets():
+    exchange = FakeExchange(response={
+        "free": {"btc": "1", "BTC": "2"},
+        "used": {"btc": "0", "BTC": "0"},
+        "total": {"btc": "1", "BTC": "2"},
+    })
+    provider = CcxtReadOnlyAccount(
+        "kraken", "key", "secret", exchange_factory=lambda _: exchange,
+    )
+    with pytest.raises(CcxtReadOnlyAccountError, match="duplicate normalized"):
+        provider.fetch_balances()
+
+
+def test_ccxt_readonly_adapter_rejects_explicit_blank_account_alias():
+    with pytest.raises(CcxtReadOnlyAccountError, match="alias is invalid"):
+        CcxtReadOnlyAccount(
+            "kraken", "key", "secret", account_alias=" ",
+            exchange_factory=lambda _: FakeExchange(),
+        )
