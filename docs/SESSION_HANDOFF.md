@@ -2,7 +2,7 @@
 
 > **Última revisión del repositorio:** 2026-11-10
 > **Rama base revisada:** `main`
-> **Último commit integrado en `main`:** `dc3bafe1bbf2774badf6faec1f69240214f418c6` — PR #84, roadmap/handoff.
+> **Último commit integrado en `main`:** `a92f4ad8e74f7e44d754923987c3d7bef7dacc8f` — PR #85, final handoff cleanup.
 > **Último feature merge:** `a9378266626aca81be46f854f8d11011ee4804ca` — PR #83, experimental paper demo.
 > **Estado de ejecución:** paper trading únicamente; demo local aislada con 10.000 EUR virtuales; Binance Spot Demo no se usa en esta demo; live trading no implementado ni habilitado.
 
