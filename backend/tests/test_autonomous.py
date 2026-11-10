@@ -93,6 +93,12 @@ def test_decision_cycle_persists_proposal_only_result(tmp_path):
         def snapshot(self, valuation_prices=None):
             return {"cash": 20}
 
+        def reconcile_order_intents(self):
+            return {"reconciled_filled": 0, "reconciliation_required": 0}
+
+        def get_order_intent(self, client_order_id):
+            return None
+
         def get_trade_by_client_order_id(self, client_order_id):
             return None
 
@@ -145,10 +151,30 @@ def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
     class FakePortfolio:
         def __init__(self):
             self.order = None
+            self.intent = None
             self.execute_calls = 0
 
         def snapshot(self, valuation_prices=None):
             return {"cash": 20, "equity": 20, "positions": []}
+
+        def reconcile_order_intents(self):
+            return {"reconciled_filled": 0, "reconciliation_required": 0}
+
+        def get_order_intent(self, client_order_id):
+            return self.intent
+
+        def record_order_intent(self, client_order_id, request, decision):
+            self.intent = {
+                "client_order_id": client_order_id,
+                "status": "risk_approved",
+                "request": request,
+                "decision": decision,
+            }
+            return self.intent
+
+        def reject_order_intent(self, client_order_id, reason):
+            self.intent["status"] = "rejected"
+            self.intent["rejection_reason"] = reason
 
         def get_trade_by_client_order_id(self, client_order_id):
             if self.order and self.order["client_order_id"] == client_order_id:
@@ -158,13 +184,14 @@ def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
         def execute(self, *args, **kwargs):
             self.execute_calls += 1
             self.order = {
-                "symbol": args[0],
-                "side": args[1],
+                "symbol": kwargs["symbol"],
+                "side": kwargs["side"],
                 "client_order_id": kwargs["client_order_id"],
                 "strategy_id": kwargs["strategy_id"],
                 "stop_loss": kwargs["stop_loss"],
                 "take_profit": kwargs["take_profit"],
             }
+            self.intent["status"] = "filled"
             return self.order
 
     store = AutonomousStore(str(tmp_path / "paper-cycle.db"))
