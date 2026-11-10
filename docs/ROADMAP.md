@@ -19,8 +19,8 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 3. **Completado — backups externos y restauración (PR #48):** replicación S3-compatible verificada, status API y descarga/validación de restore candidate. La configuración real del proveedor sigue pendiente en el entorno operativo.
 4. **Completado en PR #50 — dashboard ampliado:** velas OHLC, salud/readiness de conectores, investigación de acciones/ETF, historial de estrategias, intentos/fills paper, backup status y gestión contable de retiradas paper. No hay transferencia real.
 5. **Completado — contrato normalizado de instrumentos v2 (PR #52):** venue/native symbol, precision mode, tick/step, amount/cost bounds, contract size, settlement, expiry, strike, option right, underlying y trading status. No añade aún ejecución de nuevos mercados.
-6. **En curso — catálogo persistente y venue-aware identity:** guardar discovery snapshots, first/last seen, proveedor/venue, restricciones y fallos; mantener los IDs históricos de portfolio y añadir una identidad canónica paralela.
-7. **Despliegue persistente 24/7:** VPS, secretos, aislamiento, TLS/reverse proxy, monitorización, alertas, readiness y recuperación.
+6. **Completado — catálogo persistente y venue-aware identity (PR #54):** snapshots, first/last seen, filtros, discovery history, fallos sanitizados e identidad canónica paralela al ID histórico.
+7. **Siguiente — preparación de operación 24/7:** runbook VPS, secretos, TLS/reverse proxy, aislamiento, monitorización, alertas, readiness, recuperación y pruebas de reinicio; sin despliegue automático.
 8. **Madurez por mercado:** paper/backtest y sandbox/testnet para cada venue/clase; implementar supervisión paper de stops/take-profit equity antes de decisiones autónomas equity.
 9. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
@@ -28,7 +28,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 
 | Área | Estado |
 |---|---|
-| Catálogo persistente de instrumentos | En curso: SQLite discovery snapshots, identidad venue-aware paralela al ID histórico, first/last seen, filtros y fallos sanitizados |
+| Catálogo persistente de instrumentos | Implementado y fusionado en PR #54 (`b9dbba5`); 323 tests y Docker hardening correctos |
 | Contrato normalizado de instrumentos v2 | Implementado y fusionado en PR #52 (`1d6ad47`); 312 tests y Docker hardening correctos; no habilita trading de derivados |
 | Dashboard de supervisión y operaciones paper | Implementado y fusionado en PR #50 (`848d1d3`); 305 tests y Docker hardening correctos |
 | Backups externos S3-compatible y restore candidate verificado | Implementado y fusionado en PR #48 (`ed08cec`); off-host desactivado por defecto hasta configurar `.env.backup`; 304 tests y Docker hardening correctos |
