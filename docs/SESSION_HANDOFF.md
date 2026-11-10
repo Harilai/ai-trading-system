@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `b3cca3d4ff60c134d62d90571284c469239ec403` — merge de PR #59, snapshots inmutables de cuentas y conciliación read-only.  
+> **Último commit observado en `main`:** `6fb6350fb904dd1df7d27cd86f02637a7fb49cf8` — merge de PR #61, conector Binance Spot Demo Trading aislado.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -194,6 +194,18 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - Comparación por cuenta y venue: `initial`, `unchanged`, `changed`; assets nuevos y ausentes se señalan sin asumir que los ausentes equivalen a cero.
 - Importes almacenados como decimal strings canónicos; rechaza floats, cantidades inválidas, snapshots stale/future/out-of-order y fuentes que no declaren read-only.
 - No hay FX valuation, P&L, transfer detection, ni sincronización con la cartera paper.
+
+### Fase completada — Binance Spot Demo Trading (PR #61)
+
+- Merge commit: `6fb6350fb904dd1df7d27cd86f02637a7fb49cf8`.
+- Head validado: `7eb2764f4f31e129106e79cba040f08945e2cdc0`.
+- CI: 372 pruebas Python correctas; Compose, build API y ejecución non-root correctos.
+- Usa CCXT `enable_demo_trading(True)`; no usa el antiguo `set_sandbox_mode(True)`.
+- Comprueba que las rutas REST Spot públicas/privadas usan `demo-api.binance.com` y falla si detecta `api.binance.com` de producción.
+- Variables separadas: `BINANCE_SPOT_DEMO_ENABLED`, `BINANCE_SPOT_DEMO_API_KEY`, `BINANCE_SPOT_DEMO_API_SECRET`; desactivado por defecto.
+- Endpoints owner-authenticated: `GET /api/demo/binance/spot/balances` y `GET /api/demo/binance/spot/markets`.
+- El conector todavía no expone create/cancel order, transferencias, retiradas ni wallet signing.
+- Claves Demo separadas de las de producción; no están configuradas en el entorno operativo.
 
 ## 5. Objetivo de producto y siguientes fases
 
