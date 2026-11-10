@@ -465,3 +465,19 @@ def test_demo_execution_rejects_exchange_amount_mismatch_and_fill_overrun():
 
     assert wrong_amount["status"] == "reconciliation_required"
     assert overfill["status"] == "reconciliation_required"
+
+
+def test_demo_execution_balance_response_advertises_demo_execution_but_no_withdrawals():
+    exchange = FakeDemoExecutionExchange(response={
+        "free": {"USDT": "100"}, "used": {"USDT": "0"}, "total": {"USDT": "100"},
+    })
+    provider = make_demo_execution(exchange)
+    balances = provider.fetch_balances()
+    description = provider.describe()
+
+    assert balances["environment"] == "demo"
+    assert balances["demo_only"] is True
+    assert balances["execution_enabled"] is True
+    assert balances["withdrawals_enabled"] is False
+    assert description["order_submission"] is True
+    assert description["withdrawals"] is False
