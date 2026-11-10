@@ -25,10 +25,11 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 9. **Completado — account snapshot ledger y conciliación read-only (PR #59):** historial inmutable por cuenta/venue, snapshots por activo, deltas exactos y separación de la cartera paper.
 10. **Completado — Binance Spot Demo Trading connector (PR #61):** CCXT Demo mode, verificación estricta de `demo-api.binance.com`, balances virtuales y discovery Spot.
 11. **Completado — lifecycle de órdenes Binance Spot Demo (PR #63):** limit orders, intents persistentes, clientOrderId, timeout/unknown-state reconciliation, partial fills, cancelación, auditoría append-only y fail-closed. No existe fallback a producción.
-12. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** verificar respuestas reales, filtros/precisión, comisiones, partial fills, cancelación, timeout y reconciliación tras restart. Las credenciales deben configurarse solo en el servidor y ser exclusivamente Demo.
-13. **Generalización multi-venue:** contratos de ejecución, balances, posiciones, permisos y conciliación para otros CEX/brokers y clases de activo.
-14. **Supervisión paper equity y operación 24/7:** stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
-15. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+12. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** seguir `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md` y verificar respuestas reales, filtros/precisión, partial fills, cancelación, timeout y reconciliación tras restart. Credenciales Demo solo en el servidor.
+13. **Completar evidencia de ejecución Demo:** ledger idempotente de fills individuales, IDs de trade, comisiones/activo de comisión y reconciliación contra trades; añadir polling de órdenes abiertas/unknown con leases y rate limits. PR #63 registra solo cantidades acumuladas y precio medio.
+14. **Generalización multi-venue:** contratos de ejecución, balances, posiciones, permisos y conciliación para otros CEX/brokers y clases de activo.
+15. **Supervisión paper equity y operación 24/7:** stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
+16. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## Estado integrado
 
@@ -108,7 +109,8 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [x] Implementar Sniper determinista separado para proponer entrada, stop-loss, take-profit y tamaño según ATR, presupuesto de riesgo neto de costes estimados de entrada/salida, asignación máxima y efectivo; Risk Manager sigue siendo el gate obligatorio.
 - [x] Conectar Risk Manager como puerta obligatoria para propuestas del Chief y órdenes paper.
 - [x] Añadir idempotencia de órdenes paper mediante `client_order_id` vinculado a la tarea.
-- [ ] Completar estados legales de órdenes, conciliación y recuperación frente a fallos en cada frontera de persistencia.
+- [x] Completar estados legales de órdenes paper (PR #44) y lifecycle limit-order Binance Spot Demo (PR #63), con idempotencia, reconciliación y fail-closed.
+- [ ] Añadir reconciliación periódica automática de órdenes Demo abiertas/unknown tras restart, con lease, rate limit y sin reenvío ciego.
 - [ ] Añadir monitorización paper de stop-loss/take-profit equity con cotizaciones USD y FX frescas, cierres idempotentes y recuperación tras reinicio.
 - [x] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
 - [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
@@ -120,6 +122,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [x] Permitir solicitudes manuales sobre cualquier efectivo disponible, con aprobación explícita, reserva de efectivo para solicitudes pendientes y desglose entre beneficio reservado y capital no reservado.
 - [ ] Calcular mínimos y costes de retirada según proveedor; nunca conceder permisos de retirada a claves de trading.
 - [ ] Recalcular riesgo y capital viable tras una retirada.
+- [ ] Persistir fills individuales de Binance Demo con trade ID, cantidad, precio, comisión y activo de comisión; reconciliar idempotentemente contra el exchange antes de usar balances Demo como evidencia contable.
 
 ## Prioridad 4 — cobertura y producto
 
