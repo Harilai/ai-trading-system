@@ -231,13 +231,17 @@ class AccountSnapshotStore:
             db.execute("BEGIN IMMEDIATE")
             previous_row = db.execute(
                 """
-                SELECT snapshot_id FROM account_snapshots
+                SELECT snapshot_id,fetched_at FROM account_snapshots
                 WHERE provider_id=? AND account_alias=? AND market_type=?
                 ORDER BY fetched_at DESC, recorded_at DESC, snapshot_id DESC LIMIT 1
                 """,
                 (provider_id, account_alias, market_type),
             ).fetchone()
             previous_id = previous_row["snapshot_id"] if previous_row else None
+            if previous_row and normalized["fetched_at"] < previous_row["fetched_at"]:
+                raise AccountSnapshotError(
+                    "Account snapshot is older than the latest stored observation"
+                )
             previous_balances = {}
             if previous_id:
                 rows = db.execute(
