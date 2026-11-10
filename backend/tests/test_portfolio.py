@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import pytest
 
 from app.portfolio import PaperPortfolio, PortfolioError
@@ -536,6 +538,8 @@ def test_order_intent_survives_restart_and_fills_exact_approved_request(tmp_path
         "minimum": 1, "client_order_id": "task-order-1",
         "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
         "strategy_id": "ema_12_26", "stop_loss": 9800, "take_profit": 10400,
+        "market_timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+        "risk_fx_rate_to_eur": 1.0, "risk_fx_provider_id": None, "risk_fx_timestamp": None,
     }
     portfolio = PaperPortfolio(path, 20)
     created = portfolio.record_order_intent(
@@ -563,6 +567,8 @@ def test_order_intent_survives_restart_and_fills_exact_approved_request(tmp_path
     assert replay["id"] == fill["id"]
     assert replay["idempotent_replay"] is True
     assert len(restarted.history()) == 1
+    events = restarted.list_order_intent_events("task-order-1")
+    assert [event["to_status"] for event in events] == ["risk_approved", "filled"]
 
 
 def test_order_intent_rejects_reuse_with_changed_request(portfolio):
@@ -652,3 +658,25 @@ def test_rejected_order_intent_is_terminal(portfolio):
             "rejected-intent", {**request, "quantity": 0.002},
             {"risk_accepted": True},
         )
+
+
+def test_order_intent_freshness_requires_recent_market_and_fx_timestamps(tmp_path):
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    portfolio = PaperPortfolio(str(tmp_path / "intent-freshness.db"), 100)
+    request = {
+        "symbol": "AAPL", "side": "buy", "quantity": 0.1, "price": 100,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "fresh-usd-intent",
+        "provider_id": "twelve_data", "instrument_id": "twelve_data:cash_equity:AAPL",
+        "quote_currency": "USD", "fx_rate_to_eur": 1 / 1.1,
+        "fx_provider_id": "twelve_data", "fx_timestamp": now_ms,
+        "market_timestamp": now_ms,
+    }
+    portfolio.record_order_intent("fresh-usd-intent", request, {"risk_accepted": True})
+    assert portfolio.order_intent_is_fresh("fresh-usd-intent", 60, 300, now_ms) is True
+    assert portfolio.order_intent_is_fresh("fresh-usd-intent", 60, 300, now_ms + 61_000) is False
+    assert portfolio.expire_order_intent("fresh-usd-intent", "market evidence expired") is True
+    assert portfolio.get_order_intent("fresh-usd-intent")["status"] == "expired"
+    assert [event["to_status"] for event in portfolio.list_order_intent_events("fresh-usd-intent")] == [
+        "risk_approved", "expired",
+    ]
