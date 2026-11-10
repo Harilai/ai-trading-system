@@ -32,6 +32,7 @@ from .accounts.binance_demo import BinanceDemoError, BinanceSpotDemoExecution
 from .accounts.demo_order_store import (
     BinanceDemoOrderStore, DemoOrderConflict, DemoOrderStoreError,
 )
+from .demo_reconciliation import BinanceDemoOrderReconciler
 
 WORKER_HEARTBEAT_MAX_AGE_SECONDS = 600
 
@@ -85,6 +86,15 @@ if settings.binance_spot_demo_enabled:
     else:
         binance_demo_configuration_status = "incomplete_configuration"
 del _demo_key, _demo_secret
+
+demo_order_reconciler = (
+    BinanceDemoOrderReconciler(
+        demo_order_store,
+        binance_demo_account_provider,
+        interval_seconds=settings.binance_demo_reconciliation_interval_seconds,
+    )
+    if binance_demo_account_provider is not None else None
+)
 
 class OrderRequest(BaseModel):
     symbol: str = Field(min_length=3)
@@ -1191,6 +1201,7 @@ agent_worker = AutonomousAgent(
     chief=chief,
     portfolio=portfolio,
     equity_research=equity_research_agent,
+    demo_reconciler=demo_order_reconciler,
 )
 
 @asynccontextmanager
