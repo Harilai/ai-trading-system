@@ -78,7 +78,7 @@ def test_ccxt_readonly_adapter_registers_with_normalized_account_registry():
     accounts = registry.list_accounts()
     snapshot = registry.fetch_balances("ccxt:kraken")
 
-    assert accounts[0]["account_alias"] == "kraken-spot-readonly"
+    assert accounts[0]["account_alias"] == "ccxt-kraken-spot-readonly"
     assert snapshot["environment"] == "production"
     assert snapshot["permissions_verified"] is False
     assert snapshot["balances"][0]["asset"] == "BTC"
