@@ -400,3 +400,68 @@ def test_demo_execution_fails_closed_on_inconsistent_closed_order_response():
         "remaining": "0.001",
     }, expected_client_order_id="client-invalid")
     assert order["status"] == "reconciliation_required"
+
+
+def test_demo_execution_rejects_closed_order_without_complete_fill_evidence():
+    exchange = FakeDemoExecutionExchange()
+    provider = make_demo_execution(exchange)
+
+    missing_remaining = provider.normalize_order({
+        "id": "order-missing-remaining",
+        "clientOrderId": "client-missing-remaining",
+        "status": "closed",
+        "amount": "0.001",
+        "filled": "0.001",
+        "remaining": None,
+    }, expected_client_order_id="client-missing-remaining", expected_amount="0.001")
+    partial_closed = provider.normalize_order({
+        "id": "order-partial-closed",
+        "clientOrderId": "client-partial-closed",
+        "status": "closed",
+        "amount": "0.001",
+        "filled": "0.0004",
+        "remaining": "0",
+    }, expected_client_order_id="client-partial-closed", expected_amount="0.001")
+
+    assert missing_remaining["status"] == "reconciliation_required"
+    assert partial_closed["status"] == "reconciliation_required"
+
+
+def test_demo_execution_rejects_exchange_order_id_mismatch():
+    exchange = FakeDemoExecutionExchange()
+    provider = make_demo_execution(exchange)
+    result = provider.normalize_order({
+        "id": "different-exchange-id",
+        "clientOrderId": "client-id",
+        "status": "open",
+        "amount": "0.001",
+        "filled": "0",
+        "remaining": "0.001",
+    }, expected_client_order_id="client-id", expected_amount="0.001",
+       expected_exchange_order_id="persisted-exchange-id")
+    assert result["status"] == "reconciliation_required"
+    assert "exchange order ID" in result["error"]
+
+
+def test_demo_execution_rejects_exchange_amount_mismatch_and_fill_overrun():
+    exchange = FakeDemoExecutionExchange()
+    provider = make_demo_execution(exchange)
+    wrong_amount = provider.normalize_order({
+        "id": "wrong-amount",
+        "clientOrderId": "client-amount",
+        "status": "open",
+        "amount": "0.002",
+        "filled": "0",
+        "remaining": "0.002",
+    }, expected_client_order_id="client-amount", expected_amount="0.001")
+    overfill = provider.normalize_order({
+        "id": "overfill",
+        "clientOrderId": "client-overfill",
+        "status": "open",
+        "amount": "0.001",
+        "filled": "0.0012",
+        "remaining": "0",
+    }, expected_client_order_id="client-overfill", expected_amount="0.001")
+
+    assert wrong_amount["status"] == "reconciliation_required"
+    assert overfill["status"] == "reconciliation_required"
