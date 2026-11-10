@@ -35,6 +35,7 @@ class ChiefAgent:
         estimated_fee_rate: float = 0.0026,
         estimated_slippage_rate: float = 0.0005,
         minimum_order_value_eur: float = 1.0,
+        allow_experimental_strategies: bool = False,
     ):
         if not 0 < max_order_fraction <= 1:
             raise ValueError("max_order_fraction must be in (0, 1]")
@@ -60,21 +61,36 @@ class ChiefAgent:
         self.estimated_fee_rate = estimated_fee_rate
         self.estimated_slippage_rate = estimated_slippage_rate
         self.minimum_order_value_eur = minimum_order_value_eur
+        self.allow_experimental_strategies = bool(allow_experimental_strategies)
 
     @staticmethod
     def _instrument_identity(provider_id: str, instrument_id: str | None, symbol: str) -> str:
         return instrument_id or f"{provider_id}:spot:{symbol.upper()}"
 
     @staticmethod
-    def _candidate_for(item: dict[str, Any], strategy_id: str | None = None):
+    def _candidate_for(
+        item: dict[str, Any],
+        strategy_id: str | None = None,
+        *,
+        allow_experimental: bool = False,
+    ):
         research = item.get("strategy_research", {})
         wanted = strategy_id or research.get("recommended_strategy")
+        if isinstance(wanted, str) and wanted.startswith("experimental:"):
+            wanted = wanted.removeprefix("experimental:")
+            allow_experimental = True
+        if not wanted and allow_experimental:
+            wanted = research.get("recommended_experimental_strategy")
         if not wanted:
             return None
         return next(
             (
                 candidate for candidate in research.get("candidates", [])
-                if candidate.get("strategy_id") == wanted and candidate.get("eligible")
+                if candidate.get("strategy_id") == wanted
+                and (
+                    candidate.get("eligible")
+                    or (allow_experimental and candidate.get("experimental_eligible"))
+                )
             ),
             None,
         )
@@ -139,7 +155,11 @@ class ChiefAgent:
             elif take_profit is not None and sell_price >= float(take_profit):
                 exit_reason = "persisted take-profit triggered"
             else:
-                candidate = self._candidate_for(item, position.get("strategy_id"))
+                candidate = self._candidate_for(
+                    item,
+                    position.get("strategy_id"),
+                    allow_experimental=self.allow_experimental_strategies,
+                )
                 if candidate is not None and not candidate.get("current_hold_signal", False):
                     exit_reason = "validated strategy exit signal"
             if exit_reason is None:
@@ -189,12 +209,23 @@ class ChiefAgent:
         for item in scan.get("analyses", []):
             research = item.get("strategy_research", {})
             strategy_id = research.get("recommended_strategy")
-            candidate = self._candidate_for(item, strategy_id)
+            experimental = False
+            if not strategy_id and self.allow_experimental_strategies:
+                strategy_id = research.get("recommended_experimental_strategy")
+                experimental = bool(strategy_id)
+            candidate = self._candidate_for(
+                item,
+                strategy_id,
+                allow_experimental=experimental,
+            )
             if candidate is None:
                 continue
             market = item.get("market", {})
             symbol = str(market.get("symbol", "")).upper()
-            score = candidate.get("score")
+            score = (
+                candidate.get("experimental_score")
+                if experimental else candidate.get("score")
+            )
             provider_id = str(market.get("provider_id") or "ccxt:kraken")
             identity = self._instrument_identity(provider_id, market.get("instrument_id"), symbol)
             if (
@@ -203,10 +234,10 @@ class ChiefAgent:
                 or not isinstance(score, (int, float))
             ):
                 continue
-            opportunities.append((float(score), item, candidate, strategy_id, symbol))
+            opportunities.append((float(score), item, candidate, strategy_id, symbol, experimental))
 
         opportunities.sort(key=lambda row: row[0], reverse=True)
-        for score, item, candidate, strategy_id, symbol in opportunities:
+        for score, item, candidate, strategy_id, symbol, experimental in opportunities:
             market = item["market"]
             analysis = item["analysis"]
             proposal = self.sniper.propose(
@@ -215,6 +246,7 @@ class ChiefAgent:
                 candidate,
                 equity=equity,
                 available_cash=cash,
+                allow_experimental=experimental,
             )
             if proposal is None:
                 continue
@@ -225,10 +257,18 @@ class ChiefAgent:
                     symbol=symbol,
                     provider_id=proposal.provider_id,
                     instrument_id=proposal.instrument_id,
-                    strategy_id=strategy_id,
-                    rationale="Best validated entry opportunity passed deterministic risk checks",
+                    strategy_id=(f"experimental:{strategy_id}" if experimental else strategy_id),
+                    rationale=(
+                        "Experimental paper-only entry; strategy is not validated for profitability"
+                        if experimental else
+                        "Best validated entry opportunity passed deterministic risk checks"
+                    ),
                     evidence={
                         "score": score,
+                        "strategy_validation_status": "experimental" if experimental else "validated",
+                        "validation_failures": (
+                            candidate.get("validation_failures", []) if experimental else []
+                        ),
                         "market": market,
                         "out_of_sample": candidate["out_of_sample"],
                         "risk_budget_eur": equity * self.risk_per_trade_fraction,
