@@ -357,3 +357,56 @@ def test_registry_rejects_duplicate_or_wrong_market_positions():
     wrong_market_registry.register(FakePositionProvider([{**base, "market_type": "spot"}]))
     with pytest.raises(AccountProviderError, match="market_type"):
         wrong_market_registry.fetch_positions("test:positions")
+
+
+def test_registry_rejects_stale_position_source_timestamps():
+    class StalePositionProvider:
+        def describe(self):
+            return {
+                "provider_id": "test:stale-positions",
+                "account_alias": "account",
+                "venue_type": "broker",
+                "market_types": ["cash_equity"],
+                "environment": "production",
+                "configured": True,
+                "balances": False,
+                "positions": True,
+                "order_management": False,
+                "order_submission": False,
+                "order_cancellation": False,
+                "reconciliation": False,
+                "read_only_connector": True,
+                "transfers": False,
+                "withdrawals": False,
+                "wallet_signing": False,
+                "account_key_permissions_verified": False,
+            }
+
+        def fetch_positions(self):
+            return {
+                "provider_id": "test:stale-positions",
+                "account_alias": "account",
+                "market_type": "cash_equity",
+                "environment": "production",
+                "fetched_at": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(),
+                "positions": [],
+            }
+
+    registry = AccountProviderRegistry()
+    registry.register(StalePositionProvider())
+    with pytest.raises(AccountProviderError, match="stale"):
+        registry.fetch_positions("test:stale-positions")
+
+
+def test_registry_rejects_snapshot_market_type_mismatch_for_balance_provider():
+    registry = AccountProviderRegistry()
+    registry.register(FakeAccountProvider())
+
+    class SnapshotStore:
+        def record_snapshot(self, snapshot):
+            return snapshot
+
+    with pytest.raises(AccountProviderError, match="conflicts"):
+        registry.record_read_only_snapshot(
+            "test:venue", SnapshotStore(), market_type="cash_equity",
+        )
