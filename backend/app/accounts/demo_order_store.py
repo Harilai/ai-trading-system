@@ -21,7 +21,7 @@ class DemoOrderConflict(DemoOrderStoreError):
 _ALLOWED_TRANSITIONS = {
     "intent_created": {"submission_unknown", "rejected"},
     "submission_unknown": {
-        "open", "partially_filled", "filled", "cancelled", "expired",
+        "submission_unknown", "open", "partially_filled", "filled", "cancelled", "expired",
         "rejected", "reconciliation_required",
     },
     "open": {"open", "partially_filled", "filled", "cancelled", "expired", "reconciliation_required"},
