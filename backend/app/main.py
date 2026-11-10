@@ -104,11 +104,11 @@ class FxConversionRequest(BaseModel):
     client_conversion_id: str = Field(min_length=1, max_length=128)
 
 class DemoLimitOrderRequest(BaseModel):
-    symbol: str = Field(min_length=3, max_length=40)
+    symbol: str = Field(min_length=3, max_length=40, strict=True)
     side: Literal["buy", "sell"]
-    amount: str = Field(min_length=1, max_length=80)
-    price: str = Field(min_length=1, max_length=80)
-    client_order_id: str = Field(min_length=1, max_length=36)
+    amount: str = Field(min_length=1, max_length=80, strict=True)
+    price: str = Field(min_length=1, max_length=80, strict=True)
+    client_order_id: str = Field(min_length=1, max_length=36, strict=True)
 
 @app.get("/dashboard", include_in_schema=False)
 def dashboard():
