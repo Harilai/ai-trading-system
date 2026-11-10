@@ -282,7 +282,8 @@ Siguiente secuencia:
 - Registry por `provider_id + account_alias`; Binance production read-only y Binance Demo permanecen como cuentas separadas.
 - Contratos para capacidades/permisos, balances, posiciones y órdenes; endpoints genéricos para balances y snapshots read-only.
 - No añade broker genérico ni ejecución live. El estado de permisos reales de la API key sigue sin verificarse automáticamente.
-- CI en el head actual: 432 pruebas Python y Docker hardening correctos (pendiente incorporar la documentación más reciente y repetir CI).
+- Head final validado: `f6dd4affe0e824e0af21610e6cced440b6ea3fff`.
+- CI sobre ese SHA: **433 pruebas Python correctas**; Compose, build Docker y ejecución non-root correctos.
 
 ## 6. Límites que no se deben saltar
 
