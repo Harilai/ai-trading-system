@@ -61,7 +61,7 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 
 - Rama: `phase/multicurrency-paper-portfolio`.
 - PR: https://github.com/Harilai/ai-trading-system/pull/41
-- Último head revisado al actualizar este handoff: `d1cd33fe633b340ab773c160c1cb2511729652c2`.
+- Último head revisado al actualizar este handoff: `95273b50d097dd113d874d2cf1df3b12c73ae499`.
 - Se ha añadido ledger EUR/USD, migración aditiva desde `account.cash`, conversión paper idempotente y auditada, FX Twelve Data con caché/cuota y validación estricta de timestamp/tasa.
 - La posición conserva coste medio nativo y coste medio EUR; cada fill USD registra tasa, proveedor y timestamp FX. P/L de ventas USD se calcula en EUR. Los costes de conversión reducen el P/L realizado EUR.
 - Se ha añadido ruta manual, autenticada y paper-only para cash equities/ETF USD descubiertos por Twelve Data. Requiere saldo USD preconvertido, mercado abierto, cotización fresca, spread máximo cuando bid/ask están disponibles, slippage paper explícito, clave idempotente y aprobación del Risk Manager.
