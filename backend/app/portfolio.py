@@ -785,6 +785,8 @@ class PaperPortfolio:
                         raise PortfolioError("client_order_id was already used for a different order intent")
                     if intent_row["status"] == "rejected":
                         raise PortfolioError("This order intent was already rejected")
+                    if intent_row["status"] == "expired":
+                        raise PortfolioError("This order intent expired and cannot be executed")
                     if intent_row["status"] == "reconciliation_required":
                         raise PortfolioError("This order intent requires reconciliation before execution")
 
