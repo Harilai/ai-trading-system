@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, Header, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from .config import settings
@@ -27,7 +27,10 @@ from .fx import invert_fx_observation, validate_fx_observation
 from .backup_scheduler import read_backup_status
 from .accounts.binance_spot import AccountConnectorError, BinanceSpotReadOnlyAccount
 from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
-from .accounts.binance_demo import BinanceDemoError, BinanceSpotDemoAccount
+from .accounts.binance_demo import BinanceDemoError, BinanceSpotDemoExecution
+from .accounts.demo_order_store import (
+    BinanceDemoOrderStore, DemoOrderConflict, DemoOrderStoreError,
+)
 
 WORKER_HEARTBEAT_MAX_AGE_SECONDS = 600
 
@@ -47,6 +50,7 @@ if settings.twelve_data_api_key:
 portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 instrument_catalog = InstrumentCatalog(settings.database_path)
 account_snapshot_store = AccountSnapshotStore(settings.database_path)
+demo_order_store = BinanceDemoOrderStore(settings.database_path)
 
 _binance_key = settings.binance_readonly_api_key.get_secret_value().strip()
 _binance_secret = settings.binance_readonly_api_secret.get_secret_value().strip()
@@ -69,7 +73,7 @@ binance_demo_account_provider = None
 if settings.binance_spot_demo_enabled:
     if _demo_key and _demo_secret:
         try:
-            binance_demo_account_provider = BinanceSpotDemoAccount(
+            binance_demo_account_provider = BinanceSpotDemoExecution(
                 _demo_key,
                 _demo_secret,
                 enabled=True,
@@ -98,6 +102,13 @@ class FxConversionRequest(BaseModel):
     to_currency: Literal["EUR", "USD"]
     amount: float = Field(gt=0)
     client_conversion_id: str = Field(min_length=1, max_length=128)
+
+class DemoLimitOrderRequest(BaseModel):
+    symbol: str = Field(min_length=3, max_length=40)
+    side: Literal["buy", "sell"]
+    amount: str = Field(min_length=1, max_length=80)
+    price: str = Field(min_length=1, max_length=80)
+    client_order_id: str = Field(min_length=1, max_length=36)
 
 @app.get("/dashboard", include_in_schema=False)
 def dashboard():
