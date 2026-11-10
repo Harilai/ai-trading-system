@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `013f44f7be1da1a8c540bf01722be91e05560efe` — merge de PR #63, ciclo de vida de órdenes Binance Spot Demo.  
+> **Último commit observado en `main`:** `0f667db605da2baaf84d47f498fa85fd620c495a` — merge de PR #66, ledger individual de fills y comisiones Binance Spot Demo.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -43,9 +43,21 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - Dashboard, health/readiness, controles autenticados y backups SQLite.
 - No hay ejecución en producción/live, wallets, firma blockchain, broker de acciones, derivados ni DeFi. Binance Spot Demo permite únicamente órdenes limit en el entorno virtual; el conector Binance de producción sigue siendo read-only.
 
-## 4. Fases completadas: cartera multidivisa y conciliación de órdenes
+## 4. Fases completadas: cartera multidivisa, conciliación y ejecución Demo
 
 **Completada en PR #41.** La cartera paper mantiene efectivo y posiciones EUR/USD, permite conversiones explícitas y valora acciones/ETF estadounidenses en USD dentro de una cartera cuya divisa base continúa siendo EUR. La investigación sigue siendo read-only para el Chief: las órdenes equity son manuales y paper-only.
+
+### Binance Spot Demo — PR #66: ledger individual de fills y comisiones
+
+- PR: https://github.com/Harilai/ai-trading-system/pull/66
+- Merge commit: `0f667db605da2baaf84d47f498fa85fd620c495a`.
+- Head validado: `6c12158183cd8c7738dacded8b6679dc11bd0edc`.
+- CI: 410 pruebas Python correctas; Compose, build Docker y ejecución non-root correctos.
+- Tabla append-only por trade ID + símbolo: order ID, símbolo, side, cantidad, precio, coste quote, comisión, activo y timestamp.
+- Reconciliación autenticada por order ID con idempotencia y rechazo de identidades/evidencias contradictorias.
+- Cada fill exige comisión identificada; se bloquean nuevas órdenes Demo hasta que el total de fills individuales cubra el acumulado de la orden y todas las comisiones estén presentes.
+- Endpoints: `POST /api/demo/binance/spot/orders/{client_order_id}/fills/reconcile` y `GET /api/demo/binance/spot/orders/{client_order_id}/fills`.
+- No es todavía un ledger de contabilidad de producción ni se mezcla con balances reales o la cartera paper.
 
 ### Decisiones de arquitectura y límites
 
@@ -236,12 +248,13 @@ Siguiente secuencia:
 4. **Completado — preparación operativa 24/7 (PR #56):** healthcheck, reintentos, rotación de logs, runbook VPS y unidad systemd. El VPS real todavía no está desplegado.
 5. **Completado — Binance Spot read-only y snapshots (PR #57/#59):** balances reales en modo lectura e historial/conciliación inmutable, separados de la cartera paper.
 6. **Completado — Binance Spot Demo connector y lifecycle de órdenes (PR #61/#63):** limit orders, idempotencia, reconciliación, cancelación y fail-closed. No existe ruta de órdenes a producción.
-7. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** seguir `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md`; configurar las credenciales Demo únicamente en el servidor y verificar respuestas reales, filtros de mercado, precisión, partial fills, cancelación, timeout y reconciliación tras restart. No compartir claves en el chat ni guardarlas en Git. No usar claves de producción.
-8. **Después del smoke test — completar la evidencia de ejecución:** persistir fills individuales, IDs de trade, comisiones/activo de comisión y reconciliación idempotente contra `fetch_my_trades`; añadir reconciliación periódica de órdenes Demo abiertas/unknown con leases y rate limits. PR #63 solo persiste cantidades acumuladas y precio medio, no un ledger de fills/fees.
-9. Generalizar contratos de ejecución, balances, posiciones, permisos y account/portfolio reconciliation para otros CEX/brokers y clases de activo.
-10. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
-11. Completar despliegue persistente 24/7 en VPS y configurar el proveedor externo de backups en el entorno operativo.
-12. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+7. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** seguir `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md`; configurar las credenciales Demo únicamente en el servidor y verificar respuestas reales, filtros de mercado, precisión, partial fills, cancelación, timeout y reconciliación tras restart. No compartir claves en el chat ni guardarlas en Git. No usar claves de producción. Esta comprobación requiere una cuenta Demo y acceso al servidor del propietario; no se simula como si se hubiera ejecutado.
+8. **Completado — ledger individual de fills/fees (PR #66):** persistencia append-only, IDs de trade, cantidades, precios, costes, comisiones/activos y reconciliación idempotente por order ID. Nuevas órdenes Demo se bloquean mientras falte cobertura de fills o comisiones.
+9. **Siguiente — reconciliación periódica de órdenes Demo abiertas/unknown:** worker con leases, rate limits, backoff y recuperación tras restart; debe refrescar estados y fills sin reenvío ciego.
+10. Generalizar contratos de ejecución, balances, posiciones, permisos y account/portfolio reconciliation para otros CEX/brokers y clases de activo.
+11. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
+12. Completar despliegue persistente 24/7 en VPS y configurar el proveedor externo de backups en el entorno operativo.
+13. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## 6. Límites que no se deben saltar
 
