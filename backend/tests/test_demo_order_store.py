@@ -143,6 +143,14 @@ def test_demo_order_store_validates_client_ids_symbols_and_decimal_strings(tmp_p
     invalid_amount["amount"] = 0.001
     with pytest.raises(DemoOrderStoreError, match="decimal string"):
         store.prepare_intent(invalid_amount)
+    scientific_amount = request()
+    scientific_amount["amount"] = "1e-3"
+    with pytest.raises(DemoOrderStoreError, match="plain decimal string"):
+        store.prepare_intent(scientific_amount)
+    whitespace_price = request()
+    whitespace_price["price"] = " 20000"
+    with pytest.raises(DemoOrderStoreError, match="plain decimal string"):
+        store.prepare_intent(whitespace_price)
 
 
 def test_demo_order_store_lists_orders_with_bounded_limit(tmp_path):
