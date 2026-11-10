@@ -236,11 +236,12 @@ Siguiente secuencia:
 4. **Completado — preparación operativa 24/7 (PR #56):** healthcheck, reintentos, rotación de logs, runbook VPS y unidad systemd. El VPS real todavía no está desplegado.
 5. **Completado — Binance Spot read-only y snapshots (PR #57/#59):** balances reales en modo lectura e historial/conciliación inmutable, separados de la cartera paper.
 6. **Completado — Binance Spot Demo connector y lifecycle de órdenes (PR #61/#63):** limit orders, idempotencia, reconciliación, cancelación y fail-closed. No existe ruta de órdenes a producción.
-7. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** configurar las credenciales Demo únicamente en el servidor, verificar respuestas reales, filtros de mercado, precisión, comisiones, partial fills, cancelación, timeout y reconciliación tras restart. No compartir claves en el chat ni guardarlas en Git. No usar claves de producción.
-8. Generalizar contratos de ejecución, balances, posiciones, permisos y account/portfolio reconciliation para otros CEX/brokers y clases de activo.
-9. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
-10. Completar despliegue persistente 24/7 en VPS y configurar el proveedor externo de backups en el entorno operativo.
-11. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+7. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** seguir `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md`; configurar las credenciales Demo únicamente en el servidor y verificar respuestas reales, filtros de mercado, precisión, partial fills, cancelación, timeout y reconciliación tras restart. No compartir claves en el chat ni guardarlas en Git. No usar claves de producción.
+8. **Después del smoke test — completar la evidencia de ejecución:** persistir fills individuales, IDs de trade, comisiones/activo de comisión y reconciliación idempotente contra `fetch_my_trades`; añadir reconciliación periódica de órdenes Demo abiertas/unknown con leases y rate limits. PR #63 solo persiste cantidades acumuladas y precio medio, no un ledger de fills/fees.
+9. Generalizar contratos de ejecución, balances, posiciones, permisos y account/portfolio reconciliation para otros CEX/brokers y clases de activo.
+10. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
+11. Completar despliegue persistente 24/7 en VPS y configurar el proveedor externo de backups en el entorno operativo.
+12. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## 6. Límites que no se deben saltar
 
