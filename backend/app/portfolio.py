@@ -1,3 +1,4 @@
+import json
 import math
 import sqlite3
 from datetime import datetime, timezone
@@ -39,6 +40,13 @@ class PaperPortfolio:
                 "CREATE TABLE IF NOT EXISTS trades ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, symbol TEXT, side TEXT, quantity REAL, "
                 "price REAL, fee REAL, total REAL, created_at TEXT, client_order_id TEXT)"
+            )
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS order_intents ("
+                "client_order_id TEXT PRIMARY KEY, status TEXT NOT NULL, "
+                "request_json TEXT NOT NULL, decision_json TEXT, "
+                "trade_id INTEGER, rejection_reason TEXT, fill_json TEXT, "
+                "created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
             )
             db.execute(
                 "CREATE TABLE IF NOT EXISTS currency_balances ("
@@ -324,6 +332,133 @@ class PaperPortfolio:
                 (client_order_id,),
             ).fetchone()
         return dict(row) if row else None
+
+    @staticmethod
+    def _canonical_json(value: dict) -> str:
+        try:
+            return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise PortfolioError("Order intent must contain finite JSON-compatible values") from exc
+
+    def record_order_intent(
+        self,
+        client_order_id: str,
+        request: dict,
+        decision: dict | None = None,
+    ) -> dict:
+        """Durably persist a risk-approved paper order before attempting its fill."""
+        if not isinstance(client_order_id, str) or not client_order_id.strip():
+            raise PortfolioError("Order intent requires a non-blank client_order_id")
+        if not isinstance(request, dict) or request.get("client_order_id") != client_order_id:
+            raise PortfolioError("Order intent request must carry the matching client_order_id")
+        request_json = self._canonical_json(request)
+        decision_json = self._canonical_json(decision) if decision is not None else None
+        stamp = datetime.now(timezone.utc).isoformat()
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            existing = db.execute(
+                "SELECT * FROM order_intents WHERE client_order_id=?",
+                (client_order_id,),
+            ).fetchone()
+            if existing:
+                if existing["request_json"] != request_json:
+                    raise PortfolioError("client_order_id was already used for a different order intent")
+                return self._decode_order_intent(existing)
+            trade = db.execute(
+                "SELECT id FROM trades WHERE client_order_id=?",
+                (client_order_id,),
+            ).fetchone()
+            status = "filled" if trade else "risk_approved"
+            db.execute(
+                "INSERT INTO order_intents(client_order_id,status,request_json,decision_json,trade_id,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (
+                    client_order_id, status, request_json, decision_json,
+                    int(trade["id"]) if trade else None, stamp, stamp,
+                ),
+            )
+        return self.get_order_intent(client_order_id)
+
+    @staticmethod
+    def _decode_order_intent(row) -> dict:
+        result = dict(row)
+        result["request"] = json.loads(result.pop("request_json"))
+        raw_decision = result.pop("decision_json")
+        result["decision"] = json.loads(raw_decision) if raw_decision else None
+        raw_fill = result.pop("fill_json")
+        result["fill"] = json.loads(raw_fill) if raw_fill else None
+        return result
+
+    def get_order_intent(self, client_order_id: str) -> dict | None:
+        if not isinstance(client_order_id, str) or not client_order_id.strip():
+            return None
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM order_intents WHERE client_order_id=?",
+                (client_order_id.strip(),),
+            ).fetchone()
+        return self._decode_order_intent(row) if row else None
+
+    def list_order_intents(self, limit: int = 100) -> list[dict]:
+        if not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise PortfolioError("Order intent limit must be between 1 and 1000")
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM order_intents ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [self._decode_order_intent(row) for row in rows]
+
+    def reject_order_intent(self, client_order_id: str, reason: str) -> None:
+        if not isinstance(reason, str) or not reason.strip():
+            raise PortfolioError("Order rejection requires a reason")
+        with self.lock, self.connect() as db:
+            changed = db.execute(
+                "UPDATE order_intents SET status='rejected', rejection_reason=?, updated_at=? "
+                "WHERE client_order_id=? AND status='risk_approved'",
+                (reason.strip()[:2000], datetime.now(timezone.utc).isoformat(), client_order_id),
+            ).rowcount
+            if changed != 1:
+                current = db.execute(
+                    "SELECT status FROM order_intents WHERE client_order_id=?",
+                    (client_order_id,),
+                ).fetchone()
+                if current is None or current["status"] != "rejected":
+                    raise PortfolioError("Order intent cannot transition to rejected from its current state")
+
+    def reconcile_order_intents(self) -> dict:
+        """Reconcile persisted paper intents against the atomic trade ledger."""
+        now = datetime.now(timezone.utc).isoformat()
+        filled = 0
+        uncertain = 0
+        with self.lock, self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            rows = db.execute(
+                "SELECT client_order_id,status,trade_id FROM order_intents "
+                "WHERE status IN ('risk_approved','filled','reconciliation_required')"
+            ).fetchall()
+            for row in rows:
+                trade = db.execute(
+                    "SELECT id FROM trades WHERE client_order_id=?",
+                    (row["client_order_id"],),
+                ).fetchone()
+                if trade:
+                    if row["status"] != "filled" or row["trade_id"] != trade["id"]:
+                        db.execute(
+                            "UPDATE order_intents SET status='filled',trade_id=?,rejection_reason=NULL,updated_at=? "
+                            "WHERE client_order_id=?",
+                            (trade["id"], now, row["client_order_id"]),
+                        )
+                        filled += 1
+                elif row["status"] == "filled":
+                    db.execute(
+                        "UPDATE order_intents SET status='reconciliation_required',"
+                        "rejection_reason='Filled intent has no matching trade ledger row',updated_at=? "
+                        "WHERE client_order_id=?",
+                        (now, row["client_order_id"]),
+                    )
+                    uncertain += 1
+        return {"reconciled_filled": filled, "reconciliation_required": uncertain}
 
     def execute(
         self,
