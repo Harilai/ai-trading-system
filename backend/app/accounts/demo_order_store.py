@@ -326,7 +326,7 @@ class BinanceDemoOrderStore:
             ).fetchone()
             if row is None:
                 raise DemoOrderStoreError("Demo order intent not found")
-            if row["status"] not in ("intent_created", "submission_unknown", "open", "partially_filled"):
+            if row["status"] == "reconciliation_required":
                 return
             self._insert_event(
                 db, client_order_id, row["status"], row["status"],
