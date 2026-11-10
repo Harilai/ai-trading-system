@@ -93,7 +93,7 @@ def test_decision_cycle_persists_proposal_only_result(tmp_path):
         def snapshot(self, valuation_prices=None):
             return {"cash": 20}
 
-        def reconcile_order_intents(self):
+        def reconcile_order_intents(self, *args, **kwargs):
             return {"reconciled_filled": 0, "reconciliation_required": 0}
 
         def get_order_intent(self, client_order_id):
@@ -160,7 +160,7 @@ def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
         def snapshot(self, valuation_prices=None):
             return {"cash": 20, "equity": 20, "positions": []}
 
-        def reconcile_order_intents(self):
+        def reconcile_order_intents(self, *args, **kwargs):
             return {"reconciled_filled": 0, "reconciliation_required": 0}
 
         def get_order_intent(self, client_order_id):
