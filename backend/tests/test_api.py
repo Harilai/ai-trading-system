@@ -883,7 +883,10 @@ def test_markets_api_exposes_normalized_instrument_contract_fields(monkeypatch, 
     )
     from app.instrument_catalog import InstrumentCatalog
     monkeypatch.setattr("app.main.instrument_catalog", InstrumentCatalog(str(tmp_path / "markets.db")))
-    monkeypatch.setattr("app.main.market.discover_markets", lambda: ([instrument], []))
+    monkeypatch.setattr(
+        "app.main.market.discover_markets",
+        lambda: ([instrument], [{"provider_id": "bad-provider", "reason": "api_key=must-not-leak"}]),
+    )
 
     response = client.get("/api/markets")
 
@@ -897,6 +900,9 @@ def test_markets_api_exposes_normalized_instrument_contract_fields(monkeypatch, 
     assert item["maximum_amount"] == pytest.approx(2)
     assert item["trading_status"] == "active"
     assert response.json()["catalogue_sync"]["inserted_count"] == 1
+    assert response.json()["catalogue_sync"]["status"] == "partial"
+    assert "must-not-leak" not in response.text
+    assert response.json()["provider_failures"][0]["reason"].endswith("[REDACTED]")
     assert item["catalogue_id"].startswith("inst_")
 
 
