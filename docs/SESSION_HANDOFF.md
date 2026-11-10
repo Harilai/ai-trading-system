@@ -21,8 +21,8 @@ Continuar PR #74 (`phase/account-position-snapshots`): código integrado sobre e
 ## Ramas de GitHub — auditoría de limpieza
 
 - `demo` está publicada y fijada a `35b894800ebf24324aebb2f09c363bdda8d1fca8`, la misma versión de `main` que incluye el Compose de paper demo.
-- En el inventario de 85 ramas remotas, 65 candidatas tienen evidencia de integración (su punta está contenida en `main` o corresponde a una PR fusionada). No se borraron ramas durante la auditoría.
-- Mantener `main`, `demo` y la rama de la PR #74 abierta. Revisar antes de borrar estas ocho puntas divergentes/no concluyentes: `feature/persistent-agent-main`, `feature/portfolio-valuation-withdrawals`, `feature/provider-scoped-portfolio`, `fix/market-discovery-malformed-tickers`, `phase/account-position-snapshots-v2`, `phase/dashboard-research-withdrawals`, `phase/external-backups`, `phase/multicurrency-paper-portfolio`.
+- Inventario de 86 referencias remotas: 66 candidatas con evidencia de integración y 16 puntas divergentes/no concluyentes. La lista y el método están en `docs/BRANCH_CLEANUP_AUDIT.md`. No se borraron ramas durante la auditoría.
+- Mantener `main`, `demo` y la rama abierta de la PR #74. Revisar manualmente las 16 puntas indicadas antes de cualquier eliminación.
 
 ## 1. Cómo retomar en una conversación nueva
 
