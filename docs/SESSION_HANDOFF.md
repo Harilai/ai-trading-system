@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `8773d75313aa225a2cd7f0789024c66ab6c2613b` — merge de PR #57, conector Binance Spot de solo lectura.  
+> **Último commit observado en `main`:** `b3cca3d4ff60c134d62d90571284c469239ec403` — merge de PR #59, snapshots inmutables de cuentas y conciliación read-only.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -184,6 +184,17 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - El conector no verifica permisos reales de la API key (`account_key_permissions_verified=false`); el propietario debe crear una clave solo lectura, sin trading, transferencias ni retiradas.
 - No hay órdenes reales, ni sincronización con la cartera paper, ni claves configuradas en el VPS.
 
+### Fase completada — snapshots y conciliación read-only de cuentas (PR #59)
+
+- Merge commit: `b3cca3d4ff60c134d62d90571284c469239ec403`.
+- Head validado: `961693fccfdd5bf76a61eadf8a2914fe76b499c8`.
+- CI: 360 pruebas Python correctas; Compose, build API y ejecución non-root correctos.
+- Tablas append-only `account_snapshots` y `account_snapshot_balances`, separadas de la cartera paper.
+- Captura owner-authenticated con `POST /api/accounts/binance/spot/snapshots`; historial y detalle en `GET /api/accounts/snapshots` y `GET /api/accounts/snapshots/{snapshot_id}`.
+- Comparación por cuenta y venue: `initial`, `unchanged`, `changed`; assets nuevos y ausentes se señalan sin asumir que los ausentes equivalen a cero.
+- Importes almacenados como decimal strings canónicos; rechaza floats, cantidades inválidas, snapshots stale/future/out-of-order y fuentes que no declaren read-only.
+- No hay FX valuation, P&L, transfer detection, ni sincronización con la cartera paper.
+
 ## 5. Objetivo de producto y siguientes fases
 
 El objetivo final no es un bot exclusivamente crypto. Debe evolucionar a una plataforma multiactivo y multi-venue preparada para capital real: conectar exchanges como Binance, brokers y wallets, y descubrir/operar los instrumentos que cada proveedor y cuenta permita. El universo objetivo incluye crypto CEX/DEX, acciones, ETF, FX, futuros, opciones, bonos, materias primas y otros mercados integrables. La disponibilidad depende del proveedor, país, cuenta, API, liquidez y elegibilidad. Descubrir un símbolo no habilita su trading.
@@ -197,8 +208,9 @@ Siguiente secuencia:
 4. **Completado — catálogo persistente venue-aware (PR #54):** snapshots, first/last seen, identidad canónica paralela, filtros, discovery history y fallos sanitizados.
 5. **Completado — preparación de operación 24/7 (PR #56):** healthcheck del servicio de backups, reintentos acotados, rotación de logs, runbook VPS y unidad systemd. El despliegue real en un VPS todavía no está realizado.
 6. **Completado — conector Binance Spot read-only (PR #57):** balances autenticados bajo owner token, credenciales `SecretStr`, importes como strings decimales y sin métodos de órdenes/transferencias/retiradas. La API key no está configurada en el entorno operativo.
-7. **Siguiente fase — snapshots y conciliación de cuentas reales en modo lectura:** persistir observaciones inmutables por cuenta/venue, detectar cambios y discrepancias sin mezclarlas con la cartera paper ni ejecutar operaciones.
-8. Después, construir adaptador Binance Spot testnet/sandbox y validar lifecycle, fills parciales, cancelación y conciliación antes de considerar cualquier live.
+7. **Completado — snapshots y conciliación de cuentas reales en modo lectura (PR #59):** historial inmutable por cuenta, deltas exactos y separación de la cartera paper.
+8. **Siguiente fase — Binance Spot testnet/sandbox:** adaptador aislado de testnet, limit orders, client order IDs, estado de órdenes, partial fills, cancelación y conciliación; no debe existir fallback a producción.
+9. Después, generalizar contratos de ejecución y account/portfolio reconciliation para otros venues y clases de activo antes de live.
 9. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
 10. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
