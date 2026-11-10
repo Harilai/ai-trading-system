@@ -172,6 +172,217 @@ def binance_demo_spot_markets(
         raise HTTPException(502, str(exc)) from exc
 
 
+def _apply_demo_order_update(client_order_id: str, normalized: dict, *, source: str) -> dict:
+    return demo_order_store.transition(
+        client_order_id,
+        normalized["status"],
+        exchange_order_id=normalized.get("exchange_order_id"),
+        exchange_status=normalized.get("exchange_status"),
+        filled=normalized.get("filled"),
+        remaining=normalized.get("remaining"),
+        average=normalized.get("average"),
+        error=normalized.get("error"),
+        payload={"source": source, "exchange_status": normalized.get("exchange_status")},
+    )
+
+
+@app.post("/api/demo/binance/spot/orders", status_code=201)
+def create_binance_demo_limit_order(
+    order: DemoLimitOrderRequest,
+    response: Response,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    if binance_demo_account_provider is None:
+        raise HTTPException(503, "Binance Spot Demo Trading connector is not configured")
+    try:
+        request = binance_demo_account_provider.validate_limit_order(
+            symbol=order.symbol,
+            side=order.side,
+            amount=order.amount,
+            price=order.price,
+            client_order_id=order.client_order_id,
+            max_order_quote=str(settings.binance_spot_demo_max_order_quote),
+        )
+    except BinanceDemoError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    try:
+        intent, created = demo_order_store.prepare_intent(request)
+    except DemoOrderConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except DemoOrderStoreError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to persist Demo order intent") from exc
+
+    if not created:
+        if intent["status"] == "intent_created":
+            intent = demo_order_store.transition(
+                order.client_order_id,
+                "submission_unknown",
+                error="Recovered an interrupted intent; it will not be submitted again",
+                payload={"source": "idempotent_replay_recovery"},
+            )
+        response.status_code = 202 if intent["status"] in ("intent_created", "submission_unknown") else (
+            409 if intent["status"] == "reconciliation_required" else 200
+        )
+        return intent
+
+    # Persist uncertainty before the network call. A crash or timeout after this
+    # point must reconcile by clientOrderId and must never blindly resubmit.
+    demo_order_store.transition(
+        order.client_order_id,
+        "submission_unknown",
+        payload={"source": "submission_started"},
+    )
+    try:
+        normalized = binance_demo_account_provider.submit_limit_order(request)
+    except BinanceDemoError as exc:
+        current = demo_order_store.transition(
+            order.client_order_id,
+            "submission_unknown",
+            error=str(exc),
+            payload={"source": "submission_outcome_unknown"},
+        )
+        response.status_code = 202
+        return current
+
+    try:
+        saved = _apply_demo_order_update(
+            order.client_order_id,
+            normalized,
+            source="exchange_submission_response",
+        )
+    except DemoOrderStoreError as exc:
+        raise HTTPException(503, "Demo order response could not be persisted; reconciliation is required") from exc
+    if saved["status"] == "reconciliation_required":
+        response.status_code = 409
+    elif saved["status"] == "rejected":
+        response.status_code = 422
+    return saved
+
+
+@app.get("/api/demo/binance/spot/orders")
+def list_binance_demo_orders(
+    limit: int = Query(50, ge=1, le=200),
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    return {"items": demo_order_store.list_orders(limit=limit), "limit": limit}
+
+
+@app.get("/api/demo/binance/spot/orders/{client_order_id}")
+def get_binance_demo_order(
+    client_order_id: str,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    order = demo_order_store.get_order(client_order_id)
+    if order is None:
+        raise HTTPException(404, "Demo order not found")
+    return order
+
+
+@app.get("/api/demo/binance/spot/orders/{client_order_id}/events")
+def get_binance_demo_order_events(
+    client_order_id: str,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    if demo_order_store.get_order(client_order_id) is None:
+        raise HTTPException(404, "Demo order not found")
+    return {"items": demo_order_store.list_events(client_order_id)}
+
+
+@app.post("/api/demo/binance/spot/orders/{client_order_id}/reconcile")
+def reconcile_binance_demo_order(
+    client_order_id: str,
+    response: Response,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    if binance_demo_account_provider is None:
+        raise HTTPException(503, "Binance Spot Demo Trading connector is not configured")
+    order = demo_order_store.get_order(client_order_id)
+    if order is None:
+        raise HTTPException(404, "Demo order not found")
+    if order["status"] not in ("submission_unknown", "open", "partially_filled"):
+        return order
+    try:
+        if order.get("exchange_order_id"):
+            normalized = binance_demo_account_provider.fetch_order_by_id(
+                symbol=order["symbol"],
+                exchange_order_id=order["exchange_order_id"],
+                client_order_id=client_order_id,
+            )
+        else:
+            normalized = binance_demo_account_provider.fetch_order_by_client_id(
+                symbol=order["symbol"],
+                client_order_id=client_order_id,
+            )
+    except BinanceDemoError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    if normalized is None:
+        if order["status"] == "submission_unknown":
+            response.status_code = 202
+            return order
+        normalized = {
+            "status": "reconciliation_required",
+            "error": "Previously acknowledged Demo order is missing from exchange lookup",
+        }
+    saved = _apply_demo_order_update(
+        client_order_id, normalized, source="explicit_exchange_reconciliation",
+    )
+    if saved["status"] == "reconciliation_required":
+        response.status_code = 409
+    elif saved["status"] == "submission_unknown":
+        response.status_code = 202
+    return saved
+
+
+@app.post("/api/demo/binance/spot/orders/{client_order_id}/cancel")
+def cancel_binance_demo_order(
+    client_order_id: str,
+    response: Response,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    if binance_demo_account_provider is None:
+        raise HTTPException(503, "Binance Spot Demo Trading connector is not configured")
+    order = demo_order_store.get_order(client_order_id)
+    if order is None:
+        raise HTTPException(404, "Demo order not found")
+    if order["status"] in ("submission_unknown", "intent_created"):
+        response.status_code = 202
+        return order
+    if order["status"] not in ("open", "partially_filled"):
+        return order
+    if not order.get("exchange_order_id"):
+        raise HTTPException(409, "Demo order has no confirmed exchange order ID; reconcile first")
+    try:
+        normalized = binance_demo_account_provider.cancel_limit_order(
+            symbol=order["symbol"],
+            exchange_order_id=order["exchange_order_id"],
+            client_order_id=client_order_id,
+        )
+    except BinanceDemoError as exc:
+        current = demo_order_store.transition(
+            client_order_id,
+            order["status"],
+            error=str(exc),
+            payload={"source": "cancel_outcome_unknown"},
+        )
+        response.status_code = 202
+        return current
+    saved = _apply_demo_order_update(
+        client_order_id, normalized, source="exchange_cancel_response",
+    )
+    if saved["status"] == "reconciliation_required":
+        response.status_code = 409
+    return saved
+
+
 @app.post("/api/accounts/binance/spot/snapshots", status_code=201)
 def create_binance_account_snapshot(x_agent_token: str | None = Header(default=None)):
     require_order_control_token(x_agent_token)
