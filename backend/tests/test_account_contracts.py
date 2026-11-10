@@ -410,3 +410,81 @@ def test_registry_rejects_snapshot_market_type_mismatch_for_balance_provider():
         registry.record_read_only_snapshot(
             "test:venue", SnapshotStore(), market_type="cash_equity",
         )
+
+
+def test_registry_combines_balances_and_positions_only_when_source_times_are_close():
+    class CombinedProvider:
+        def __init__(self, position_time_offset_seconds=0):
+            self.position_time_offset_seconds = position_time_offset_seconds
+            self.requested_market = None
+
+        def describe(self):
+            return {
+                "provider_id": "test:combined-broker",
+                "account_alias": "equity-account",
+                "venue_type": "broker",
+                "market_types": ["cash_equity"],
+                "environment": "production",
+                "configured": True,
+                "balances": True,
+                "positions": True,
+                "order_management": False,
+                "order_submission": False,
+                "order_cancellation": False,
+                "reconciliation": False,
+                "read_only_connector": True,
+                "transfers": False,
+                "withdrawals": False,
+                "wallet_signing": False,
+                "account_key_permissions_verified": False,
+            }
+
+        def fetch_balances(self):
+            return {
+                "provider_id": "test:combined-broker",
+                "account_alias": "equity-account",
+                "market_type": "cash_equity",
+                "environment": "production",
+                "read_only": True,
+                "execution_enabled": False,
+                "withdrawals_enabled": False,
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "balances": [{"asset": "USD", "free": "100", "used": "0", "total": "100"}],
+            }
+
+        def fetch_positions(self, market_type=None):
+            self.requested_market = market_type
+            return {
+                "provider_id": "test:combined-broker",
+                "account_alias": "equity-account",
+                "market_type": "cash_equity",
+                "environment": "production",
+                "fetched_at": (
+                    datetime.now(timezone.utc)
+                    - timedelta(seconds=self.position_time_offset_seconds)
+                ).isoformat(),
+                "positions": [{
+                    "instrument_id": "broker:AAPL", "symbol": "AAPL",
+                    "asset_class": "equity", "market_type": "cash_equity",
+                    "quantity": "1", "side": "long", "quote_currency": "USD",
+                }],
+            }
+
+    class SnapshotStore:
+        def record_snapshot(self, snapshot):
+            return snapshot
+
+    provider = CombinedProvider()
+    registry = AccountProviderRegistry()
+    registry.register(provider)
+    saved = registry.record_read_only_snapshot(
+        "test:combined-broker", SnapshotStore(),
+    )
+    assert provider.requested_market == "cash_equity"
+    assert saved["balances"][0]["asset"] == "USD"
+    assert saved["positions"][0]["symbol"] == "AAPL"
+
+    stale_pair = AccountProviderRegistry()
+    stale_pair.register(CombinedProvider(position_time_offset_seconds=90))
+    with pytest.raises(AccountProviderError, match="too far apart"):
+        stale_pair.fetch_account_snapshot("test:combined-broker")
