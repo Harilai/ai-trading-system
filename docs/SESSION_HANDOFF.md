@@ -263,10 +263,12 @@ Siguiente secuencia:
 7. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** seguir `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md`; configurar las credenciales Demo únicamente en el servidor y verificar respuestas reales, filtros de mercado, precisión, partial fills, cancelación, timeout y reconciliación tras restart. No compartir claves en el chat ni guardarlas en Git. No usar claves de producción. Esta comprobación requiere una cuenta Demo y acceso al servidor del propietario; no se simula como si se hubiera ejecutado.
 8. **Completado — ledger individual de fills/fees (PR #66):** persistencia append-only, IDs de trade, cantidades, precios, costes, comisiones/activos y reconciliación idempotente por order ID. Nuevas órdenes Demo se bloquean mientras falte cobertura de fills o comisiones.
 9. **Completado — reconciliación periódica Binance Demo (PR #68):** worker con leases SQLite y fencing, backoff, polling por clientOrderId y conciliación de fills; corre aunque la estrategia esté pausada y nunca reenvía órdenes.
-10. **En curso — PR #71, contratos normalizados de account providers:** `AccountProviderRegistry` por `provider_id + account_alias`, balances normalizados, capacidades/permisos explícitos y endpoints genéricos autenticados. No añade brokers, posiciones live ni nuevos mercados ejecutables.
-11. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
-12. Completar despliegue persistente 24/7 en VPS y configurar el proveedor externo de backups en el entorno operativo.
-13. Evaluar live limitado por venue/clase solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+10. **Completado — PR #71, contratos normalizados de account providers:** `AccountProviderRegistry` por `provider_id + account_alias`, balances normalizados, capacidades/permisos explícitos y endpoints genéricos autenticados.
+11. **En curso — PR #72, adaptador CCXT read-only:** CEX Spot configurable por exchange ID (Kraken por defecto), API key/secret, sin métodos de escritura y con permisos reales de la key no verificados.
+12. **Siguiente — snapshots de posiciones y ledger de cuenta multi-venue:** ampliar el almacenamiento inmutable para posiciones por instrumento, coste/mark/P&L/moneda, con separación por cuenta y venue.
+13. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
+14. Completar despliegue persistente 24/7 en VPS y configurar el proveedor externo de backups en el entorno operativo.
+15. Evaluar live limitado por venue/clase solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ### PR #68 — conciliación periódica Binance Spot Demo
 
