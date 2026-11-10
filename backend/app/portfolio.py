@@ -702,7 +702,7 @@ class PaperPortfolio:
         numeric_values.extend(value for value in (stop_loss, take_profit) if value is not None)
         if not all(math.isfinite(value) for value in numeric_values):
             raise PortfolioError("Execution values must be finite numbers")
-        if quantity <= 0 or price <= 0 or fx_rate_to_eur <= 0:
+        if quantity <= 0 or price <= 0 or fx_rate_to_eur <= 0 or risk_fx_rate_to_eur <= 0:
             raise PortfolioError("Quantity, price and FX rate must be positive")
         if quote_currency == "EUR" and not math.isclose(fx_rate_to_eur, 1.0, rel_tol=0, abs_tol=1e-12):
             raise PortfolioError("EUR-quoted instruments must use an EUR conversion rate of 1")
