@@ -32,6 +32,7 @@ from .accounts.binance_demo import BinanceDemoError, BinanceSpotDemoExecution
 from .accounts.demo_order_store import (
     BinanceDemoOrderStore, DemoOrderConflict, DemoOrderStoreError,
 )
+from .demo_reconciliation import BinanceDemoReconciler
 
 WORKER_HEARTBEAT_MAX_AGE_SECONDS = 600
 
@@ -157,6 +158,16 @@ def binance_demo_spot_balances(x_agent_token: str | None = Header(default=None))
         return binance_demo_account_provider.fetch_balances()
     except BinanceDemoError as exc:
         raise HTTPException(502, str(exc)) from exc
+
+
+@app.get("/api/demo/binance/spot/reconciliation")
+def binance_demo_reconciliation_status(x_agent_token: str | None = Header(default=None)):
+    require_order_control_token(x_agent_token)
+    return {
+        "configuration_status": binance_demo_configuration_status,
+        "enabled": binance_demo_reconciler is not None,
+        "schedule": demo_order_store.reconciliation_status(),
+    }
 
 
 @app.get("/api/demo/binance/spot/markets")
@@ -1185,12 +1196,23 @@ equity_research_agent = (
     )
     if settings.twelve_data_api_key else None
 )
+demo_reconciler = (
+    BinanceDemoReconciler(
+        demo_order_store,
+        binance_demo_account_provider,
+        interval_seconds=settings.binance_spot_demo_reconcile_interval_seconds,
+        batch_size=settings.binance_spot_demo_reconcile_batch_size,
+        lease_seconds=settings.binance_spot_demo_reconcile_lease_seconds,
+    )
+    if binance_demo_account_provider is not None else None
+)
 agent_worker = AutonomousAgent(
     agent_store,
     scout=scout,
     chief=chief,
     portfolio=portfolio,
     equity_research=equity_research_agent,
+    demo_reconciler=demo_reconciler,
 )
 
 @asynccontextmanager
