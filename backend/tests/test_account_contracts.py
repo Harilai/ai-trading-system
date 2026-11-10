@@ -187,3 +187,19 @@ def test_registry_rejects_production_demo_environment_mismatch():
     }
     with pytest.raises(AccountProviderError, match="environment"):
         registry.fetch_balances("test:venue")
+
+
+def test_registry_sanitizes_provider_errors_and_does_not_leak_credentials():
+    registry = AccountProviderRegistry()
+    provider = FakeAccountProvider()
+    registry.register(provider)
+    secret = "private-demo-secret"
+    def fail():
+        raise RuntimeError(f"request failed with secret={secret}")
+    provider.fetch_balances = fail
+
+    with pytest.raises(AccountProviderError) as error:
+        registry.fetch_balances("test:venue")
+
+    assert secret not in str(error.value)
+    assert "request failed with secret" not in str(error.value)
