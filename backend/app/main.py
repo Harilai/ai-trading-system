@@ -165,7 +165,7 @@ def binance_demo_reconciliation_status(x_agent_token: str | None = Header(defaul
     require_order_control_token(x_agent_token)
     return {
         "configuration_status": binance_demo_configuration_status,
-        "enabled": binance_demo_reconciler is not None,
+        "enabled": demo_reconciler is not None,
         "schedule": demo_order_store.reconciliation_status(),
     }
 
