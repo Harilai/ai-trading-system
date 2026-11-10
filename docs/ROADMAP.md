@@ -29,7 +29,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 | Cartera paper multidivisa EUR/USD, conversiones FX y manual equity/ETF paper | Integrada en PR #41; 270 tests y Docker CI correctos |
 | Backend FastAPI y paper portfolio SQLite | Implementado |
 | Datos públicos crypto spot vía CCXT | Implementado; solo datos públicos |
-| Datos públicos US equities/ETF vía Twelve Data Basic | Adaptador implementado y probado; API key gratuita opcional; solo datos, sin trading |
+| Datos públicos US equities/ETF vía Twelve Data Basic | Adaptador implementado y probado; API key gratuita opcional; datos y FX, sin ejecución broker |
 | Investigación técnica y backtesting inicial de acciones/ETF | Pipeline manual y tarea autónoma periódica de solo lectura implementados; sin propuestas ni órdenes |
 | Contratos normalizados de proveedores e instrumentos | Implementado |
 | Identidad de posiciones por `provider_id + instrument_id` | Implementado; migración SQLite incluida |
@@ -38,7 +38,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 | Registro de proveedores y capability matrix | Implementado |
 | Descubrimiento multi-provider para adaptadores configurados | Implementado en datos; actualmente un proveedor por defecto |
 | Router de ejecución normalizado | Contrato inicial; ningún adaptador live |
-| Perfiles de riesgo por clase/tipo de mercado | Contratos implementados; solo crypto spot habilitado |
+| Perfiles de riesgo por clase/tipo de mercado | Contratos implementados; crypto spot autónomo y cash equities/ETF USD manual-only paper |
 | Indicadores técnicos | Implementado |
 | Contabilidad de comisiones en coste base y P/L realizado | Implementado |
 | Validación de datos obsoletos y órdenes | Implementado |
