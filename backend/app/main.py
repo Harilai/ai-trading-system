@@ -307,6 +307,13 @@ def reconcile_binance_demo_order(
     order = demo_order_store.get_order(client_order_id)
     if order is None:
         raise HTTPException(404, "Demo order not found")
+    if order["status"] == "intent_created":
+        order = demo_order_store.transition(
+            client_order_id,
+            "submission_unknown",
+            error="Recovered an interrupted intent; reconciliation only, no resubmission",
+            payload={"source": "explicit_reconciliation_recovery"},
+        )
     if order["status"] not in ("submission_unknown", "open", "partially_filled"):
         return order
     try:
