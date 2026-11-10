@@ -9,7 +9,7 @@ Plataforma modular de trading algorítmico multiactivo y multi-venue, orientada 
 La rama integrada contiene actualmente:
 
 - Backend FastAPI y cartera simulada persistida en SQLite.
-- Capa de integración universal: contratos normalizados de proveedor, instrumentos, clases de activo, tipos de mercado y registro/capability matrix.
+- Capa de integración extensible: contratos normalizados de proveedor, instrumentos, clases de activo, tipos de mercado y registro/capability matrix; las capacidades reales dependen de cada adaptador.
 - Adaptador inicial de datos públicos CEX crypto spot mediante CCXT (Kraken por defecto; lista configurable de proveedores CCXT).
 - Adaptador opcional de datos de acciones y ETF estadounidenses mediante Twelve Data Basic, activado únicamente al configurar una API key gratuita; incorpora caché SQLite persistente, límites persistentes diario y móvil de 60 segundos basados en créditos estimados, separación mínima entre peticiones y conciliación del consumo con la cabecera `api-credits-used` del proveedor cuando está disponible.
 - Pipeline separado de investigación de acciones/ETF con muestreo estratificado con cursor SQLite persistente que rota entre ejecuciones por todo el catálogo, para limitar las cotizaciones sin quedarse siempre con los mismos símbolos, ranking de candidatos por volumen, frescura de cotización y spread; solo descarga histórico para los mejores candidatos. La clasificación usa pesos explícitos (60% volumen, 25% frescura, 15% spread), desempate determinista por símbolo y mantiene investigación histórica separada de los bloqueos de ejecución; endpoint manual de solo lectura `/api/research/equities`.
