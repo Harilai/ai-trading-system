@@ -82,7 +82,7 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 5. [x] Extender contratos de instrumentos y Risk Manager para permitir únicamente cash equities/ETFs USD de Twelve Data en paper, manteniendo bloqueados otros activos, mercados y proveedores sin soporte.
 6. [x] Mantener la investigación read-only para el Chief; permitir solo órdenes manuales paper tras los gates de cartera, FX, sesión bursátil, costes y riesgo. No activar órdenes autónomas de equities.
 7. [x] Añadir pruebas de migración, FX stale/futuro/malformado, falta de cuota, conversiones duplicadas, saldo insuficiente, movimientos entre divisas, valoración parcial, cambios de FX, comisiones y regresión crypto EUR.
-8. [x] PR #44 completa el ciclo de vida y conciliación paper; la siguiente fase pendiente son backups externos y restauración.
+8. [x] PR #44 completa el ciclo de vida y conciliación paper; PR #48 completa backups externos y PR #63 completa el lifecycle de órdenes Binance Spot Demo.
 
 ### Criterios de aceptación
 
