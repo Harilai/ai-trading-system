@@ -935,23 +935,24 @@ def test_strategy_history_persists_experimental_evidence_and_entry_signals(tmp_p
 
 def test_strategy_history_marks_legacy_experimental_status_unknown(tmp_path):
     store = AutonomousStore(str(tmp_path / "strategy-legacy.db"))
-    store.record_strategy_research(
-        "task-legacy",
-        {
-            "provider_id": "ccxt:kraken",
-            "instrument_id": "ccxt:kraken:spot:ETH/EUR",
-            "symbol": "ETH/EUR",
-        },
-        "1h",
-        {
-            "method": "legacy-test",
-            "candidates": [{
-                "strategy_id": "ema_12_26",
-                "eligible": False,
-                "validation_failures": ["insufficient_oos_trades"],
-            }],
-        },
-    )
+    # Simulate a row written by the pre-experimental schema/code: its result
+    # JSON contains no experimental keys at all.
+    with store.connect() as db:
+        db.execute(
+            """
+            INSERT INTO strategy_research_history(
+                task_id, provider_id, instrument_id, symbol, timeframe,
+                strategy_id, strategy_version, eligible, score,
+                validation_failures, result, created_at
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                "task-legacy", "ccxt:kraken", "ccxt:kraken:spot:ETH/EUR",
+                "ETH/EUR", "1h", "ema_12_26", "legacy-v1", 0, None,
+                '["insufficient_oos_trades"]', '{"description":"legacy row"}',
+                utcnow().isoformat(),
+            ),
+        )
     item = store.strategy_history(limit=1)[0]
     assert item["experimental_eligible"] is None
     assert item["experimental_status"] == "legacy"
