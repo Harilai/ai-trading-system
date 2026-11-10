@@ -509,6 +509,15 @@ class PaperPortfolio:
             return False
         if market_timestamp <= 0 or market_timestamp > now or now - market_timestamp > max_data_age:
             return False
+        risk_fx_timestamp = request.get("risk_fx_timestamp")
+        if risk_fx_timestamp is not None:
+            try:
+                risk_fx_timestamp = int(risk_fx_timestamp)
+                max_fx_age = int(max_fx_age_seconds) * 1000
+            except (TypeError, ValueError, OverflowError):
+                return False
+            if risk_fx_timestamp <= 0 or risk_fx_timestamp > now or now - risk_fx_timestamp > max_fx_age:
+                return False
         if str(request.get("quote_currency") or "EUR").upper() == "USD":
             try:
                 fx_timestamp = int(request.get("fx_timestamp"))
@@ -649,6 +658,9 @@ class PaperPortfolio:
         fx_provider_id: str | None = None,
         fx_timestamp: int | None = None,
         market_timestamp: int | None = None,
+        risk_fx_rate_to_eur: float = 1.0,
+        risk_fx_provider_id: str | None = None,
+        risk_fx_timestamp: int | None = None,
     ):
         if not isinstance(symbol, str) or not isinstance(provider_id, str):
             raise PortfolioError("Symbol and provider identity must be text")
@@ -679,13 +691,14 @@ class PaperPortfolio:
             max_fraction = float(max_fraction)
             minimum = float(minimum)
             fx_rate_to_eur = float(fx_rate_to_eur)
+            risk_fx_rate_to_eur = float(risk_fx_rate_to_eur)
             if stop_loss is not None:
                 stop_loss = float(stop_loss)
             if take_profit is not None:
                 take_profit = float(take_profit)
         except (TypeError, ValueError, OverflowError) as exc:
             raise PortfolioError("Execution values must be finite numbers") from exc
-        numeric_values = [quantity, price, fee_rate, slippage_rate, max_fraction, minimum, fx_rate_to_eur]
+        numeric_values = [quantity, price, fee_rate, slippage_rate, max_fraction, minimum, fx_rate_to_eur, risk_fx_rate_to_eur]
         numeric_values.extend(value for value in (stop_loss, take_profit) if value is not None)
         if not all(math.isfinite(value) for value in numeric_values):
             raise PortfolioError("Execution values must be finite numbers")
@@ -693,6 +706,16 @@ class PaperPortfolio:
             raise PortfolioError("Quantity, price and FX rate must be positive")
         if quote_currency == "EUR" and not math.isclose(fx_rate_to_eur, 1.0, rel_tol=0, abs_tol=1e-12):
             raise PortfolioError("EUR-quoted instruments must use an EUR conversion rate of 1")
+        if risk_fx_timestamp is not None:
+            try:
+                risk_fx_timestamp = int(risk_fx_timestamp)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise PortfolioError("Risk FX timestamp must be valid") from exc
+            now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+            if risk_fx_timestamp <= 0 or risk_fx_timestamp > now_ms:
+                raise PortfolioError("Risk FX timestamp must be positive and non-future")
+            if not isinstance(risk_fx_provider_id, str) or not risk_fx_provider_id.strip():
+                raise PortfolioError("Risk FX timestamp requires provider provenance")
         if market_timestamp is not None:
             try:
                 market_timestamp = int(market_timestamp)
@@ -743,6 +766,9 @@ class PaperPortfolio:
             "quote_currency": quote_currency, "fx_rate_to_eur": fx_rate_to_eur,
             "fx_provider_id": fx_provider_id, "fx_timestamp": fx_timestamp,
             "market_timestamp": market_timestamp,
+            "risk_fx_rate_to_eur": risk_fx_rate_to_eur,
+            "risk_fx_provider_id": risk_fx_provider_id,
+            "risk_fx_timestamp": risk_fx_timestamp,
         })
         request_json = self._canonical_json(request_payload) if client_order_id else None
 
