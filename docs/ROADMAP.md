@@ -26,7 +26,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 
 | Área | Estado |
 |---|---|
-| Cartera paper multidivisa EUR/USD, conversiones FX y manual equity/ETF paper | En validación en PR #41; no integrado hasta CI/revisión |
+| Cartera paper multidivisa EUR/USD, conversiones FX y manual equity/ETF paper | Integrada en PR #41; 270 tests y Docker CI correctos |
 | Backend FastAPI y paper portfolio SQLite | Implementado |
 | Datos públicos crypto spot vía CCXT | Implementado; solo datos públicos |
 | Datos públicos US equities/ETF vía Twelve Data Basic | Adaptador implementado y probado; API key gratuita opcional; solo datos, sin trading |
