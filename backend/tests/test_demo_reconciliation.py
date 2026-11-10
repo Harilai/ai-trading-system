@@ -207,17 +207,36 @@ def test_periodic_reconciler_quarantines_unexpected_state_after_partial_fill(tmp
 def test_periodic_reconciler_continues_batch_after_one_order_lookup_fails(tmp_path):
     store = BinanceDemoOrderStore(str(tmp_path / "periodic-batch-isolation.db"))
     create_open_order(store, "periodic-batch-open")
-    store.prepare_intent({
+    # Simulate a second terminal legacy order from an older deployment.
+    # Current order creation intentionally blocks this state until the first
+    # order is reconciled, but the periodic worker must safely drain backlog.
+    import json
+    from datetime import datetime, timezone
+
+    legacy_request = {
         "client_order_id": "periodic-batch-filled",
         "symbol": "ETH/USDT", "side": "buy",
         "amount": "0.01", "price": "2000", "quote_asset": "USDT",
-    })
-    store.transition("periodic-batch-filled", "submission_unknown")
-    store.transition(
-        "periodic-batch-filled", "filled",
-        exchange_order_id="exchange-periodic-filled",
-        filled="0.01", remaining="0", average="2000",
-    )
+    }
+    canonical = store._canonical_request(legacy_request)
+    stamp = datetime.now(timezone.utc).isoformat()
+    with store.connect() as db:
+        db.execute(
+            """
+            INSERT INTO binance_demo_orders(
+                client_order_id,request_json,symbol,side,amount,price,quote_asset,
+                status,exchange_order_id,exchange_status,filled,remaining,average,
+                error,created_at,updated_at
+            ) VALUES(?,?,?,?,?,?,?,'filled',?,'FILLED','0.01','0','2000',NULL,?,?)
+            """,
+            (
+                canonical["client_order_id"],
+                json.dumps(canonical, sort_keys=True, separators=(",", ":")),
+                canonical["symbol"], canonical["side"], canonical["amount"],
+                canonical["price"], canonical["quote_asset"],
+                "exchange-periodic-filled", stamp, stamp,
+            ),
+        )
 
     class PartiallyFailingAccount:
         def fetch_order_by_client_id(self, **kwargs):
