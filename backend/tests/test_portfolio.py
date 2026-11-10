@@ -746,3 +746,25 @@ def test_order_intent_events_are_append_only(portfolio):
                 "UPDATE order_intent_events SET to_status='rejected' WHERE client_order_id=?",
                 ("immutable-events",),
             )
+
+
+def test_reconciliation_escalates_expired_intent_if_a_trade_row_exists(portfolio):
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "expired-but-filled",
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": None, "stop_loss": None, "take_profit": None,
+    }
+    portfolio.record_order_intent("expired-but-filled", request, {"risk_accepted": True})
+    portfolio.execute(**request)
+    with portfolio.connect() as db:
+        db.execute(
+            "UPDATE order_intents SET status='expired' WHERE client_order_id=?",
+            ("expired-but-filled",),
+        )
+
+    result = portfolio.reconcile_order_intents()
+    assert result["reconciliation_required"] == 1
+    assert portfolio.get_order_intent("expired-but-filled")["status"] == "reconciliation_required"
+    assert portfolio.list_order_intent_events("expired-but-filled")[-1]["to_status"] == "reconciliation_required"
