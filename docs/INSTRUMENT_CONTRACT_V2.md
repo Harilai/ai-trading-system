@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The provider-neutral instrument record is the common identity and constraint description consumed by market discovery, research, paper simulation, risk and future execution adapters. It must preserve the provider's actual facts and must not manufacture missing precision, settlement or contract data.
+The provider-neutral instrument record is the common identity and constraint description intended for market discovery, research, paper simulation, risk and future execution adapters. This phase exposes and validates the metadata contract; it does not yet wire every new constraint into paper order validation. It must preserve provider facts and must not manufacture missing precision, settlement or contract data.
 
 ## Core identity
 
@@ -45,8 +45,9 @@ The provider-neutral instrument record is the common identity and constraint des
 - This contract expansion does not add private exchange authentication, order entry, balances, wallets, signing, DEX, margin, futures or options trading.
 - A derivative-shaped instrument record is not evidence that a derivative adapter exists or that the account is eligible.
 - A market catalogue entry never implies execution capability.
-- Before any paper or live order, consumers must validate market type, precision, min/max limits, contract multiplier, quote/settlement currencies, session and provider capabilities.
-- Missing or ambiguous constraints fail closed for execution. Research may still display an instrument as discovery-only with its unknown fields visible.
+- Future paper/live adapters must validate market type, precision, min/max limits, contract multiplier, quote/settlement currencies, session and provider capabilities before order submission.
+- New adapters must fail closed when execution-critical constraints are missing or ambiguous. Research may still display an instrument as discovery-only with unknown fields visible.
+- Existing paper execution paths are unchanged by this phase and remain restricted to their already-supported crypto EUR and manual cash-equity/ETF workflows.
 
 ## Next work
 
