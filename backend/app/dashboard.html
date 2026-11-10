@@ -22,7 +22,7 @@
     label{font-size:11px;text-transform:uppercase;letter-spacing:.09em;color:#91a0b5}
     input{background:#0d1520;color:#e8edf5;border:1px solid #33445d;border-radius:9px;padding:10px 12px;font:inherit;outline:none}
     input:focus{border-color:#6d9bd7}
-    button{border:1px solid #344761;border-radius:9px;background:#1b2b40;color:#e8edf5;padding:10px 13px;font:600 12px inherit;cursor:pointer;transition:background .15s,border-color .15s}
+    button{border:1px solid #344761;border-radius:9px;background:#1b2b40;color:#e8edf5;padding:10px 13px;font:600 12px ui-sans-serif,system-ui,sans-serif;cursor:pointer;transition:background .15s,border-color .15s}
     button:hover{background:#263d59;border-color:#54749c}
     button:disabled{opacity:.45;cursor:not-allowed}
     button.primary{background:#24558a;border-color:#356da7}
@@ -258,7 +258,12 @@
         if(!controlToken){setMessage("control-message","Introduce el token de control.","error");return;}
         try{const status=await api("/api/agent/status",{},true);renderAgent(status);
           $("connection").textContent="Controles autenticados";setMessage("control-message","Token validado. No se guarda en el navegador.","success");}
-        catch(error){controlToken="";setMessage("control-message","Token no válido: "+error.message,"error");}
+        catch(error){
+          controlToken="";
+          $("agent-state").textContent="Token requerido";
+          document.querySelectorAll("[data-task],#pause,#resume,#stop,#reset-stop").forEach(button=>button.disabled=true);
+          setMessage("control-message","Token no válido: "+error.message,"error");
+        }
       });
       $("refresh").addEventListener("click",refresh);
       $("pause").addEventListener("click",()=>control("pause"));
