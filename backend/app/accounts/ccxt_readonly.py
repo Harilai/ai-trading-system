@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 import re
 from threading import RLock
 from typing import Any
@@ -30,7 +30,7 @@ class CcxtReadOnlyAccount:
             raise CcxtReadOnlyAccountError("CCXT read-only API key is required")
         if not isinstance(api_secret, str) or not api_secret.strip():
             raise CcxtReadOnlyAccountError("CCXT read-only API secret is required")
-        alias = account_alias or f"{normalized_id}-spot-readonly"
+        alias = f"{normalized_id}-spot-readonly" if account_alias is None else account_alias
         if not isinstance(alias, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", alias.strip()):
             raise CcxtReadOnlyAccountError("CCXT account alias is invalid")
 
@@ -137,23 +137,32 @@ class CcxtReadOnlyAccount:
             ) from None
         if not isinstance(response, dict):
             raise CcxtReadOnlyAccountError("Exchange returned an invalid balance response")
-        free_map = response.get("free") or {}
-        used_map = response.get("used") or {}
-        total_map = response.get("total") or {}
+        free_map = response.get("free", {})
+        used_map = response.get("used", {})
+        total_map = response.get("total", {})
+        free_map = {} if free_map is None else free_map
+        used_map = {} if used_map is None else used_map
+        total_map = {} if total_map is None else total_map
         if not all(isinstance(item, dict) for item in (free_map, used_map, total_map)):
             raise CcxtReadOnlyAccountError("Exchange returned malformed balance collections")
 
         assets = set(free_map) | set(used_map) | set(total_map)
         balances = []
+        seen_assets = set()
         for raw_asset in sorted(assets, key=lambda value: str(value).upper()):
             asset = str(raw_asset).strip().upper()
             if not re.fullmatch(r"[A-Z0-9._-]{1,24}", asset):
                 raise CcxtReadOnlyAccountError("Exchange returned an invalid asset code")
+            if asset in seen_assets:
+                raise CcxtReadOnlyAccountError("Exchange returned duplicate normalized asset codes")
+            seen_assets.add(asset)
             free = self._amount(free_map.get(raw_asset), asset=asset, field="free")
             used = self._amount(used_map.get(raw_asset), asset=asset, field="used")
             total = self._amount(total_map.get(raw_asset), asset=asset, field="total")
             if total is None and free is not None and used is not None:
-                total = free + used
+                with localcontext() as context:
+                    context.prec = 160
+                    total = free + used
             if free is None and used is None and total is None:
                 continue
             if not any(value is not None and value > 0 for value in (free, used, total)):
