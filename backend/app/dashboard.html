@@ -399,7 +399,7 @@
         if(!controlToken){setMessage("control-message","Introduce el token de control.","error");return;}
         try{const status=await api("/api/agent/status",{},true);renderAgent(status);$("connection").textContent="Controles autenticados";$("token").value="";setMessage("control-message","Token validado. Se mantiene solo en memoria durante esta sesión.","success");
           $("run-equity-research").disabled=false;$("load-strategy-history").disabled=false;$("withdrawal-amount").disabled=false;$("request-withdrawal").disabled=false;await loadSecuredPanels();}
-        catch(error){controlToken="";$("agent-state").textContent="Token requerido";document.querySelectorAll("[data-task],#pause,#resume,#stop,#reset-stop,#run-equity-research,#load-strategy-history,#withdrawal-amount,#request-withdrawal").forEach(button=>button.disabled=true);setMessage("control-message","Token no válido: "+error.message,"error");}
+        catch(error){controlToken="";$("token").value="";$("agent-state").textContent="Token requerido";document.querySelectorAll("[data-task],#pause,#resume,#stop,#reset-stop,#run-equity-research,#load-strategy-history,#withdrawal-amount,#request-withdrawal").forEach(button=>button.disabled=true);setMessage("control-message","Token no válido: "+error.message,"error");}
       });
       $("refresh").addEventListener("click",refresh);$("pause").addEventListener("click",()=>control("pause"));$("resume").addEventListener("click",()=>control("resume"));
       $("stop").addEventListener("click",()=>{if(window.confirm("¿Activar la parada de emergencia?"))control("emergency-stop");});$("reset-stop").addEventListener("click",()=>control("reset-emergency-stop"));
