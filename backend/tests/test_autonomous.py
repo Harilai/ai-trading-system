@@ -641,3 +641,17 @@ def test_recovered_task_clears_old_lease_token(tmp_path):
     assert row["lease_token"] is None
     second = store.claim_due_task()
     assert second["lease_token"] != first["lease_token"]
+
+
+def test_expired_lease_cannot_be_renewed_or_completed_before_reclaim(tmp_path):
+    store = AutonomousStore(str(tmp_path / "expired-lease.db"))
+    task = store.enqueue("health_check", {})
+    claimed = store.claim_due_task()
+    with store.connect() as db:
+        db.execute(
+            "UPDATE agent_tasks SET lease_until='2000-01-01T00:00:00+00:00' WHERE id=?",
+            (task["id"],),
+        )
+    assert store.extend_task_lease(task["id"], claimed["lease_token"], 120) is False
+    assert store.finish_task(task["id"], {"ok": True}, claimed["lease_token"]) is False
+    assert store.fail_task(claimed, "late failure") is False
