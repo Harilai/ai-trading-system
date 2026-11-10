@@ -14,7 +14,11 @@ def make_snapshot(*, balances=None, fetched_at=None, account_alias="binance-spot
         "read_only": True,
         "execution_enabled": False,
         "withdrawals_enabled": False,
-        "fetched_at": (fetched_at or datetime.now(timezone.utc)).isoformat(),
+        "fetched_at": (
+            fetched_at
+            if isinstance(fetched_at, str)
+            else (fetched_at or datetime.now(timezone.utc)).isoformat()
+        ),
         "balances": balances if balances is not None else [
             {"asset": "BTC", "free": "0.1", "used": "0.02", "total": "0.12"},
             {"asset": "EUR", "free": "20", "used": "0", "total": "20"},
