@@ -223,10 +223,10 @@ class FakeDemoExecutionExchange(FakeBinanceDemoExchange):
 
     def create_order(self, symbol, order_type, side, amount, price, params):
         self.calls.append(("create_order", symbol, order_type, side, amount, price, params))
-        self.created.append(params["newClientOrderId"])
+        self.created.append(params["clientOrderId"])
         return {
             "id": "demo-order-123",
-            "clientOrderId": params["newClientOrderId"],
+            "clientOrderId": params["clientOrderId"],
             "status": "open",
             "amount": amount,
             "filled": "0",
@@ -328,7 +328,7 @@ def test_demo_execution_submits_only_limit_orders_with_stable_client_order_id():
     assert exchange.created == ["demo-order-1234"]
     call = next(item for item in exchange.calls if item[0] == "create_order")
     assert call[2] == "limit"
-    assert call[6]["newClientOrderId"] == "demo-order-1234"
+    assert call[6]["clientOrderId"] == "demo-order-1234"
     assert result["status"] == "open"
     assert result["exchange_order_id"] == "demo-order-123"
 
