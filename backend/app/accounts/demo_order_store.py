@@ -96,7 +96,7 @@ class BinanceDemoOrderStore:
                 CREATE INDEX IF NOT EXISTS idx_binance_demo_order_events_order
                     ON binance_demo_order_events(client_order_id,created_at,event_id);
                 CREATE TABLE IF NOT EXISTS binance_demo_order_fills (
-                    exchange_trade_id TEXT PRIMARY KEY,
+                    exchange_trade_id TEXT NOT NULL,
                     client_order_id TEXT NOT NULL,
                     exchange_order_id TEXT NOT NULL,
                     symbol TEXT NOT NULL,
@@ -109,6 +109,7 @@ class BinanceDemoOrderStore:
                     timestamp_ms INTEGER NOT NULL,
                     payload_json TEXT NOT NULL,
                     recorded_at TEXT NOT NULL,
+                    PRIMARY KEY(symbol,exchange_trade_id),
                     FOREIGN KEY(client_order_id) REFERENCES binance_demo_orders(client_order_id)
                 );
                 CREATE INDEX IF NOT EXISTS idx_binance_demo_order_fills_order
@@ -488,11 +489,11 @@ class BinanceDemoOrderStore:
                 fill = self._canonical_fill(raw_fill, order)
                 payload_json = json.dumps(fill, sort_keys=True, separators=(",", ":"))
                 existing = db.execute(
-                    "SELECT payload_json FROM binance_demo_order_fills WHERE exchange_trade_id=?",
-                    (fill["trade_id"],),
+                    "SELECT payload_json,client_order_id FROM binance_demo_order_fills WHERE symbol=? AND exchange_trade_id=?",
+                    (fill["symbol"], fill["trade_id"]),
                 ).fetchone()
                 if existing:
-                    if existing["payload_json"] != payload_json:
+                    if existing["client_order_id"] != client_order_id or existing["payload_json"] != payload_json:
                         raise DemoOrderConflict("Exchange trade ID was reused with different fill evidence")
                     continue
                 db.execute(
