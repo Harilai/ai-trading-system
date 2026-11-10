@@ -34,7 +34,8 @@ Provide a venue-independent account boundary without merging accounts, environme
 
 - `GET /api/accounts`: existing account summary plus `normalized_accounts`.
 - `GET /api/accounts/{provider_id}/balances?account_alias=...`: normalized balances; owner token required.
-- `POST /api/accounts/{provider_id}/snapshots?account_alias=...`: immutable balance snapshot for explicitly read-only Spot accounts only; owner token required.
+- `GET /api/accounts/{provider_id}/positions?account_alias=...&market_type=...`: normalized position reads for providers declaring position support; owner token required.
+- `POST /api/accounts/{provider_id}/snapshots?account_alias=...&market_type=...`: immutable balance/position snapshot for explicitly read-only accounts; owner token required.
 - Existing Binance-specific endpoints remain available for compatibility.
 
-The snapshot store remains Spot-balance-only. Position and order contracts are foundations for later adapters; they do not imply that positions or orders are available from every current account provider.
+The append-only snapshot store now supports balances and positions across Spot, cash equity, margin, futures, options, FX and on-chain market types, with environment-scoped history, exact decimal quantities and per-instrument change detection. No current production read-only adapter yet declares positions, so position endpoints return an unsupported-capability response until such an adapter is connected. Snapshots remain separate from the paper portfolio.
