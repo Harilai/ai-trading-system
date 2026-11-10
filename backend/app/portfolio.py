@@ -503,18 +503,25 @@ class PaperPortfolio:
         if not isinstance(reason, str) or not reason.strip():
             raise PortfolioError("Order rejection requires a reason")
         with self.lock, self.connect() as db:
+            stamp = datetime.now(timezone.utc).isoformat()
+            current = db.execute(
+                "SELECT status FROM order_intents WHERE client_order_id=?",
+                (client_order_id,),
+            ).fetchone()
+            if current is None:
+                raise PortfolioError("Order intent does not exist")
             changed = db.execute(
                 "UPDATE order_intents SET status='rejected', rejection_reason=?, updated_at=? "
                 "WHERE client_order_id=? AND status='risk_approved'",
-                (reason.strip()[:2000], datetime.now(timezone.utc).isoformat(), client_order_id),
+                (reason.strip()[:2000], stamp, client_order_id),
             ).rowcount
-            if changed != 1:
-                current = db.execute(
-                    "SELECT status FROM order_intents WHERE client_order_id=?",
-                    (client_order_id,),
-                ).fetchone()
-                if current is None or current["status"] != "rejected":
-                    raise PortfolioError("Order intent cannot transition to rejected from its current state")
+            if changed == 1:
+                self._insert_order_intent_event(
+                    db, client_order_id, current["status"], "rejected",
+                    {"reason": reason.strip()[:500]}, stamp,
+                )
+            elif current["status"] != "rejected":
+                raise PortfolioError("Order intent cannot transition to rejected from its current state")
 
     def reconcile_order_intents(self) -> dict:
         """Reconcile persisted paper intents against the atomic trade ledger."""
