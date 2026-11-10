@@ -132,7 +132,7 @@ class InstrumentCatalog:
         provider_id = str(failure.get("provider_id") or "unknown")[:128]
         reason = str(failure.get("reason") or "provider discovery failed")
         reason = re.sub(
-            r"(?i)authorization\s*[:=]\s*(?:bearer|basic)\s+[^\s&,;]+",
+            r"(?i)authorization\s*[:=]\s*[^\s&,;]+(?:\s+[^\s&,;]+)?",
             "Authorization=[REDACTED]",
             reason,
         )
