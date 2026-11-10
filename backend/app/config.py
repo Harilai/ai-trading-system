@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     decision_cycle_interval_seconds: int = Field(default=300, ge=60)
     equity_research_interval_seconds: int = Field(default=21600, ge=3600)
     backup_interval_seconds: int = Field(default=86400, ge=3600)
+    backup_retry_interval_seconds: int = Field(default=300, ge=60, le=3600)
     backup_retention_days: int = Field(default=14, ge=1, le=365)
     backup_directory: str = str(PROJECT_ROOT / "data" / "backups")
     backup_external_enabled: bool = False

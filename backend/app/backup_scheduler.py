@@ -264,9 +264,23 @@ def run_forever() -> None:
                 external_enabled=external_enabled,
                 external_error=external_error,
             )
+            cycle_status = read_backup_status(backup_directory)
+            local_status = cycle_status.get("local", {}).get("status")
+            external_status = cycle_status.get("external", {}).get("status")
+            retry_needed = (
+                local_status != "created"
+                or (external_enabled and external_status != "verified")
+            )
+            delay = settings.backup_retry_interval_seconds if retry_needed else interval
+            if retry_needed:
+                logger.warning(
+                    "Backup cycle incomplete (local=%s external=%s); retrying in %ss",
+                    local_status, external_status, delay,
+                )
         except Exception:
             logger.exception("Unexpected error during SQLite backup cycle")
-        time.sleep(interval)
+            delay = settings.backup_retry_interval_seconds
+        time.sleep(delay)
 
 
 def main() -> int:
