@@ -233,7 +233,9 @@ def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
 
 def test_end_to_end_paper_buy_then_stop_loss_exit(tmp_path):
     import asyncio
+    from datetime import datetime, timezone
 
+    market_timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
     from app.chief import ChiefAgent
     from app.portfolio import PaperPortfolio
 
@@ -251,6 +253,7 @@ def test_end_to_end_paper_buy_then_stop_loss_exit(tmp_path):
                             "ask": 100.0,
                             "bid": 99.9,
                             "quote_volume_24h": 10000,
+                            "ticker_timestamp_ms": market_timestamp,
                         },
                         "analysis": {"close": 100.0, "indicators": {"atr_14": 1.0}},
                         "strategy_research": {
@@ -279,6 +282,7 @@ def test_end_to_end_paper_buy_then_stop_loss_exit(tmp_path):
                         "ask": 97.1,
                         "bid": 97.0,
                         "quote_volume_24h": 10000,
+                        "ticker_timestamp_ms": market_timestamp,
                     },
                     "analysis": {"close": 97.0, "indicators": {"atr_14": 1.0}},
                     "strategy_research": {"recommended_strategy": None, "candidates": []},
@@ -330,7 +334,7 @@ def test_scheduler_respects_interval_and_enqueues_again_after_due_time(tmp_path)
     store.set_enabled(True)
     first = store.schedule_decision_cycle(300)
     claimed = store.claim_due_task()
-    store.finish_task(claimed["id"], {"execution": "no_order"})
+    assert store.finish_task(claimed["id"], {"execution": "no_order"}, claimed["lease_token"]) is True
 
     assert store.schedule_decision_cycle(300) is None
     with store.connect() as db:
@@ -367,7 +371,7 @@ def test_equity_research_scheduler_is_independent_and_low_frequency(tmp_path):
 
     claimed = store.claim_due_task()
     assert claimed["kind"] == "equity_research"
-    store.finish_task(claimed["id"], {"analysed": 2})
+    assert store.finish_task(claimed["id"], {"analysed": 2}, claimed["lease_token"]) is True
     assert store.schedule_equity_research(21600) is None
     with store.connect() as db:
         db.execute(
