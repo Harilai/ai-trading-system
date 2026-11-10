@@ -45,7 +45,7 @@ class BinanceSpotReadOnlyAccount:
         except Exception as exc:
             raise AccountConnectorError(
                 f"Unable to initialize Binance read-only connector ({type(exc).__name__})"
-            ) from exc
+            ) from None
 
     def describe(self) -> dict:
         return {
@@ -90,13 +90,16 @@ class BinanceSpotReadOnlyAccount:
             # Do not return raw provider exceptions: they may contain request details.
             raise AccountConnectorError(
                 f"Binance spot balance request failed ({type(exc).__name__})"
-            ) from exc
+            ) from None
 
         if not isinstance(response, dict):
             raise AccountConnectorError("Binance returned an invalid balance response")
-        free_map = response.get("free") or {}
-        used_map = response.get("used") or {}
-        total_map = response.get("total") or {}
+        free_map = response.get("free", {})
+        used_map = response.get("used", {})
+        total_map = response.get("total", {})
+        free_map = {} if free_map is None else free_map
+        used_map = {} if used_map is None else used_map
+        total_map = {} if total_map is None else total_map
         if not all(isinstance(value, dict) for value in (free_map, used_map, total_map)):
             raise AccountConnectorError("Binance returned malformed balance collections")
 
