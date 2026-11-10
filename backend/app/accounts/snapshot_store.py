@@ -132,8 +132,11 @@ class AccountSnapshotStore:
             raise AccountSnapshotError("Account snapshot cannot enable withdrawals")
         fetched_at = cls._parse_time(snapshot.get("fetched_at"), "fetched_at")
         now = datetime.now(timezone.utc)
-        if (fetched_at - now).total_seconds() > 60:
+        age_seconds = (now - fetched_at).total_seconds()
+        if age_seconds < -60:
             raise AccountSnapshotError("Account snapshot timestamp is in the future")
+        if age_seconds > 300:
+            raise AccountSnapshotError("Account snapshot timestamp is stale")
         raw_balances = snapshot.get("balances")
         if not isinstance(raw_balances, list):
             raise AccountSnapshotError("Account snapshot balances must be a list")
