@@ -1668,3 +1668,66 @@ def test_generic_account_snapshot_route_rejects_trading_enabled_accounts(monkeyp
     response = client.post("/api/accounts/test:demo/snapshots", headers=headers)
     assert response.status_code == 409
     assert "read-only" in response.json()["detail"]
+
+
+def test_generic_account_position_routes_return_normalized_positions_and_snapshot(monkeypatch):
+    from app.accounts.contracts import AccountProviderRegistry
+
+    headers = configure_order_auth(monkeypatch)
+
+    class PositionOnlyProvider:
+        def describe(self):
+            return {
+                "provider_id": "test:broker",
+                "account_alias": "cash-equities",
+                "venue_type": "broker",
+                "market_types": ["cash_equity"],
+                "environment": "production",
+                "configured": True,
+                "balances": False,
+                "positions": True,
+                "order_management": False,
+                "order_submission": False,
+                "order_cancellation": False,
+                "reconciliation": False,
+                "read_only_connector": True,
+                "transfers": False,
+                "withdrawals": False,
+                "wallet_signing": False,
+                "account_key_permissions_verified": False,
+            }
+
+        def fetch_positions(self):
+            return [{
+                "instrument_id": "broker:equity:AAPL",
+                "symbol": "AAPL",
+                "asset_class": "equity",
+                "market_type": "cash_equity",
+                "quantity": "1.25",
+                "side": "long",
+                "quote_currency": "USD",
+                "average_entry_price": "180",
+                "mark_price": "185",
+                "market_value": "231.25",
+                "unrealized_pnl": "6.25",
+            }]
+
+    registry = AccountProviderRegistry()
+    registry.register(PositionOnlyProvider())
+    monkeypatch.setattr("app.main.account_provider_registry", registry)
+
+    unauthorized = client.get("/api/accounts/test:broker/positions")
+    assert unauthorized.status_code == 401
+
+    positions = client.get("/api/accounts/test:broker/positions", headers=headers)
+    assert positions.status_code == 200
+    assert positions.json()["market_type"] == "cash_equity"
+    assert positions.json()["positions"][0]["quantity"] == "1.25"
+
+    snapshot = client.post(
+        "/api/accounts/test:broker/snapshots?market_type=cash_equity",
+        headers=headers,
+    )
+    assert snapshot.status_code == 201
+    assert snapshot.json()["position_count"] == 1
+    assert snapshot.json()["positions"][0]["symbol"] == "AAPL"
