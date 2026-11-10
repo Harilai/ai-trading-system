@@ -344,6 +344,19 @@ class AutonomousStore:
                    {"task_id": task["id"], "error": error[:500]})
         return True
 
+    def requeue_failed_decision_task(self, task_id: str) -> bool:
+        """Resume a durable approved order after bounded task retries are exhausted."""
+        now = utcnow().isoformat()
+        with self.lock, self.connect() as db:
+            changed = db.execute(
+                "UPDATE agent_tasks SET status='pending',attempts=0,due_at=?,lease_until=NULL,"
+                "error=NULL,updated_at=? WHERE id=? AND kind='decision_cycle' AND status='failed'",
+                (now, now, task_id),
+            ).rowcount
+        if changed:
+            self.audit("approved_order_task_requeued", {"task_id": task_id})
+        return changed == 1
+
     def remember(self, category: str, content: dict[str, Any], validated: bool = False) -> int:
         with self.connect() as db:
             cur = db.execute(
@@ -520,6 +533,15 @@ class AutonomousAgent:
                 self.store.recover_expired_tasks()
                 state = self.store.state()
                 self.store.heartbeat()
+                if self.portfolio is not None:
+                    reconciliation = await asyncio.to_thread(
+                        self.portfolio.reconcile_order_intents
+                    )
+                    if reconciliation["reconciled_filled"] or reconciliation["reconciliation_required"]:
+                        self.store.audit("paper_order_reconciliation", reconciliation)
+                    for intent in await asyncio.to_thread(self.portfolio.list_order_intents, 1000):
+                        if intent["status"] == "risk_approved":
+                            self.store.requeue_failed_decision_task(intent["client_order_id"])
                 if state["enabled"] and not state["emergency_stop"]:
                     self.store.schedule_decision_cycle(settings.decision_cycle_interval_seconds)
                     if self.equity_research is not None:
