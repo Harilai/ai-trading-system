@@ -58,6 +58,11 @@ class CcxtSpotProvider:
             return None
         return parsed if parsed == parsed and abs(parsed) != float("inf") else None
 
+    @classmethod
+    def _optional_positive_float(cls, value):
+        parsed = cls._optional_float(value)
+        return parsed if parsed is not None and parsed > 0 else None
+
     @staticmethod
     def _optional_precision(value):
         if isinstance(value, bool):
@@ -72,6 +77,8 @@ class CcxtSpotProvider:
 
     def _precision_fields(self, market: dict) -> dict:
         raw = market.get("precision") or {}
+        if not isinstance(raw, dict):
+            raw = {}
         mode_value = getattr(self.exchange, "precisionMode", None)
         if mode_value == getattr(ccxt, "TICK_SIZE", object()):
             mode = PrecisionMode.TICK_SIZE
@@ -84,8 +91,8 @@ class CcxtSpotProvider:
 
         fields = {"precision_mode": mode}
         if mode == PrecisionMode.TICK_SIZE:
-            fields["price_tick"] = self._optional_float(raw.get("price"))
-            fields["amount_step"] = self._optional_float(raw.get("amount"))
+            fields["price_tick"] = self._optional_positive_float(raw.get("price"))
+            fields["amount_step"] = self._optional_positive_float(raw.get("amount"))
         elif mode in {PrecisionMode.DECIMAL_PLACES, PrecisionMode.SIGNIFICANT_DIGITS}:
             fields["price_precision"] = self._optional_precision(raw.get("price"))
             fields["amount_precision"] = self._optional_precision(raw.get("amount"))
@@ -114,8 +121,14 @@ class CcxtSpotProvider:
             if market.get("quote") != "EUR" or not market.get("base"):
                 continue
             limits = market.get("limits") or {}
+            if not isinstance(limits, dict):
+                limits = {}
             amount_limits = limits.get("amount") or {}
             cost_limits = limits.get("cost") or {}
+            if not isinstance(amount_limits, dict):
+                amount_limits = {}
+            if not isinstance(cost_limits, dict):
+                cost_limits = {}
             result.append(
                 MarketInstrument(
                     provider_id=self.provider_id,
@@ -140,10 +153,10 @@ class CcxtSpotProvider:
                         "future" if market.get("future") else
                         "spot"
                     ),
-                    contract_size=self._optional_float(market.get("contractSize")),
+                    contract_size=self._optional_positive_float(market.get("contractSize")),
                     settlement_currency=market.get("settle"),
                     expiry=self._expiry_iso(market),
-                    strike=self._optional_float(market.get("strike")),
+                    strike=self._optional_positive_float(market.get("strike")),
                     option_type=market.get("optionType"),
                     underlying=market.get("underlying"),
                     trading_status="active" if market.get("active") is not False else "inactive",
