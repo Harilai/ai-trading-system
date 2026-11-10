@@ -110,6 +110,13 @@ class MarketInstrument:
     session_timezone: str | None = None
 
     def __post_init__(self) -> None:
+        for enum_name, enum_type in (("asset_class", AssetClass), ("market_type", MarketType)):
+            value = getattr(self, enum_name)
+            if not isinstance(value, enum_type):
+                try:
+                    object.__setattr__(self, enum_name, enum_type(value))
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f"Unsupported instrument {enum_name}") from exc
         for name in ("provider_id", "symbol", "base", "quote"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
@@ -117,7 +124,7 @@ class MarketInstrument:
         if not isinstance(self.active, bool):
             raise ValueError("Instrument active flag must be boolean")
 
-        for name in ("min_amount", "min_cost", "max_amount", "max_cost", "price_tick", "amount_step", "contract_size", "strike"):
+        for name in ("min_amount", "min_cost", "max_amount", "max_cost", "price_tick", "amount_step", "contract_size", "strike", "maker_fee", "taker_fee"):
             value = getattr(self, name)
             if value is None:
                 continue
@@ -131,11 +138,7 @@ class MarketInstrument:
                 raise ValueError(f"Instrument {name} must be positive")
             if name in {"min_amount", "min_cost", "max_amount", "max_cost"} and numeric < 0:
                 raise ValueError(f"Instrument {name} cannot be negative")
-
-        for name in ("maker_fee", "taker_fee"):
-            value = getattr(self, name)
-            if value is not None and not math.isfinite(float(value)):
-                raise ValueError(f"Instrument {name} must be finite")
+            object.__setattr__(self, name, numeric)
 
         for name in ("price_precision", "amount_precision"):
             value = getattr(self, name)
@@ -170,10 +173,18 @@ class MarketInstrument:
                 raise ValueError("option_type is only valid as call or put for option instruments")
             object.__setattr__(self, "option_type", normalized_option_type)
         if self.asset_class == AssetClass.OPTION:
-            if not self.expiry or self.strike is None or not self.underlying:
+            if not self.expiry or not self.underlying:
                 raise ValueError("Option instruments require expiry, positive strike and underlying")
-            if self.option_type not in {"call", "put"}:
-                raise ValueError("Option instruments require option_type call or put")
+            if self.option_type not in {"call", "put"} or self.strike is None:
+                raise ValueError("Option instruments require option_type call or put and a positive strike")
+            from datetime import date, datetime
+            try:
+                datetime.fromisoformat(self.expiry.replace("Z", "+00:00"))
+            except ValueError:
+                try:
+                    date.fromisoformat(self.expiry)
+                except ValueError as exc:
+                    raise ValueError("Option expiry must be an ISO date or datetime") from exc
         elif self.strike is not None:
             raise ValueError("strike is only valid for option instruments")
 
