@@ -20,7 +20,7 @@ Persist an immutable history of authenticated account observations so the system
 - `changed`: at least one balance changed, a new asset appeared, or an asset present previously is absent from the latest response.
 - Missing assets are labelled `absent_from_latest_snapshot`; the system does not silently interpret absence as a zero balance or claim that funds were transferred.
 - Delta totals are calculated only when the asset exists in both snapshots and both totals are known.
-- Out-of-order observations are rejected.
+- Observations older than five minutes, more than 60 seconds in the future, or older than the latest stored observation are rejected.
 - No FX conversion, fiat valuation, cost basis, P&L, liabilities, margin, collateral or paper-ledger reconciliation is inferred.
 
 ## API
@@ -37,7 +37,7 @@ The existing `GET /api/accounts/binance/spot/balances` remains a live, non-persi
 
 - Only the configured Binance Spot read-only connector is currently wired to snapshot capture.
 - Values must be decimal strings; binary floating-point inputs are rejected.
-- Malformed, non-finite, negative, duplicate-asset, timezone-naive and future-dated observations are rejected.
+- Malformed, non-finite, negative, duplicate-asset, timezone-naive, stale, out-of-order and future-dated observations are rejected. Snapshot sources must explicitly declare read-only mode with execution and withdrawals disabled.
 - Snapshot data is kept separate from the paper portfolio database tables and never changes simulated cash or positions.
 - Snapshot history is not proof of ownership, solvency, withdrawable funds or exchange-side API-key permission scope.
 - No live orders, transfers, withdrawals, wallet signing or derivatives are implemented.
