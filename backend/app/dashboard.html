@@ -160,7 +160,7 @@
 
     <section class="grid wide">
       <div class="panel">
-        <div class="section-head"><h2>Mercado · gráfico OHLCV</h2><span id="chart-status" class="badge">Datos de mercado</span></div>
+        <div class="section-head"><h2>Mercado · velas OHLCV</h2><span id="chart-status" class="badge">Datos de mercado</span></div>
         <div class="chart-tools">
           <div class="field"><label for="chart-symbol">Símbolo</label><input id="chart-symbol" value="BTC/EUR"></div>
           <div class="field"><label for="chart-provider">Proveedor</label><select id="chart-provider"><option value="ccxt:kraken">Kraken · crypto</option><option value="twelve_data">Twelve Data · equities</option></select></div>
@@ -316,13 +316,19 @@
         for(const item of items.slice(0,10)){const result=item.result||{};node.appendChild(dataItem(item.strategy_id||"Estrategia",item.instrument_id+" · "+date(item.created_at),item.eligible?"Elegible":"No elegible",item.eligible?"state-good":"state-warn"));const failures=(item.validation_failures||[]).slice(0,2);if(failures.length)node.appendChild(dataItem("Validación",failures.join(" · "),result.walk_forward?.windows?"Walk-forward":"Revisar"));}
       }
       function drawChart(candles,currency="EUR"){
-        const svg=$("market-chart");svg.replaceChildren();const ns="http://www.w3.org/2000/svg";const width=900,height=240,pad=26;
-        const closes=candles.map(c=>Number(c.close)).filter(Number.isFinite);if(closes.length<2)throw new Error("No hay suficientes velas válidas");
-        const min=Math.min(...closes),max=Math.max(...closes),span=max-min||Math.max(Math.abs(max)*0.001,1);
-        const points=closes.map((v,i)=>((pad+i*(width-2*pad)/(closes.length-1)).toFixed(2)+","+(height-pad-(v-min)*(height-2*pad)/span).toFixed(2))).join(" ");
-        for(let n=0;n<4;n++){const line=document.createElementNS(ns,"line");const y=pad+n*(height-2*pad)/3;line.setAttribute("x1",pad);line.setAttribute("x2",width-pad);line.setAttribute("y1",y);line.setAttribute("y2",y);line.setAttribute("stroke","#263347");line.setAttribute("stroke-width","1");svg.appendChild(line);}
-        const poly=document.createElementNS(ns,"polyline");poly.setAttribute("points",points);poly.setAttribute("fill","none");poly.setAttribute("stroke","#62a6ef");poly.setAttribute("stroke-width","2.5");poly.setAttribute("stroke-linejoin","round");poly.setAttribute("stroke-linecap","round");svg.appendChild(poly);
-        $("chart-range").textContent=money(min,currency)+" — "+money(max,currency)+" · "+candles.length+" velas";$("chart-latest").textContent="Último cierre "+money(closes[closes.length-1],currency)+" · "+date(candles[candles.length-1].timestamp);
+        const svg=$("market-chart");svg.replaceChildren();const ns="http://www.w3.org/2000/svg";const width=900,height=240,pad=28;
+        const valid=candles.filter(c=>[c.open,c.high,c.low,c.close].every(v=>Number.isFinite(Number(v)))&&Number(c.high)>=Math.max(Number(c.open),Number(c.close),Number(c.low))&&Number(c.low)<=Math.min(Number(c.open),Number(c.close)));
+        if(valid.length<2)throw new Error("No hay suficientes velas OHLC válidas");
+        const min=Math.min(...valid.map(c=>Number(c.low))),max=Math.max(...valid.map(c=>Number(c.high))),span=max-min||Math.max(Math.abs(max)*0.001,1);
+        const y=value=>height-pad-(Number(value)-min)*(height-2*pad)/span;
+        for(let n=0;n<4;n++){const line=document.createElementNS(ns,"line");const yy=pad+n*(height-2*pad)/3;line.setAttribute("x1",pad);line.setAttribute("x2",width-pad);line.setAttribute("y1",yy);line.setAttribute("y2",yy);line.setAttribute("stroke","#263347");line.setAttribute("stroke-width","1");svg.appendChild(line);}
+        const slot=(width-2*pad)/valid.length,candleWidth=Math.max(2,Math.min(9,slot*0.62));
+        valid.forEach((c,index)=>{
+          const x=pad+(index+0.5)*slot,open=Number(c.open),close=Number(c.close),high=Number(c.high),low=Number(c.low),up=close>=open,stroke=up?"#39c58a":"#ef6a6a";
+          const wick=document.createElementNS(ns,"line");wick.setAttribute("x1",x);wick.setAttribute("x2",x);wick.setAttribute("y1",y(high));wick.setAttribute("y2",y(low));wick.setAttribute("stroke",stroke);wick.setAttribute("stroke-width","1.4");svg.appendChild(wick);
+          const body=document.createElementNS(ns,"rect");body.setAttribute("x",x-candleWidth/2);body.setAttribute("y",Math.min(y(open),y(close)));body.setAttribute("width",candleWidth);body.setAttribute("height",Math.max(1,Math.abs(y(open)-y(close))));body.setAttribute("fill",stroke);body.setAttribute("rx","0.8");svg.appendChild(body);
+        });
+        $("chart-range").textContent=money(min,currency)+" — "+money(max,currency)+" · "+valid.length+" velas";$("chart-latest").textContent="Último cierre "+money(Number(valid[valid.length-1].close),currency)+" · "+date(valid[valid.length-1].timestamp);
       }
       async function loadChart(){
         const symbol=$("chart-symbol").value.trim().toUpperCase(),provider=$("chart-provider").value,timeframe=$("chart-timeframe").value;
