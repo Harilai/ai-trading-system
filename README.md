@@ -165,6 +165,7 @@ El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y contr
 - `POST /api/demo/binance/spot/orders` — limit order en Demo Trading, con intent persistido e idempotencia por client order ID.
 - `GET /api/demo/binance/spot/orders` y `GET /api/demo/binance/spot/orders/{client_order_id}` — estado persistido.
 - `POST /api/demo/binance/spot/orders/{client_order_id}/reconcile` — conciliación explícita tras timeout/restart.
+- `POST /api/demo/binance/spot/orders/{client_order_id}/fills/reconcile` y `GET /api/demo/binance/spot/orders/{client_order_id}/fills` — conciliación y consulta de fills individuales y comisiones; nuevas órdenes Demo quedan bloqueadas hasta completar la evidencia; requieren `X-Agent-Token`.
 - `POST /api/demo/binance/spot/orders/{client_order_id}/cancel` — cancelación de órdenes abiertas/partial fills.
 - `GET /api/demo/binance/spot/orders/{client_order_id}/events` — auditoría append-only. Solo limit orders, máximo 25 unidades de quote por defecto y un único intent sin resolver. Demo-only; no hay ejecución en producción.
 - `POST /api/accounts/binance/spot/snapshots` — captura y persiste un snapshot inmutable de balances; requiere `X-Agent-Token`.
