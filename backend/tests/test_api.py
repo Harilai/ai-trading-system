@@ -1698,19 +1698,26 @@ def test_generic_account_position_routes_return_normalized_positions_and_snapsho
             }
 
         def fetch_positions(self):
-            return [{
-                "instrument_id": "broker:equity:AAPL",
-                "symbol": "AAPL",
-                "asset_class": "equity",
+            return {
+                "provider_id": "test:broker",
+                "account_alias": "cash-equities",
                 "market_type": "cash_equity",
-                "quantity": "1.25",
-                "side": "long",
-                "quote_currency": "USD",
-                "average_entry_price": "180",
-                "mark_price": "185",
-                "market_value": "231.25",
-                "unrealized_pnl": "6.25",
-            }]
+                "environment": "production",
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "positions": [{
+                    "instrument_id": "broker:equity:AAPL",
+                    "symbol": "AAPL",
+                    "asset_class": "equity",
+                    "market_type": "cash_equity",
+                    "quantity": "1.25",
+                    "side": "long",
+                    "quote_currency": "USD",
+                    "average_entry_price": "180",
+                    "mark_price": "185",
+                    "market_value": "231.25",
+                    "unrealized_pnl": "6.25",
+                }],
+            }
 
     registry = AccountProviderRegistry()
     registry.register(PositionOnlyProvider())
