@@ -214,3 +214,131 @@ def test_registry_requires_alias_when_multiple_accounts_share_provider_id():
     with pytest.raises(AmbiguousAccountProvider, match="specify account_alias"):
         registry.fetch_balances("test:venue")
     assert registry.fetch_balances("test:venue", "account-two")["account_alias"] == "account-two"
+
+
+def test_registry_supports_position_only_readonly_accounts_and_combined_snapshots():
+    class FakePositionProvider:
+        def describe(self):
+            return {
+                "provider_id": "test:equity-broker",
+                "account_alias": "cash-equities",
+                "venue_type": "broker",
+                "market_types": ["cash_equity"],
+                "environment": "production",
+                "configured": True,
+                "balances": False,
+                "positions": True,
+                "order_management": False,
+                "order_submission": False,
+                "order_cancellation": False,
+                "reconciliation": False,
+                "read_only_connector": True,
+                "transfers": False,
+                "withdrawals": False,
+                "wallet_signing": False,
+                "account_key_permissions_verified": False,
+            }
+
+        def fetch_positions(self):
+            return [{
+                "instrument_id": "broker:equity:AAPL",
+                "symbol": "AAPL",
+                "asset_class": "equity",
+                "market_type": "cash_equity",
+                "quantity": "2.000",
+                "side": "long",
+                "quote_currency": "USD",
+                "average_entry_price": "180",
+                "mark_price": "185",
+                "market_value": "370",
+                "unrealized_pnl": "-10.50",
+            }]
+
+    registry = AccountProviderRegistry()
+    registry.register(FakePositionProvider())
+    positions = registry.fetch_positions("test:equity-broker")
+    assert positions[0]["quantity"] == "2"
+    assert positions[0]["unrealized_pnl"] == "-10.5"
+
+    class SnapshotStore:
+        def record_snapshot(self, snapshot):
+            return snapshot
+
+    saved = registry.record_read_only_snapshot(
+        "test:equity-broker", SnapshotStore(),
+    )
+    assert saved["market_type"] == "cash_equity"
+    assert saved["balances"] == []
+    assert saved["positions"][0]["symbol"] == "AAPL"
+
+
+def test_registry_rejects_position_provider_that_does_not_implement_declared_method():
+    class BrokenPositionProvider:
+        def describe(self):
+            return {
+                "provider_id": "test:broken-position",
+                "account_alias": "account",
+                "venue_type": "broker",
+                "market_types": ["cash_equity"],
+                "environment": "production",
+                "configured": True,
+                "balances": False,
+                "positions": True,
+                "read_only_connector": True,
+                "order_management": False,
+                "order_submission": False,
+                "order_cancellation": False,
+                "reconciliation": False,
+                "transfers": False,
+                "withdrawals": False,
+                "wallet_signing": False,
+                "account_key_permissions_verified": False,
+            }
+
+    with pytest.raises(AccountProviderError, match="fetch_positions"):
+        AccountProviderRegistry().register(BrokenPositionProvider())
+
+
+def test_registry_rejects_duplicate_or_wrong_market_positions():
+    class FakePositionProvider:
+        def __init__(self, positions):
+            self.positions = positions
+
+        def describe(self):
+            return {
+                "provider_id": "test:positions",
+                "account_alias": "one",
+                "venue_type": "broker",
+                "market_types": ["cash_equity"],
+                "environment": "production",
+                "configured": True,
+                "balances": False,
+                "positions": True,
+                "order_management": False,
+                "order_submission": False,
+                "order_cancellation": False,
+                "reconciliation": False,
+                "read_only_connector": True,
+                "transfers": False,
+                "withdrawals": False,
+                "wallet_signing": False,
+                "account_key_permissions_verified": False,
+            }
+
+        def fetch_positions(self):
+            return self.positions
+
+    base = {
+        "instrument_id": "broker:AAPL", "symbol": "AAPL", "asset_class": "equity",
+        "market_type": "cash_equity", "quantity": "1", "side": "long",
+        "quote_currency": "USD",
+    }
+    registry = AccountProviderRegistry()
+    registry.register(FakePositionProvider([base, base]))
+    with pytest.raises(AccountProviderError, match="duplicate"):
+        registry.fetch_positions("test:positions")
+
+    wrong_market_registry = AccountProviderRegistry()
+    wrong_market_registry.register(FakePositionProvider([{**base, "market_type": "spot"}]))
+    with pytest.raises(AccountProviderError, match="market_type"):
+        wrong_market_registry.fetch_positions("test:positions")
