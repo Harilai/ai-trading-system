@@ -172,9 +172,9 @@
         <div class="message" id="chart-message" role="status"></div>
       </div>
       <div class="panel">
-        <div class="section-head"><h2>Conectores y salud</h2><span id="connector-count" class="badge">—</span></div>
+        <div class="section-head"><h2>Proveedores y readiness</h2><span id="connector-count" class="badge">—</span></div>
         <div id="connector-list" class="data-list"><div class="empty">Consultando proveedores…</div></div>
-        <div class="notice">La presencia de un proveedor o símbolo no significa que haya una cuenta autenticada ni que el trading esté habilitado.</div>
+        <div class="notice">El estado del proveedor es declarativo y puede figurar como no comprobado; no representa una sesión autenticada ni una prueba activa de conectividad. La presencia de un símbolo tampoco habilita trading.</div>
       </div>
     </section>
 
@@ -275,7 +275,7 @@
         const node=$("connector-list");node.replaceChildren();const caps=data.capabilities||[];$("connector-count").textContent=caps.length+" capacidades";
         node.appendChild(dataItem("API",ready.status||"unknown","paper · live off",ready.status==="ready"?"state-good":"state-warn"));
         if(!caps.length){node.appendChild(dataItem("Proveedores","No hay capacidades declaradas","—","state-warn"));return;}
-        for(const cap of caps){const status=cap.connectivity_status||"unknown";const auth=cap.authenticated_account?"Cuenta autenticada":"Sin cuenta autenticada";const features=(cap.asset_classes||[]).join(", ")+" · "+(cap.market_types||[]).join(", ");node.appendChild(dataItem(cap.provider_id,features,auth+" · "+status,status==="connected"?"state-good":"state-warn"));}
+        for(const cap of caps){const status=cap.connectivity_status||"not_checked";const auth=cap.authenticated_account?"Cuenta autenticada":"Sin cuenta autenticada";const features=(cap.asset_classes||[]).join(", ")+" · "+(cap.market_types||[]).join(", ");node.appendChild(dataItem(cap.provider_id,features,auth+" · estado: "+status,status==="connected"?"state-good":"state-warn"));}
       }
       function renderIntents(data){
         const node=$("intent-list");node.replaceChildren();const items=data.items||[];$("intent-count").textContent=items.length+" intentos";
