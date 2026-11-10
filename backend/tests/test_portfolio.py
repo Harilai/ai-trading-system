@@ -542,7 +542,9 @@ def test_order_intent_survives_restart_and_fills_exact_approved_request(tmp_path
         "task-order-1", request, {"action": "buy", "risk_accepted": True},
     )
     assert created["status"] == "risk_approved"
-    assert created["request"] == request
+    assert all(created["request"][key] == value for key, value in request.items())
+    assert created["request"]["quote_currency"] == "EUR"
+    assert created["request"]["fx_rate_to_eur"] == 1.0
 
     restarted = PaperPortfolio(path, 999)
     recovered_intent = restarted.get_order_intent("task-order-1")
