@@ -6,8 +6,8 @@ Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de 
 
 ## Siguiente secuencia de desarrollo acordada
 
-1. **Cartera paper multidivisa para acciones/ETF:** efectivo EUR/USD separado, conversión FX paper explícita y auditable, valoración y riesgo consolidados en EUR. El soporte manual paper de equities se está validando en PR #41; el Chief sigue read-only para equities.
-2. **Conciliación de órdenes y fills:** estados legales, idempotencia, recuperación y fallos entre límites transaccionales.
+1. **Completado — cartera paper multidivisa para acciones/ETF (PR #41):** efectivo EUR/USD separado, conversión FX explícita y auditable, valoración y riesgo consolidados en EUR. Las órdenes equity siguen siendo manuales y paper-only; el Chief sigue sin operar equities autónomamente.
+2. **Siguiente — conciliación de órdenes y fills:** estados legales, idempotencia, recuperación y fallos entre límites transaccionales; añadir supervisión paper de stops/take-profit equity.
 3. **Backups externos:** copia fuera del volumen/servidor Docker y restauración verificada.
 4. **Dashboard ampliado:** gráficos, investigación y retiradas.
 5. **Despliegue persistente 24/7:** VPS, seguridad, monitorización y recuperación.
@@ -16,10 +16,10 @@ Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de 
 
 | Área | Estado |
 |---|---|
-| Cartera paper multidivisa EUR/USD, conversiones FX y manual equity/ETF paper | En validación en PR #41; no integrado hasta CI/revisión |
+| Cartera paper multidivisa EUR/USD, conversiones FX y manual equity/ETF paper | Implementado y fusionado en PR #41 (`23cfcb5`); 270 tests y Docker hardening correctos |
 | Backend FastAPI y paper portfolio SQLite | Implementado |
 | Datos públicos crypto spot vía CCXT | Implementado; solo datos públicos |
-| Datos públicos US equities/ETF vía Twelve Data Basic | Adaptador implementado y probado; API key gratuita opcional; solo datos, sin trading |
+| Datos públicos US equities/ETF vía Twelve Data Basic | Adaptador de datos/FX; órdenes manuales paper locales habilitadas para cash equity/ETF USD; sin broker ni ejecución real |
 | Investigación técnica y backtesting inicial de acciones/ETF | Pipeline manual y tarea autónoma periódica de solo lectura implementados; sin propuestas ni órdenes |
 | Contratos normalizados de proveedores e instrumentos | Implementado |
 | Identidad de posiciones por `provider_id + instrument_id` | Implementado; migración SQLite incluida |
@@ -28,7 +28,7 @@ Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de 
 | Registro de proveedores y capability matrix | Implementado |
 | Descubrimiento multi-provider para adaptadores configurados | Implementado en datos; actualmente un proveedor por defecto |
 | Router de ejecución normalizado | Contrato inicial; ningún adaptador live |
-| Perfiles de riesgo por clase/tipo de mercado | Contratos implementados; solo crypto spot habilitado |
+| Perfiles de riesgo por clase/tipo de mercado | Crypto spot autónomo y cash equity/ETF USD manual-only paper habilitados; margin/derivados deshabilitados |
 | Indicadores técnicos | Implementado |
 | Contabilidad de comisiones en coste base y P/L realizado | Implementado |
 | Validación de datos obsoletos y órdenes | Implementado |
@@ -41,17 +41,17 @@ Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de 
 | Strategy Research: EMA, RSI, Bollinger, split 70/30, OHLCV validado, benchmark buy-and-hold y gates walk-forward | Implementado como filtro de investigación; no habilita ejecución |
 | Chief: selección de oportunidad y propuesta buy/sell/hold | Implementado con Risk Manager obligatorio |
 | Chief Agent y coordinación de decisiones | Implementado; ciclo ejecuta paper bajo gate de riesgo |
-| Risk Manager conectado obligatoriamente a órdenes paper | Implementado; crypto spot EUR autónomo y cash equities/ETF USD manual-only paper en PR #41 |
-| Sniper y generación de propuestas | Pendiente |
-| Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada; ciclo periódico cada 5 min al reanudar worker |
-| Datos de acciones/ETF estadounidenses | Adaptador Twelve Data Basic y pipeline autónomo read-only integrados; órdenes manuales paper USD en PR #41, sin broker ni ejecución real |
+| Risk Manager conectado obligatoriamente a órdenes paper | Implementado; crypto spot EUR autónomo y cash equities/ETF USD manual-only paper con límites propios |
+| Sniper y generación de propuestas | Implementado; propuestas deterministas bajo Risk Manager obligatorio |
+| Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada para crypto spot EUR; monitor equity stop/take pendiente |
+| Datos de acciones/ETF estadounidenses | Adaptador Twelve Data Basic y pipeline autónomo read-only; órdenes manuales paper USD integradas, sin broker ni ejecución real |
 | Broker de acciones/ETF y ejecución | Pendiente; requiere broker adapter, elegibilidad y validación |
 | DEX, wallets, blockchain y DeFi | Pendiente; no hay integración ni firma |
 | Futuros, opciones, margin y derivados | Deshabilitados; perfiles y límites específicos pendientes |
 | News/Sentiment con fuentes auditables | Pendiente |
 | Valoración a mercado, P/L realizado/no realizado | Implementado en cartera paper; depende de cotización fresca |
 | Reserva 50/50 de beneficio neto realizado | Implementada como cálculo de reserva; política provisional configurable pendiente |
-| Solicitud/aprobación/cancelación manual de retiradas paper | Implementada; cualquier efectivo disponible, con desglose auditado entre beneficio reservado y capital no reservado; sin liquidación automática |
+| Solicitud/aprobación/cancelación manual de retiradas paper | Implementada solo sobre efectivo EUR; desglose auditado entre beneficio reservado y capital no reservado; sin liquidación automática |
 | Dashboard | MVP responsive integrado: cartera, posiciones, operaciones, estado/heartbeat, tareas y controles autenticados; gráficos avanzados y gestión de retiradas siguen pendientes |
 | Infraestructura gratuita/Oracle Always Free y despliegue 24/7 | Pendiente |
 | Live trading | No implementado; deshabilitado |
@@ -60,9 +60,12 @@ Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de 
 
 - [x] Rotar de forma persistente el muestreo estratificado del catálogo de acciones/ETF para cubrir progresivamente el universo sin exceder cuotas.
 - [x] Añadir pruebas de descubrimiento con tickers ausentes/malformados/no finitos, mercados inactivos, cotizaciones stale/futuras, spreads extremos y volúmenes inválidos; los payloads defectuosos se descartan sin abortar el universo.
-- [x] Rechazar OHLCV no finito, volúmenes negativos, timestamps duplicados/desordenados y velas OHLC inconsistentes antes del backtest.\n- [x] Verificar SMA, EMA, RSI, MACD, Bollinger y ATR con series de referencia; rechazar valores no finitos y parámetros inválidos.
-- [x] Añadir benchmark buy-and-hold OOS con la misma fracción de exposición y retorno excedente por estrategia.\n- [x] Añadir escenarios de sensibilidad de comisiones y slippage a 1,5x y 2x; exigir rentabilidad neta y superar buy-and-hold en 1,5x para promocionar, mantener 2x como diagnóstico.
-- [x] Añadir tres ventanas walk-forward diagnósticas y métricas por ventana.\n- [x] Exigir tres ventanas walk-forward con mínimo de 40 velas evaluables y una operación cerrada por ventana, al menos dos ventanas positivas, media positiva, drawdown limitado y superar buy-and-hold neto de costes; devolver motivos de rechazo.
+- [x] Rechazar OHLCV no finito, volúmenes negativos, timestamps duplicados/desordenados y velas OHLC inconsistentes antes del backtest.
+- [x] Verificar SMA, EMA, RSI, MACD, Bollinger y ATR con series de referencia; rechazar valores no finitos y parámetros inválidos.
+- [x] Añadir benchmark buy-and-hold OOS con la misma fracción de exposición y retorno excedente por estrategia.
+- [x] Añadir escenarios de sensibilidad de comisiones y slippage a 1,5x y 2x; exigir rentabilidad neta y superar buy-and-hold en 1,5x para promocionar, mantener 2x como diagnóstico.
+- [x] Añadir tres ventanas walk-forward diagnósticas y métricas por ventana.
+- [x] Exigir tres ventanas walk-forward con mínimo de 40 velas evaluables y una operación cerrada por ventana, al menos dos ventanas positivas, media positiva, drawdown limitado y superar buy-and-hold neto de costes; devolver motivos de rechazo.
 - [x] Persistir por instrumento las versiones/configuración de estrategia, resultados OOS, benchmark, walk-forward, sensibilidad de costes y motivos de promoción/rechazo; escritura idempotente por tarea.
 - [x] Añadir diagnóstico de estructura (tendencia alcista/bajista/rango) mediante efficiency ratio y volatilidad relativa mediante percentil rolling; se persiste como contexto y no modifica gates ni autoriza operaciones.
 
@@ -75,6 +78,7 @@ Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de 
 - [x] Conectar Risk Manager como puerta obligatoria para propuestas del Chief y órdenes paper.
 - [x] Añadir idempotencia de órdenes paper mediante `client_order_id` vinculado a la tarea.
 - [ ] Completar estados legales de órdenes, conciliación y recuperación frente a fallos en cada frontera de persistencia.
+- [ ] Añadir monitorización paper de stop-loss/take-profit equity con cotizaciones USD y FX frescas, cierres idempotentes y recuperación tras reinicio.
 - [x] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
 - [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
 
@@ -90,7 +94,8 @@ Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de 
 
 - [x] Implementar adaptador de datos Twelve Data Basic para catálogo, cotizaciones y OHLCV de acciones/ETF estadounidenses (sin órdenes).
 - [x] Implementar pipeline manual de investigación de acciones/ETF con frescura, divisa USD, bid/ask, Charts y backtesting 70/30.
-- [x] Integrar investigación de acciones/ETF en el worker con tarea read-only independiente cada 6 horas, muestreo acotado, cuotas persistentes, estado de mercado, liquidez y calidad de cotización.\n- [ ] Integrar acciones/ETF en decisiones del Chief y Risk Manager solo después de validar estrategia, capital, moneda y reglas de cartera específicas; sin ejecución por ahora.
+- [x] Integrar investigación de acciones/ETF en el worker con tarea read-only independiente cada 6 horas, muestreo acotado, cuotas persistentes, estado de mercado, liquidez y calidad de cotización.
+- [ ] Integrar acciones/ETF en decisiones del Chief y Risk Manager solo después de validar estrategia, capital, moneda y reglas de cartera específicas; sin ejecución por ahora.
 - [ ] Implementar y validar un adaptador de broker de acciones/ETF, horarios, permisos, datos, mínimos y comisiones.
 - [x] Generalizar el portfolio a claves `provider_id + instrument_id`, con migración de datos legacy y aislamiento de símbolos duplicados.
 - [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución.
@@ -107,8 +112,11 @@ Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de 
 
 - [ ] Evaluar Oracle Cloud Always Free y alternativas en el momento del despliegue; no asumir disponibilidad permanente.
 - [ ] Mantener operación sin APIs de inferencia de pago; LLM local opcional y lógica determinista como fallback.
-- [x] Añadir liveness y readiness con verificación SQLite y heartbeat del worker, integrado en el healthcheck Docker.\n- [x] Añadir backup SQLite online con integrity_check, restauración con copia previa y servicio Docker aislado de backup diario con retención local de 14 días; copia off-host sigue pendiente.
-- [x] Proteger el endpoint manual de órdenes paper con token y gate obligatorio del Risk Manager; compras con stop-loss explícito.\n- [x] Ejecutar Docker como usuario no root, rootfs read-only, eliminar capacidades y enlazar el puerto a localhost por defecto.\n- [ ] Configurar TLS/reverse proxy para acceso remoto; no exponer directamente el puerto API.
+- [x] Añadir liveness y readiness con verificación SQLite y heartbeat del worker, integrado en el healthcheck Docker.
+- [x] Añadir backup SQLite online con integrity_check, restauración con copia previa y servicio Docker aislado de backup diario con retención local de 14 días; copia off-host sigue pendiente.
+- [x] Proteger el endpoint manual de órdenes paper con token y gate obligatorio del Risk Manager; compras con stop-loss explícito.
+- [x] Ejecutar Docker como usuario no root, rootfs read-only, eliminar capacidades y enlazar el puerto a localhost por defecto.
+- [ ] Configurar TLS/reverse proxy para acceso remoto; no exponer directamente el puerto API.
 - [ ] Medir disponibilidad real antes de afirmar que funciona 24/7.
 
 ## Seguridad no negociable

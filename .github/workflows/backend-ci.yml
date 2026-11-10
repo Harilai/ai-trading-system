@@ -11,6 +11,8 @@ on:
       - "backend/**"
       - ".github/workflows/**"
       - "docker-compose.yml"
+      - "docs/**"
+      - "README.md"
 
 permissions:
   contents: read
