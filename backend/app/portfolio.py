@@ -904,6 +904,10 @@ class PaperPortfolio:
                         "VALUES(?,'risk_approved',?,?,?)",
                         (client_order_id, request_json, stamp, stamp),
                     )
+                    self._insert_order_intent_event(
+                        db, client_order_id, None, "risk_approved",
+                        {"source": "atomic_manual_paper_execution", "request": request_payload}, stamp,
+                    )
 
             db.execute(
                 "INSERT OR IGNORE INTO currency_balances(currency,balance,updated_at) VALUES(?,0,?)",
