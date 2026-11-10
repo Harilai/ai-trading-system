@@ -130,8 +130,12 @@ class BinanceDemoOrderStore:
             raise DemoOrderStoreError("Demo order side must be buy or sell")
         normalized_amounts = {}
         for field, value in (("amount", amount), ("price", price)):
-            if not isinstance(value, str) or not value or len(value) > 80:
-                raise DemoOrderStoreError(f"Demo order {field} must be a decimal string")
+            if (
+                not isinstance(value, str)
+                or not re.fullmatch(r"\\d+(?:\\.\\d+)?", value)
+                or len(value) > 80
+            ):
+                raise DemoOrderStoreError(f"Demo order {field} must be a plain decimal string")
             try:
                 parsed = Decimal(value)
             except (InvalidOperation, ValueError):
@@ -146,8 +150,11 @@ class BinanceDemoOrderStore:
             normalized_amounts[field] = text
         if not isinstance(quote_asset, str) or not re.fullmatch(r"[A-Z0-9._-]{1,24}", quote_asset):
             raise DemoOrderStoreError("Demo order quote asset is invalid")
-        if not isinstance(max_order_quote, str):
-            raise DemoOrderStoreError("Demo order quote cap must be a decimal string")
+        if (
+            not isinstance(max_order_quote, str)
+            or not re.fullmatch(r"\\d+(?:\\.\\d+)?", max_order_quote)
+        ):
+            raise DemoOrderStoreError("Demo order quote cap must be a plain decimal string")
         try:
             quote_cap = Decimal(max_order_quote)
         except (InvalidOperation, ValueError):
