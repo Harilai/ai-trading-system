@@ -2,6 +2,7 @@
 
 > **Última revisión del repositorio:** 2026-11-10
 > **Rama base revisada:** `main`
+> **Último commit integrado en `main`:** `dc3bafe1bbf2774badf6faec1f69240214f418c6` — PR #84, roadmap/handoff.
 > **Último feature merge:** `a9378266626aca81be46f854f8d11011ee4804ca` — PR #83, experimental paper demo.
 > **Estado de ejecución:** paper trading únicamente; demo local aislada con 10.000 EUR virtuales; Binance Spot Demo no se usa en esta demo; live trading no implementado ni habilitado.
 
@@ -61,12 +62,11 @@ No usar `down -v`: el volumen `paper_demo_data` contiene la cartera ficticia y d
 - Entorno de trabajo actual no tiene Docker ni intérprete Python disponibles, así que no es posible ejecutar localmente `docker compose config` ni `pytest -q`; ejecutar ambos gates en GitHub Actions.
 - Sin credenciales reales, fondos, despliegue ni conexión de ejecución a producción.
 
-## Siguiente acción
+## Continuidad histórica cerrada
 
-1. Completar CI y conseguir revisión independiente de PR #81; integrar solo cuando ambos gates estén verdes.
-2. Revisar el estado vivo de PR #77–80 (varias ramas están apiladas); mantener el orden de dependencias y no mergear una rama base sin verificar sus descendientes.
-3. Tras integrar el fix, medir si las estrategias producen oportunidades validadas en más ciclos. No rebajar los gates OOS/walk-forward/costes para fabricar operaciones.
-4. Actualizar el roadmap/handoff con el SHA integrado y el siguiente phase gate.
+El bloque de trabajo original de la demo paper se cerró con PR #81 (timestamps), PR #82 (reviewer workflow) y PR #83 (experimental paper mode). Las instrucciones operativas vigentes y el siguiente trabajo están en las secciones superiores de este handoff. No reabrir ni repetir esos cambios.
+
+Las PR #77–80 y el ledger de posiciones multi-venue deben comprobarse en GitHub antes de retomar esa línea: respetar las dependencias entre ramas apiladas y no fusionar una rama base sin revisar sus descendientes.
 
 ## 1. Cómo retomar en una conversación nueva
 
