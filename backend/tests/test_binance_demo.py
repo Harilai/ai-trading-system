@@ -566,12 +566,11 @@ def test_binance_demo_fetches_order_scoped_individual_trades_and_fees():
     result = provider.fetch_order_fills(
         symbol="BTC/USDT",
         exchange_order_id="order-456",
-        since=1794311900000,
         limit=1000,
     )
 
     assert exchange.trade_query == (
-        "BTC/USDT", 1794311900000, 1000, {"orderId": "order-456"},
+        "BTC/USDT", None, 1000, {"orderId": "order-456"},
     )
     assert result["complete"] is True
     assert result["fills"] == [{
