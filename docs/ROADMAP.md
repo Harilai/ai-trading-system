@@ -4,13 +4,23 @@
 
 Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
+## Objetivo de producto
+
+Construir una plataforma algorítmica multiactivo y multi-venue, preparada para capital real y extensible a los instrumentos accesibles mediante los proveedores conectados. El universo objetivo no se limita a crypto spot ni a EUR: incluye crypto CEX/DEX, acciones, ETF, FX, futuros, opciones, bonos, materias primas y otros instrumentos cuando existan adaptador, elegibilidad, datos, contabilidad y perfil de riesgo adecuados.
+
+"Operar cualquier cosa del mercado" significa poder integrar progresivamente los instrumentos que permitan los proveedores y la cuenta; no implica disponibilidad universal. Discovery, market data, paper y live execution son capacidades separadas. Ningún instrumento se habilita automáticamente por aparecer en el catálogo.
+
+La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSION_ARCHITECTURE.md](MARKET_EXPANSION_ARCHITECTURE.md).
+
 ## Siguiente secuencia de desarrollo acordada
 
-1. **Cartera paper multidivisa para acciones/ETF:** efectivo EUR/USD separado, conversión FX paper explícita y auditable, valoración y riesgo consolidados en EUR. El soporte manual paper de equities se está validando en PR #41; el Chief sigue read-only para equities.
-2. **Conciliación de órdenes y fills:** estados legales, idempotencia, recuperación y fallos entre límites transaccionales.
-3. **Backups externos:** copia fuera del volumen/servidor Docker y restauración verificada.
-4. **Dashboard ampliado:** gráficos, investigación y retiradas.
-5. **Despliegue persistente 24/7:** VPS, seguridad, monitorización y recuperación.
+1. **Conciliación de órdenes y fills:** máquina de estados, partial fills, idempotencia, cancel/replace, recuperación y discrepancias.
+2. **Abstracción multi-venue de cuentas y ejecución:** separar market data, balances, permisos, order entry, cancelación, fills y capabilities; preparar adaptadores autenticados sin activar live.
+3. **Ledger e instrumentos multiactivo:** precisión/ticks, multiplicadores, vencimientos, margen/colateral, settlement, corporate actions, funding y FX por instrumento.
+4. **Backups externos y restauración:** copia fuera del volumen/servidor Docker y restauración verificada.
+5. **Dashboard ampliado:** gráficos, investigación, salud de conectores, órdenes/fills y retiradas.
+6. **Despliegue persistente 24/7:** VPS, secretos, aislamiento, monitorización, alertas y recuperación.
+7. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## Estado integrado
 
@@ -45,8 +55,8 @@ Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de 
 | Sniper y generación de propuestas | Pendiente |
 | Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada; ciclo periódico cada 5 min al reanudar worker |
 | Datos de acciones/ETF estadounidenses | Adaptador Twelve Data Basic y pipeline autónomo read-only integrados; órdenes manuales paper USD en PR #41, sin broker ni ejecución real |
-| Broker de acciones/ETF y ejecución | Pendiente; requiere broker adapter, elegibilidad y validación |
-| DEX, wallets, blockchain y DeFi | Pendiente; no hay integración ni firma |
+| Ejecución real multi-venue (CEX/broker/DEX/wallet) | No implementada; requiere adaptadores autenticados, elegibilidad, sandbox y gates de seguridad |
+| DEX, wallets, blockchain y DeFi | Pendiente; sin conexión, firma ni ejecución |
 | Futuros, opciones, margin y derivados | Deshabilitados; perfiles y límites específicos pendientes |
 | News/Sentiment con fuentes auditables | Pendiente |
 | Valoración a mercado, P/L realizado/no realizado | Implementado en cartera paper; depende de cotización fresca |
