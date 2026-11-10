@@ -305,6 +305,11 @@ class BinanceDemoOrderStore:
         if row is None:
             return {"status": "not_initialized"}
         result = dict(row)
+        result["lease_active"] = bool(
+            result.get("lease_token") and result.get("lease_until")
+            and result["lease_until"] > datetime.now(timezone.utc).isoformat()
+        )
+        result.pop("lease_token", None)
         raw = result.pop("last_result_json")
         result["last_result"] = json.loads(raw) if raw else None
         return result
