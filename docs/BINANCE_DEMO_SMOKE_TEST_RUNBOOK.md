@@ -156,7 +156,32 @@ Acceptance:
 
 This is still a Demo execution evidence ledger, not a production accounting system. It does not merge Demo activity into the paper portfolio or real Binance snapshots.
 
-## 8. Close the drill
+## 8. Verify periodic reconciliation
+
+The API worker periodically polls persisted Demo orders and incomplete individual-fill/commission evidence when the Demo connector is configured. It is a read-only reconciliation process: it never creates, resubmits or cancels orders.
+
+Inspect its status:
+
+```bash
+curl -fsS -H "X-Agent-Token: $AGENT_CONTROL_TOKEN" \
+  "$API/api/demo/binance/spot/reconciliation"
+```
+
+Defaults:
+- `BINANCE_SPOT_DEMO_RECONCILE_INTERVAL_SECONDS=60`
+- `BINANCE_SPOT_DEMO_RECONCILE_BATCH_SIZE=5`
+- `BINANCE_SPOT_DEMO_RECONCILE_LEASE_SECONDS=180`
+
+A SQLite lease prevents overlapping schedulers across API processes. Expired leases are recoverable after restart. Transient errors preserve the last known order state, append an audit event and trigger bounded exponential backoff. Exchange calls use the CCXT rate limiter. The scheduler keeps running when strategy automation is paused or emergency-stopped so it can continue observing existing Demo orders.
+
+Acceptance:
+- An open order's status and cumulative fill are refreshed automatically.
+- `submission_unknown` is looked up by the persisted client order ID; it is never resubmitted.
+- A previously acknowledged order missing from exchange lookup is quarantined as `reconciliation_required`.
+- Partial/terminal fills are reconciled by exact exchange order ID and individual commission evidence is persisted idempotently.
+- No new Demo order is accepted while order state or fill/fee coverage remains unresolved.
+- When Demo credentials are not configured, the scheduler remains disabled; it does not attempt public/production fallbacks.
+## 9. Close the drill
 
 - Confirm no Demo order remains open or unresolved.
 - Record the test date, symbol, client order ID, exchange order ID, status transitions, fills and observed errors in the operational log without recording credentials.
