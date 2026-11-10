@@ -47,8 +47,8 @@ def test_binance_connector_initializes_spot_with_rate_limiting_and_reads_balance
     assert result["withdrawals_enabled"] is False
     assert result["balance_count"] == 2
     assert result["balances"] == [
-        {"asset": "BTC", "free": 0.1, "used": 0.02, "total": 0.12},
-        {"asset": "EUR", "free": 20.0, "used": 0.0, "total": 20.0},
+        {"asset": "BTC", "free": "0.1", "used": "0.02", "total": "0.12"},
+        {"asset": "EUR", "free": "20", "used": "0", "total": "20"},
     ]
     assert description["order_submission"] is False
     assert description["order_management"] is False
@@ -120,3 +120,21 @@ def test_binance_credentials_are_secret_settings_and_never_appear_in_settings_re
     assert config.binance_readonly_api_secret.get_secret_value() == api_secret
     assert api_key not in repr(config)
     assert api_secret not in repr(config)
+
+
+def test_binance_connector_preserves_high_precision_balances_as_decimal_strings():
+    precise = "0.00000001234567890123456789"
+    exchange = FakeBinanceExchange({
+        "free": {"BTC": precise},
+        "used": {"BTC": "0.00000000000000000001"},
+        "total": {"BTC": precise},
+    })
+    provider = BinanceSpotReadOnlyAccount(
+        "key", "secret", exchange_factory=lambda _: exchange,
+    )
+
+    result = provider.fetch_balances()
+
+    assert result["balances"][0]["free"] == precise
+    assert result["balances"][0]["used"] == "0.00000000000000000001"
+    assert result["balances"][0]["total"] == precise
