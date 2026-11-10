@@ -139,13 +139,13 @@ class BinanceDemoReconciler:
                 try:
                     outcomes.append(self._reconcile_one(order))
                 except (BinanceDemoError, DemoOrderStoreError) as exc:
-                    awaitable_error = type(exc).__name__
+                    error_type = type(exc).__name__
                     self.store.record_reconciliation_failure(
-                        order["client_order_id"], awaitable_error,
+                        order["client_order_id"], error_type,
                     )
                     failures.append({
                         "client_order_id": order["client_order_id"],
-                        "error": f"{awaitable_error}: {str(exc)[:300]}",
+                        "error": f"{error_type}: {str(exc)[:300]}",
                     })
                 except Exception as exc:
                     self.store.record_reconciliation_failure(
