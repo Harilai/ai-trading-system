@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+import math
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -66,8 +67,17 @@ class ProviderCapabilities:
     restrictions: tuple[str, ...] = ()
 
 
+class PrecisionMode(str, Enum):
+    UNKNOWN = "unknown"
+    DECIMAL_PLACES = "decimal_places"
+    TICK_SIZE = "tick_size"
+    SIGNIFICANT_DIGITS = "significant_digits"
+
+
 @dataclass(frozen=True)
 class MarketInstrument:
+    """Provider-normalized instrument contract; missing provider facts stay explicit."""
+
     provider_id: str
     symbol: str
     asset_class: AssetClass
@@ -80,9 +90,102 @@ class MarketInstrument:
     maker_fee: float | None = None
     taker_fee: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    venue_id: str | None = None
+    native_symbol: str | None = None
+    precision_mode: PrecisionMode = PrecisionMode.UNKNOWN
+    price_precision: int | None = None
+    amount_precision: int | None = None
+    price_tick: float | None = None
+    amount_step: float | None = None
+    max_amount: float | None = None
+    max_cost: float | None = None
+    contract_type: str | None = None
+    contract_size: float | None = None
+    settlement_currency: str | None = None
+    expiry: str | None = None
+    strike: float | None = None
+    option_type: str | None = None
+    underlying: str | None = None
+    trading_status: str | None = None
+    session_timezone: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("provider_id", "symbol", "base", "quote"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"Instrument {name} is required")
+        if not isinstance(self.active, bool):
+            raise ValueError("Instrument active flag must be boolean")
+
+        for name in ("min_amount", "min_cost", "max_amount", "max_cost", "price_tick", "amount_step", "contract_size", "strike"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(f"Instrument {name} must be finite") from exc
+            if not math.isfinite(numeric):
+                raise ValueError(f"Instrument {name} must be finite")
+            if name in {"price_tick", "amount_step", "contract_size", "strike"} and numeric <= 0:
+                raise ValueError(f"Instrument {name} must be positive")
+            if name in {"min_amount", "min_cost", "max_amount", "max_cost"} and numeric < 0:
+                raise ValueError(f"Instrument {name} cannot be negative")
+
+        for name in ("maker_fee", "taker_fee"):
+            value = getattr(self, name)
+            if value is not None and not math.isfinite(float(value)):
+                raise ValueError(f"Instrument {name} must be finite")
+
+        for name in ("price_precision", "amount_precision"):
+            value = getattr(self, name)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0):
+                raise ValueError(f"Instrument {name} must be a non-negative integer")
+
+        if self.max_amount is not None and self.min_amount is not None and self.max_amount < self.min_amount:
+            raise ValueError("Instrument max_amount cannot be below min_amount")
+        if self.max_cost is not None and self.min_cost is not None and self.max_cost < self.min_cost:
+            raise ValueError("Instrument max_cost cannot be below min_cost")
+
+        if not isinstance(self.precision_mode, PrecisionMode):
+            try:
+                object.__setattr__(self, "precision_mode", PrecisionMode(self.precision_mode))
+            except ValueError as exc:
+                raise ValueError("Unsupported instrument precision mode") from exc
+
+        if self.native_symbol is None:
+            object.__setattr__(self, "native_symbol", self.symbol)
+        elif not self.native_symbol.strip():
+            raise ValueError("Instrument native_symbol cannot be blank")
+
+        status = self.trading_status
+        if status is None:
+            object.__setattr__(self, "trading_status", "active" if self.active else "inactive")
+        elif status not in {"active", "inactive", "suspended", "expired", "unknown"}:
+            raise ValueError("Unsupported instrument trading_status")
+
+        if self.option_type is not None:
+            normalized_option_type = self.option_type.strip().lower()
+            if self.asset_class != AssetClass.OPTION or normalized_option_type not in {"call", "put"}:
+                raise ValueError("option_type is only valid as call or put for option instruments")
+            object.__setattr__(self, "option_type", normalized_option_type)
+        if self.asset_class == AssetClass.OPTION:
+            if not self.expiry or self.strike is None or not self.underlying:
+                raise ValueError("Option instruments require expiry, positive strike and underlying")
+            if self.option_type not in {"call", "put"}:
+                raise ValueError("Option instruments require option_type call or put")
+        elif self.strike is not None:
+            raise ValueError("strike is only valid for option instruments")
+
+        if self.venue_id is not None and not self.venue_id.strip():
+            raise ValueError("Instrument venue_id cannot be blank")
+        if self.settlement_currency is not None and not self.settlement_currency.strip():
+            raise ValueError("Instrument settlement_currency cannot be blank")
 
     @property
     def instrument_id(self) -> str:
+        # The native symbol is scoped by provider and market type, so identical
+        # tickers on separate venues or asset classes cannot collide.
         return f"{self.provider_id}:{self.market_type.value}:{self.symbol}"
 
 
