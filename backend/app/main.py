@@ -22,6 +22,7 @@ from .agents.contracts import RiskContext, TradeProposal
 from .agents.risk import RiskManager
 from .portfolio import PaperPortfolio, PortfolioError
 from .fx import invert_fx_observation, validate_fx_observation
+from .backup_scheduler import read_backup_status
 
 WORKER_HEARTBEAT_MAX_AGE_SECONDS = 600
 
@@ -265,6 +266,12 @@ def order_intent_history(
             "events": portfolio.list_order_intent_events(client_order_id),
         }
     return {"items": portfolio.list_order_intents(limit)}
+
+
+@app.get("/api/agent/backup-status")
+def backup_status(x_agent_token: str | None = Header(default=None)):
+    require_order_control_token(x_agent_token)
+    return read_backup_status(settings.backup_directory)
 
 
 @app.get("/api/agent/fx-conversions")
