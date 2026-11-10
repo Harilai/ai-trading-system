@@ -65,6 +65,18 @@ def test_demo_order_store_serializes_new_orders_while_prior_order_is_unresolved(
         remaining="0",
         average="20000",
     )
+    store.record_fills("demo-order-1", [{
+        "trade_id": "initial-trade",
+        "exchange_order_id": "exchange-1",
+        "symbol": "BTC/USDT",
+        "side": "buy",
+        "amount": "0.001",
+        "price": "20000",
+        "cost": "20",
+        "fee_cost": "0",
+        "fee_currency": "USDT",
+        "timestamp_ms": 1794312000000,
+    }])
     second, created = store.prepare_intent(request(client_order_id="demo-order-2"))
     assert created is True
     assert second["status"] == "intent_created"
@@ -327,3 +339,15 @@ def test_demo_order_store_allows_same_trade_id_on_different_symbols(tmp_path):
         **request(client_order_id="demo-order-2"),
         "symbol": "ETH/USDT",
     })
+    store.transition("demo-order-2", "submission_unknown")
+    store.transition(
+        "demo-order-2", "filled", exchange_order_id="exchange-2",
+        filled="0.001", remaining="0", average="20000",
+    )
+    store.record_fills("demo-order-2", [{
+        **fill,
+        "exchange_order_id": "exchange-2",
+        "symbol": "ETH/USDT",
+    }])
+    assert len(store.list_fills("demo-order-1")) == 1
+    assert len(store.list_fills("demo-order-2")) == 1
