@@ -18,11 +18,12 @@ Persist provider discovery as a searchable snapshot rather than forcing every co
 - Instruments absent from a later discovery run are not deleted or automatically marked inactive: discovery may be partial or a provider may be unavailable.
 - `instrument_discovery_runs` stores timestamps, counts, status and sanitized provider failures.
 - Invalid/non-JSON metadata is rejected from the catalogue and recorded as a discovery failure.
+- Sensitive metadata keys (API keys, secrets, authorization, private keys and passwords) are redacted recursively before persistence.
 - The catalogue shares the existing SQLite database file but owns its tables and indexes.
 
 ## API
 
-- `GET /api/instruments`: persisted catalogue with filters for provider, asset class, market type and active status; supports bounded pagination.
+- `GET /api/instruments`: persisted catalogue with filters for provider, venue, asset class, market type and active status; supports bounded pagination.
 - `GET /api/instruments/{catalogue_id}`: exact instrument snapshot and first/last-seen timestamps.
 - `GET /api/instrument-discovery/runs`: recent discovery run summaries and sanitized failures.
 - `POST /api/instruments/refresh`: owner-token-protected synchronous discovery refresh. It only reads provider market metadata; it never submits orders.
