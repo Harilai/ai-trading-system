@@ -214,3 +214,86 @@ def test_registry_requires_alias_when_multiple_accounts_share_provider_id():
     with pytest.raises(AmbiguousAccountProvider, match="specify account_alias"):
         registry.fetch_balances("test:venue")
     assert registry.fetch_balances("test:venue", "account-two")["account_alias"] == "account-two"
+
+
+class FakePositionAccountProvider(FakeAccountProvider):
+    def __init__(self, *, coverage_status="complete"):
+        super().__init__(provider_id="test:positions")
+        self._description["positions"] = True
+        self.coverage_status = coverage_status
+
+    def fetch_positions_snapshot(self):
+        return {
+            "provider_id": "test:positions",
+            "account_alias": "account-1",
+            "environment": "demo",
+            "market_type": "spot",
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            "read_only": True,
+            "execution_enabled": False,
+            "withdrawals_enabled": False,
+            "coverage_status": self.coverage_status,
+            "positions": [{
+                "instrument_id": "test:spot:BTC/EUR",
+                "symbol": "BTC/EUR",
+                "asset_class": "crypto",
+                "market_type": "spot",
+                "quantity": "0.25",
+                "side": "long",
+                "quote_currency": "EUR",
+                "average_entry_price": "60000",
+                "mark_price": "61000",
+                "market_value": "15250",
+                "unrealized_pnl": "250",
+            }],
+        }
+
+
+def test_registry_fetches_positions_only_from_declared_readonly_provider():
+    registry = AccountProviderRegistry()
+    provider = FakePositionAccountProvider()
+    registry.register(provider)
+    result = registry.fetch_positions_snapshot("test:positions")
+    assert result["coverage_status"] == "complete"
+    assert result["environment"] == "demo"
+    assert result["positions"][0]["quantity"] == "0.25"
+
+
+def test_registry_rejects_position_read_when_capability_is_false():
+    registry = AccountProviderRegistry()
+    registry.register(FakeAccountProvider())
+    with pytest.raises(UnsupportedAccountCapability, match="does not declare position"):
+        registry.fetch_positions_snapshot("test:venue")
+
+
+@pytest.mark.parametrize(
+    "mutate,reason",
+    [
+        (lambda raw: raw.update(coverage_status="unknown"), "coverage"),
+        (lambda raw: raw.update(environment="production"), "environment"),
+        (lambda raw: raw.update(execution_enabled=True), "permission"),
+        (lambda raw: raw.update(fetched_at=(datetime.now(timezone.utc)-timedelta(minutes=10)).isoformat()), "stale"),
+    ],
+)
+def test_registry_rejects_untrusted_position_snapshot_metadata(mutate, reason):
+    registry = AccountProviderRegistry()
+    provider = FakePositionAccountProvider()
+    registry.register(provider)
+    original = provider.fetch_positions_snapshot
+    def invalid():
+        raw = original()
+        mutate(raw)
+        return raw
+    provider.fetch_positions_snapshot = invalid
+    with pytest.raises(AccountProviderError, match=reason):
+        registry.fetch_positions_snapshot("test:positions")
+
+
+def test_registry_requires_explicit_coverage_capable_snapshot_method():
+    registry = AccountProviderRegistry()
+    provider = FakePositionAccountProvider()
+    delattr(provider, "fetch_positions_snapshot")
+    provider.fetch_positions = lambda: []
+    registry.register(provider)
+    with pytest.raises(UnsupportedAccountCapability, match="explicit coverage"):
+        registry.fetch_positions_snapshot("test:positions")
