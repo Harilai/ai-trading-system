@@ -174,6 +174,8 @@ El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y contr
 - `POST /api/orders` — solo paper; exige `X-Agent-Token` válido (`AGENT_CONTROL_TOKEN`), aprobación del Risk Manager y stop-loss explícito en compras. Admite crypto spot EUR y órdenes manuales de cash equities/ETF USD de Twelve Data; estas últimas requieren efectivo USD previamente convertido, cotización reciente, sesión abierta y slippage paper configurable; si el proveedor entrega bid/ask, se valida el spread y se usa el lado correspondiente.
 - `GET /api/agent/strategy-history?limit=100&strategy_id=ema_12_26&instrument_id=...` — historial persistente de validación, benchmark, walk-forward, costes y motivos de rechazo; requiere `X-Agent-Token`.
 - `GET /api/agent/status` — requiere `X-Agent-Token`.
+- `GET /api/agent/order-intents` — historial de órdenes paper y eventos de auditoría; requiere `X-Agent-Token`.
+- `GET /api/agent/backup-status` — estado de copias locales y off-host; requiere `X-Agent-Token`.
 - `POST /api/agent/resume`, `/pause`, `/emergency-stop`, `/reset-emergency-stop`.
 - `POST /api/agent/tasks` — acepta `health_check`, `market_scan`, `equity_research` (solo lectura) y `decision_cycle`; este último puede ejecutar una orden paper aprobada.
 
