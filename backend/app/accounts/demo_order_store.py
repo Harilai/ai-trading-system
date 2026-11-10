@@ -287,7 +287,7 @@ class BinanceDemoOrderStore:
             error = result.get("error") if failed else None
             changed = db.execute(
                 "UPDATE binance_demo_reconciliation_state SET next_run_at=?,lease_token=NULL,"
-                "lease_until=NULL,last_completed_at=?,last_status=?,last_result_json=?,last_error=?,updated_at=? "
+                "lease_until=NULL,attempts=?,last_completed_at=?,last_status=?,last_result_json=?,last_error=?,updated_at=? "
                 "WHERE id=1 AND lease_token=?",
                 (
                     next_run, attempts if failed else 0, stamp, "failed" if failed else "completed",
