@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `df760119580b56a345d0e7c9ecdc60b45d2365dd` — merge de PR #44, ciclo de vida y conciliación paper.  
+> **Último commit observado en `main`:** `ed08cec879662facbcbc0c5c2c2eb26058441133` — merge de PR #48, copias externas verificadas y restauración segura.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -106,6 +106,19 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - Nuevas compras bloqueadas mientras exista un intento sin resolver; las ventas de reducción de riesgo siguen permitidas.
 - API owner-authenticated `/api/agent/order-intents` para consultar intents y eventos.
 
+### Resultado integrado — PR #48: copias externas verificadas
+
+- PR: https://github.com/Harilai/ai-trading-system/pull/48
+- Merge commit: `ed08cec879662facbcbc0c5c2c2eb26058441133`.
+- Head validado: `2e5b251b666df8faccf7857597bd50bc284be22d`.
+- CI: 304 pruebas Python correctas; Compose, build Docker y ejecución non-root correctos.
+- Replicación opcional de las dos bases SQLite a S3-compatible, con objetos content-addressed, HTTPS, cifrado server-side y verificación SHA-256 mediante read-back.
+- CLI `app.backup_remote list/download`; las descargas se validan con SHA-256 e integridad SQLite y no sobrescriben candidatos existentes.
+- API owner-authenticated `/api/agent/backup-status`.
+- Credenciales S3 aisladas en `.env.backup`, cargadas solo en el contenedor backup; el API no las recibe.
+- Retención local conserva snapshots cuyo off-host copy no está verificado. No hay borrado remoto desde la aplicación.
+- **Importante:** la función off-host está desactivada por defecto. Debe configurarse el proveedor y crear `.env.backup` a partir de `.env.backup.example`.
+
 ## 5. Objetivo de producto y siguientes fases
 
 El objetivo final no es un bot exclusivamente crypto. Debe evolucionar a una plataforma multiactivo y multi-venue preparada para capital real: conectar exchanges como Binance, brokers y wallets, y descubrir/operar los instrumentos que cada proveedor y cuenta permita. El universo objetivo incluye crypto CEX/DEX, acciones, ETF, FX, futuros, opciones, bonos, materias primas y otros mercados integrables. La disponibilidad depende del proveedor, país, cuenta, API, liquidez y elegibilidad. Descubrir un símbolo no habilita su trading.
@@ -113,10 +126,10 @@ El objetivo final no es un bot exclusivamente crypto. Debe evolucionar a una pla
 La arquitectura de referencia está en `docs/MARKET_EXPANSION_ARCHITECTURE.md`.
 
 Siguiente secuencia:
-1. **Siguiente fase: backups externos y restauración.** Copia cifrada fuera del volumen/servidor Docker, retención, verificación de integridad y restauración probada.
-2. Ampliar el dashboard con gráficos, investigación, salud de conectores, órdenes/fills y gestión de retiradas.
+1. **Completado — backups externos y restauración (PR #48):** replicación S3-compatible verificada, status API y descarga/validación de restore candidate. Falta configurar el proveedor real en el entorno operativo.
+2. **Siguiente fase — dashboard ampliado:** gráficos, investigación, salud de conectores, órdenes/fills, backup status y gestión de retiradas.
 3. Construir abstracción multi-venue y catálogo de instrumentos: capabilities, cuentas, permisos, precisión/ticks, multiplicadores, vencimientos, margen/colateral, settlement, corporate actions, funding y FX.
-4. Preparar despliegue persistente 24/7 en VPS: TLS/reverse proxy, secretos, aislamiento, monitorización, alertas, readiness, recuperación y backups off-host.
+4. Preparar despliegue persistente 24/7 en VPS: TLS/reverse proxy, secretos, aislamiento, monitorización, alertas, readiness y recuperación.
 5. Añadir supervisión paper de stops/take-profit equity y madurez paper/sandbox por mercado antes de decisiones autónomas o live.
 6. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
