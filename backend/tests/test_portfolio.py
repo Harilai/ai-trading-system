@@ -706,3 +706,25 @@ def test_order_intent_reconciliation_flags_mismatched_trade_payload(portfolio):
     intent = portfolio.get_order_intent("mismatched-fill")
     assert intent["status"] == "reconciliation_required"
     assert [event["to_status"] for event in portfolio.list_order_intent_events("mismatched-fill")][-1] == "reconciliation_required"
+
+
+def test_application_fill_requires_persisted_risk_approved_intent(portfolio):
+    with pytest.raises(PortfolioError, match="persisted risk-approved order intent"):
+        portfolio.execute(
+            "BTC/EUR", "buy", 0.001, 10000, 0.001, 0.001, 1, 1,
+            client_order_id="missing-approved-intent",
+            require_order_intent=True,
+        )
+    assert portfolio.history() == []
+
+
+def test_order_intent_cannot_be_persisted_without_explicit_risk_approval(portfolio):
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "unapproved-intent",
+    }
+    with pytest.raises(PortfolioError, match="explicitly risk-approved"):
+        portfolio.record_order_intent(
+            "unapproved-intent", request, {"risk_accepted": False},
+        )
