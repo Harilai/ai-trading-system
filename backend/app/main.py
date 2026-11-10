@@ -249,6 +249,24 @@ def require_order_control_token(token: str | None) -> None:
         raise HTTPException(401, "Invalid paper order control token")
 
 
+@app.get("/api/agent/order-intents")
+def order_intent_history(
+    limit: int = Query(50, ge=1, le=200),
+    client_order_id: str | None = Query(default=None, min_length=1, max_length=128),
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    if client_order_id:
+        item = portfolio.get_order_intent(client_order_id)
+        if item is None:
+            raise HTTPException(404, "Order intent not found")
+        return {
+            "item": item,
+            "events": portfolio.list_order_intent_events(client_order_id),
+        }
+    return {"items": portfolio.list_order_intents(limit)}
+
+
 @app.get("/api/agent/fx-conversions")
 def fx_conversion_history(
     limit: int = Query(50, ge=1, le=200),
