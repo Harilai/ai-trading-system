@@ -1329,7 +1329,7 @@ def test_binance_demo_order_api_never_resubmits_unknown_submission_and_reconcile
             self.submissions += 1
             raise BinanceDemoError("Binance Demo order submission outcome is unknown (NetworkError)")
 
-        def fetch_order_by_client_id(self, *, symbol, client_order_id):
+        def fetch_order_by_client_id(self, *, symbol, client_order_id, expected_amount=None):
             self.reconciliations += 1
             return {
                 "status": "filled",
