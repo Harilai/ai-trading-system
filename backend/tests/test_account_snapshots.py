@@ -372,7 +372,8 @@ def test_account_snapshot_store_migrates_existing_balance_only_database(tmp_path
             );
         """)
     store = AccountSnapshotStore(path)
-    columns = {row["name"] for row in store.connect().__enter__().execute("PRAGMA table_info(account_snapshots)")}
+    with store.connect() as db:
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(account_snapshots)")}
     assert {"environment", "venue_type", "position_count", "position_change_count"} <= columns
     saved = store.record_snapshot(make_snapshot(market_type="cash_equity", positions=[make_position()]))
     assert saved["position_count"] == 1
