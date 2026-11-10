@@ -457,28 +457,41 @@ def _paper_equity_order(order: OrderRequest):
     if not risk.accepted:
         raise HTTPException(422, f"Risk Manager rejected order: {risk.reason}")
 
+    execution_request = {
+        "symbol": instrument.symbol,
+        "side": order.side,
+        "quantity": order.quantity,
+        "price": reference_price,
+        "fee_rate": settings.equity_paper_fee_rate,
+        "slippage_rate": settings.equity_paper_slippage_rate,
+        "max_fraction": 1.0,
+        "minimum": max(settings.min_order_value_usd, float(instrument.min_cost or 0)),
+        "client_order_id": order.client_order_id.strip(),
+        "provider_id": instrument.provider_id,
+        "instrument_id": instrument.instrument_id,
+        "strategy_id": order.strategy_id,
+        "stop_loss": order.stop_loss,
+        "take_profit": order.take_profit,
+        "quote_currency": "USD",
+        "fx_rate_to_eur": float(fx["rate"]),
+        "fx_provider_id": fx["provider_id"],
+        "fx_timestamp": fx["timestamp"],
+        "market_timestamp": quote_timestamp,
+        "risk_fx_rate_to_eur": float(fx["rate"]),
+        "risk_fx_provider_id": fx["provider_id"],
+        "risk_fx_timestamp": fx["timestamp"],
+    }
     try:
-        return portfolio.execute(
-            instrument.symbol,
-            order.side,
-            order.quantity,
-            reference_price,
-            settings.equity_paper_fee_rate,
-            settings.equity_paper_slippage_rate,
-            1.0,
-            max(settings.min_order_value_usd, float(instrument.min_cost or 0)),
-            client_order_id=order.client_order_id.strip(),
-            provider_id=instrument.provider_id,
-            instrument_id=instrument.instrument_id,
-            strategy_id=order.strategy_id,
-            stop_loss=order.stop_loss,
-            take_profit=order.take_profit,
-            quote_currency="USD",
-            fx_rate_to_eur=float(fx["rate"]),
-            fx_provider_id=fx["provider_id"],
-            fx_timestamp=fx["timestamp"],
+        portfolio.record_order_intent(
+            order.client_order_id.strip(),
+            execution_request,
+            {"risk": risk.model_dump(), "instrument": instrument.model_dump()},
         )
+        return portfolio.execute(**execution_request)
     except PortfolioError as exc:
+        current_intent = portfolio.get_order_intent(order.client_order_id.strip())
+        if current_intent and current_intent["status"] == "risk_approved":
+            portfolio.reject_order_intent(order.client_order_id.strip(), str(exc))
         raise HTTPException(422, str(exc)) from exc
 
 
@@ -491,6 +504,8 @@ def paper_order(
     if order.side == "buy" and order.stop_loss is None:
         raise HTTPException(422, "A buy order requires an explicit stop_loss")
     require_order_control_token(x_agent_token)
+    if not order.client_order_id or not order.client_order_id.strip():
+        raise HTTPException(422, "Manual paper orders require client_order_id for idempotency")
 
     if order.provider_id == "twelve_data":
         try:
@@ -507,10 +522,29 @@ def paper_order(
         )
 
     try:
+        previous = portfolio.get_trade_by_client_order_id(order.client_order_id.strip())
+        if previous:
+            same_intent = (
+                previous["symbol"] == symbol
+                and previous["side"] == order.side
+                and previous["provider_id"] == order.provider_id
+                and previous["quote_currency"] == "EUR"
+                and previous.get("strategy_id") == order.strategy_id
+                and math.isclose(float(previous["quantity"]), order.quantity, rel_tol=1e-12, abs_tol=1e-12)
+                and previous.get("stop_loss") == order.stop_loss
+                and previous.get("take_profit") == order.take_profit
+                and (not order.instrument_id or previous["instrument_id"] == order.instrument_id)
+            )
+            if not same_intent:
+                raise HTTPException(409, "client_order_id was already used for a different paper order")
+            previous["mode"] = "paper"
+            previous["idempotent_replay"] = True
+            return previous
         quote = market.ticker(symbol, order.provider_id)
         if quote["last"] is None or market.is_stale(quote, settings.max_data_age_seconds):
             raise HTTPException(503, "Missing or stale market data; order rejected")
         reference_price = float(quote["last"])
+        quote_timestamp = int(quote["timestamp"])
         instrument_id = order.instrument_id or f"{order.provider_id}:spot:{symbol}"
 
         snapshot = get_portfolio()
@@ -545,25 +579,43 @@ def paper_order(
         risk = RiskManager().evaluate(proposal, context)
         if not risk.accepted:
             raise HTTPException(422, f"Risk Manager rejected order: {risk.reason}")
-
-        return portfolio.execute(
-            symbol,
-            order.side,
-            order.quantity,
-            reference_price,
-            settings.fee_rate,
-            settings.slippage_rate,
-            settings.max_order_fraction,
-            settings.min_order_value_eur,
-            client_order_id=order.client_order_id,
-            provider_id=order.provider_id,
-            instrument_id=instrument_id,
-            strategy_id=order.strategy_id,
-            stop_loss=order.stop_loss,
-            take_profit=order.take_profit,
-            quote_currency="EUR",
-            fx_rate_to_eur=1.0,
+        risk_fx = (snapshot.get("fx_observations") or {}).get("USD") or {}
+        execution_request = {
+            "symbol": symbol,
+            "side": order.side,
+            "quantity": risk.approved_quantity,
+            "price": reference_price,
+            "fee_rate": settings.fee_rate,
+            "slippage_rate": settings.slippage_rate,
+            "max_fraction": settings.max_order_fraction,
+            "minimum": settings.min_order_value_eur,
+            "client_order_id": order.client_order_id.strip(),
+            "provider_id": order.provider_id,
+            "instrument_id": instrument_id,
+            "strategy_id": order.strategy_id,
+            "stop_loss": order.stop_loss,
+            "take_profit": order.take_profit,
+            "quote_currency": "EUR",
+            "fx_rate_to_eur": 1.0,
+            "fx_provider_id": None,
+            "fx_timestamp": None,
+            "market_timestamp": quote_timestamp,
+            "risk_fx_rate_to_eur": float(risk_fx.get("rate", 1.0)),
+            "risk_fx_provider_id": risk_fx.get("provider_id"),
+            "risk_fx_timestamp": risk_fx.get("timestamp"),
+        }
+        portfolio.record_order_intent(
+            order.client_order_id.strip(),
+            execution_request,
+            {"risk": risk.model_dump(), "proposal": proposal.model_dump()},
         )
+        try:
+            return portfolio.execute(**execution_request)
+        except PortfolioError as exc:
+            current_intent = portfolio.get_order_intent(order.client_order_id.strip())
+            if current_intent and current_intent["status"] == "risk_approved":
+                portfolio.reject_order_intent(order.client_order_id.strip(), str(exc))
+            raise
     except PortfolioError as exc:
         raise HTTPException(422, str(exc)) from exc
     except MarketDataError as exc:
