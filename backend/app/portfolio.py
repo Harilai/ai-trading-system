@@ -412,7 +412,15 @@ class PaperPortfolio:
         if normalized_request.get("client_order_id") != client_order_id:
             raise PortfolioError("Order intent request must carry the matching client_order_id")
         request_json = self._canonical_json(normalized_request)
-        decision_json = self._canonical_json(decision) if decision is not None else None
+        risk_decision = decision.get("risk") if isinstance(decision, dict) else None
+        risk_accepted = (
+            risk_decision.get("accepted") if isinstance(risk_decision, dict)
+            else decision.get("risk_accepted") if isinstance(decision, dict)
+            else None
+        )
+        if risk_accepted is not True:
+            raise PortfolioError("Only an explicitly risk-approved order intent can be persisted")
+        decision_json = self._canonical_json(decision)
         stamp = datetime.now(timezone.utc).isoformat()
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
@@ -777,6 +785,7 @@ class PaperPortfolio:
         risk_fx_rate_to_eur: float = 1.0,
         risk_fx_provider_id: str | None = None,
         risk_fx_timestamp: int | None = None,
+        require_order_intent: bool = False,
     ):
         if not isinstance(symbol, str) or not isinstance(provider_id, str):
             raise PortfolioError("Symbol and provider identity must be text")
@@ -907,6 +916,8 @@ class PaperPortfolio:
                     "SELECT * FROM order_intents WHERE client_order_id=?",
                     (client_order_id,),
                 ).fetchone()
+                if intent_row is None and require_order_intent:
+                    raise PortfolioError("A persisted risk-approved order intent is required before paper execution")
                 if intent_row:
                     if intent_row["request_json"] != request_json:
                         raise PortfolioError("client_order_id was already used for a different order intent")
