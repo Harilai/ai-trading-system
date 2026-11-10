@@ -2,7 +2,7 @@
 
 ## Scope and safety status
 
-This runbook prepares a single Linux VPS for the current **paper-only** AI Trading System. It does not deploy automatically, connect authenticated trading keys, enable live orders, or make the application production-safe for real-money execution. Public market-data access and the simulated portfolio are the only current trading runtime.
+This runbook prepares a single Linux VPS for the current **paper-only** AI Trading System. It does not deploy automatically, connect trading-enabled keys, enable live orders, or make the application production-safe for real-money execution. Runtime trading remains simulated; an optional Binance Spot key can only read account balances and is not linked to the paper portfolio.
 
 A VPS being online 24/7 is an infrastructure milestone, not permission to trade real funds.
 
