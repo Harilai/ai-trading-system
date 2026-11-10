@@ -344,17 +344,40 @@ class AutonomousStore:
                    {"task_id": task["id"], "error": error[:500]})
         return True
 
-    def requeue_failed_decision_task(self, task_id: str) -> bool:
-        """Resume a durable approved order after bounded task retries are exhausted."""
-        now = utcnow().isoformat()
+    def task_state(self, task_id: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT id,kind,status,attempts,lease_until,lease_token FROM agent_tasks WHERE id=?",
+                (task_id,),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def requeue_failed_decision_task(
+        self,
+        task_id: str,
+        max_total_attempts: int = 6,
+    ) -> bool:
+        """Retry a durable approved order with backoff and a finite recovery budget."""
+        now = utcnow()
         with self.lock, self.connect() as db:
+            row = db.execute(
+                "SELECT attempts FROM agent_tasks WHERE id=? AND kind='decision_cycle' AND status='failed'",
+                (task_id,),
+            ).fetchone()
+            if row is None or int(row["attempts"]) >= max_total_attempts:
+                return False
+            attempts = int(row["attempts"])
+            delay = min(600, 30 * (2 ** max(0, attempts - 1)))
+            due = (now + timedelta(seconds=delay)).isoformat()
             changed = db.execute(
-                "UPDATE agent_tasks SET status='pending',attempts=0,due_at=?,lease_until=NULL,"
+                "UPDATE agent_tasks SET status='pending',due_at=?,lease_until=NULL,lease_token=NULL,"
                 "error=NULL,updated_at=? WHERE id=? AND kind='decision_cycle' AND status='failed'",
-                (now, now, task_id),
+                (due, now.isoformat(), task_id),
             ).rowcount
         if changed:
-            self.audit("approved_order_task_requeued", {"task_id": task_id})
+            self.audit("approved_order_task_requeued", {
+                "task_id": task_id, "attempts": attempts, "retry_delay_seconds": delay,
+            })
         return changed == 1
 
     def remember(self, category: str, content: dict[str, Any], validated: bool = False) -> int:
@@ -540,8 +563,30 @@ class AutonomousAgent:
                     if reconciliation["reconciled_filled"] or reconciliation["reconciliation_required"]:
                         self.store.audit("paper_order_reconciliation", reconciliation)
                     for intent in await asyncio.to_thread(self.portfolio.list_order_intents, 1000):
-                        if intent["status"] == "risk_approved":
-                            self.store.requeue_failed_decision_task(intent["client_order_id"])
+                        if intent["status"] != "risk_approved":
+                            continue
+                        client_order_id = intent["client_order_id"]
+                        if self.store.requeue_failed_decision_task(client_order_id):
+                            continue
+                        task_state = self.store.task_state(client_order_id)
+                        exhausted = (
+                            task_state is None
+                            or task_state["status"] == "completed"
+                            or (
+                                task_state["status"] == "failed"
+                                and int(task_state["attempts"]) >= 6
+                            )
+                        )
+                        if exhausted:
+                            await asyncio.to_thread(
+                                self.portfolio.expire_order_intent,
+                                client_order_id,
+                                "Owning decision task is missing, completed inconsistently, or exhausted its recovery retry budget",
+                            )
+                            self.store.audit("approved_order_intent_expired", {
+                                "client_order_id": client_order_id,
+                                "task_state": task_state,
+                            })
                 if state["enabled"] and not state["emergency_stop"]:
                     self.store.schedule_decision_cycle(settings.decision_cycle_interval_seconds)
                     if self.equity_research is not None:
