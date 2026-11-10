@@ -100,7 +100,7 @@ def test_idempotency_key_cannot_be_reused_for_a_different_trade(portfolio):
         "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
         client_order_id="immutable-order-key",
     )
-    with pytest.raises(PortfolioError, match="different paper order"):
+    with pytest.raises(PortfolioError, match="different order intent"):
         portfolio.execute(
             "ETH/EUR", "buy", 0.001, 1000, 0.001, 0, 1, 1,
             client_order_id="immutable-order-key",
@@ -147,7 +147,7 @@ def test_idempotency_key_cannot_change_protective_levels(portfolio):
         "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
         client_order_id="protective-level-key", stop_loss=9500, take_profit=11000,
     )
-    with pytest.raises(PortfolioError, match="different paper order"):
+    with pytest.raises(PortfolioError, match="different order intent"):
         portfolio.execute(
             "BTC/EUR", "buy", 0.001, 10000, 0.001, 0, 1, 1,
             client_order_id="protective-level-key", stop_loss=9400, take_profit=11000,
