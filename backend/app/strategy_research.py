@@ -381,6 +381,29 @@ class StrategyResearchAgent:
             if not self._passes_cost_stress(cost_sensitivity, "1.5"):
                 validation_failures.append("fails_1_5x_cost_stress")
             eligible = not validation_failures
+
+            # Experimental paper eligibility is deliberately separate from
+            # promotion. It checks data/history and drawdown bounds, but does
+            # not claim profitability or require benchmark outperformance.
+            experimental_validation_failures = []
+            if len(walk_forward_windows) != 3:
+                experimental_validation_failures.append("incomplete_walk_forward_windows")
+            if any(
+                window["evaluation_bars"] < self.minimum_walk_forward_bars
+                for window in walk_forward_windows
+            ):
+                experimental_validation_failures.append("insufficient_walk_forward_history")
+            if out_sample["max_drawdown"] > self.maximum_oos_drawdown:
+                experimental_validation_failures.append("oos_drawdown_exceeded")
+            if walk_forward["max_drawdown"] > self.maximum_oos_drawdown:
+                experimental_validation_failures.append("walk_forward_drawdown_exceeded")
+            experimental_eligible = not experimental_validation_failures
+            experimental_score = (
+                out_sample["net_return"]
+                - 0.5 * max(out_sample["max_drawdown"], walk_forward["max_drawdown"])
+                if experimental_eligible else None
+            )
+
             score = (
                 benchmark_excess_return
                 + out_sample["net_return"]
@@ -402,12 +425,17 @@ class StrategyResearchAgent:
                     "eligible": eligible,
                     "validation_failures": validation_failures,
                     "score": score,
+                    "experimental_eligible": experimental_eligible,
+                    "experimental_validation_failures": experimental_validation_failures,
+                    "experimental_score": experimental_score,
                     "current_entry_signal": signal(current_closes, current_index, False),
                     "current_hold_signal": signal(current_closes, current_index, True),
                 }
             )
         eligible_results = [item for item in results if item["eligible"]]
         eligible_results.sort(key=lambda item: item["score"], reverse=True)
+        experimental_results = [item for item in results if item["experimental_eligible"]]
+        experimental_results.sort(key=lambda item: item["experimental_score"], reverse=True)
         return {
             "method": "chronological_70_30_plus_three_walk_forward_diagnostics_next_bar_open_fills",
             "cost_model": {
@@ -435,6 +463,14 @@ class StrategyResearchAgent:
             "eligible_count": len(eligible_results),
             "recommended_strategy": (
                 eligible_results[0]["strategy_id"] if eligible_results else None
+            ),
+            "experimental_candidate_count": len(experimental_results),
+            "recommended_experimental_strategy": (
+                experimental_results[0]["strategy_id"] if experimental_results else None
+            ),
+            "experimental_promotion_note": (
+                "Experimental candidates are paper-only and are not validated for profitability; "
+                "they may underperform buy-and-hold or lose money."
             ),
             "candidates": results,
             "execution": "research_only",
