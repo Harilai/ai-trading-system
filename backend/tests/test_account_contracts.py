@@ -239,7 +239,7 @@ def test_registry_supports_position_only_readonly_accounts_and_combined_snapshot
                 "account_key_permissions_verified": False,
             }
 
-        def fetch_positions(self):
+        def fetch_positions(self, market_type=None):
             return {
                 "provider_id": "test:equity-broker",
                 "account_alias": "cash-equities",
