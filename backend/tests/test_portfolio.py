@@ -526,3 +526,105 @@ def test_usd_to_eur_conversion_uses_inverse_rate_and_charges_eur_fee(tmp_path):
     assert balances["USD"] == pytest.approx(45)
     assert balances["EUR"] == pytest.approx(50 + (10 / 1.1) * 0.99)
     assert portfolio.snapshot()["realised_pnl"] == pytest.approx(-((10 / 1.1) * 0.01))
+
+
+def test_order_intent_survives_restart_and_fills_exact_approved_request(tmp_path):
+    path = str(tmp_path / "order-lifecycle.db")
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "task-order-1",
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": "ema_12_26", "stop_loss": 9800, "take_profit": 10400,
+    }
+    portfolio = PaperPortfolio(path, 20)
+    created = portfolio.record_order_intent(
+        "task-order-1", request, {"action": "buy", "risk_accepted": True},
+    )
+    assert created["status"] == "risk_approved"
+    assert created["request"] == request
+
+    restarted = PaperPortfolio(path, 999)
+    recovered_intent = restarted.get_order_intent("task-order-1")
+    assert recovered_intent["status"] == "risk_approved"
+    assert recovered_intent["decision"]["risk_accepted"] is True
+
+    fill = restarted.execute(**recovered_intent["request"])
+    assert fill["idempotent_replay"] is False
+    completed = restarted.get_order_intent("task-order-1")
+    assert completed["status"] == "filled"
+    assert completed["trade_id"] == fill["id"]
+    assert completed["fill"]["client_order_id"] == "task-order-1"
+    assert len(restarted.history()) == 1
+
+    replay = restarted.execute(**request)
+    assert replay["id"] == fill["id"]
+    assert replay["idempotent_replay"] is True
+    assert len(restarted.history()) == 1
+
+
+def test_order_intent_rejects_reuse_with_changed_request(portfolio):
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "immutable-intent",
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": "ema_12_26", "stop_loss": 9800, "take_profit": 10400,
+    }
+    portfolio.record_order_intent("immutable-intent", request, {"risk_accepted": True})
+    with pytest.raises(PortfolioError, match="different order intent"):
+        portfolio.record_order_intent(
+            "immutable-intent", {**request, "quantity": 0.002},
+            {"risk_accepted": True},
+        )
+
+
+def test_order_intent_reconciles_trade_ledger_and_detects_missing_fill(portfolio):
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "reconcile-filled",
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": None, "stop_loss": None, "take_profit": None,
+    }
+    portfolio.record_order_intent("reconcile-filled", request, {"risk_accepted": True})
+    fill = portfolio.execute(**request)
+    with portfolio.connect() as db:
+        db.execute(
+            "UPDATE order_intents SET status='risk_approved',trade_id=NULL WHERE client_order_id=?",
+            ("reconcile-filled",),
+        )
+    result = portfolio.reconcile_order_intents()
+    assert result == {"reconciled_filled": 1, "reconciliation_required": 0}
+    assert portfolio.get_order_intent("reconcile-filled")["status"] == "filled"
+
+    missing = {**request, "client_order_id": "missing-ledger-fill"}
+    portfolio.record_order_intent("missing-ledger-fill", missing, {"risk_accepted": True})
+    with portfolio.connect() as db:
+        db.execute(
+            "UPDATE order_intents SET status='filled',trade_id=999 WHERE client_order_id=?",
+            ("missing-ledger-fill",),
+        )
+    result = portfolio.reconcile_order_intents()
+    assert result["reconciliation_required"] == 1
+    unresolved = portfolio.get_order_intent("missing-ledger-fill")
+    assert unresolved["status"] == "reconciliation_required"
+    assert "no matching trade" in unresolved["rejection_reason"].lower()
+
+
+def test_rejected_order_intent_is_terminal(portfolio):
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "rejected-intent",
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": None, "stop_loss": None, "take_profit": None,
+    }
+    portfolio.record_order_intent("rejected-intent", request, {"risk_accepted": True})
+    portfolio.reject_order_intent("rejected-intent", "insufficient cash")
+    assert portfolio.get_order_intent("rejected-intent")["status"] == "rejected"
+    with pytest.raises(PortfolioError, match="different order intent"):
+        portfolio.record_order_intent(
+            "rejected-intent", {**request, "quantity": 0.002},
+            {"risk_accepted": True},
+        )
