@@ -775,8 +775,24 @@ def test_failed_decision_task_is_requeued_when_approved_order_is_unresolved(tmp_
     assert store.requeue_failed_decision_task(task["id"]) is True
     recovered = store.overview()["tasks"][0]
     assert recovered["status"] == "pending"
-    assert recovered["attempts"] == 0
+    assert recovered["attempts"] == 1
     assert store.requeue_failed_decision_task(task["id"]) is False
+
+
+def test_failed_decision_task_requeue_has_a_finite_attempt_budget(tmp_path):
+    store = AutonomousStore(str(tmp_path / "requeue-budget.db"))
+    task = store.enqueue("decision_cycle", {}, due_at=utcnow() - timedelta(seconds=1))
+    claimed = store.claim_due_task()
+    store.fail_task(claimed, "temporary failure", max_attempts=1)
+    with store.connect() as db:
+        db.execute(
+            "UPDATE agent_tasks SET attempts=6 WHERE id=?",
+            (task["id"],),
+        )
+    assert store.requeue_failed_decision_task(task["id"], max_total_attempts=6) is False
+    state = store.task_state(task["id"])
+    assert state["status"] == "failed"
+    assert state["attempts"] == 6
 
 
 def test_decision_cycle_blocks_new_scan_when_another_intent_needs_reconciliation(tmp_path):
