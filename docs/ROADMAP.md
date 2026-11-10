@@ -4,18 +4,30 @@
 
 Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
+## Objetivo de producto
+
+Construir una plataforma algorítmica multiactivo y multi-venue, preparada para capital real y extensible a los instrumentos accesibles mediante los proveedores conectados. El universo objetivo no se limita a crypto spot ni a EUR: incluye crypto CEX/DEX, acciones, ETF, FX, futuros, opciones, bonos, materias primas y otros instrumentos cuando existan adaptador, elegibilidad, datos, contabilidad y perfil de riesgo adecuados.
+
+"Operar cualquier cosa del mercado" significa poder integrar progresivamente los instrumentos que permitan los proveedores y la cuenta; no implica disponibilidad universal. Discovery, market data, paper y live execution son capacidades separadas. Ningún instrumento se habilita automáticamente por aparecer en el catálogo.
+
+La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSION_ARCHITECTURE.md](MARKET_EXPANSION_ARCHITECTURE.md).
+
 ## Siguiente secuencia de desarrollo acordada
 
-1. **Completado — cartera paper multidivisa para acciones/ETF (PR #41):** efectivo EUR/USD separado, conversión FX explícita y auditable, valoración y riesgo consolidados en EUR. Las órdenes equity siguen siendo manuales y paper-only; el Chief sigue sin operar equities autónomamente.
-2. **Siguiente — conciliación de órdenes y fills:** estados legales, idempotencia, recuperación y fallos entre límites transaccionales; añadir supervisión paper de stops/take-profit equity.
-3. **Backups externos:** copia fuera del volumen/servidor Docker y restauración verificada.
-4. **Dashboard ampliado:** gráficos, investigación y retiradas.
-5. **Despliegue persistente 24/7:** VPS, seguridad, monitorización y recuperación.
+1. **Completado — cartera paper multidivisa para acciones/ETF (PR #41):** efectivo EUR/USD separado, conversión FX explícita y auditable, valoración y riesgo consolidados en EUR. Las órdenes equity siguen siendo manuales y paper-only; el Chief no opera equities autónomamente.
+2. **Completado — ciclo de vida y conciliación paper (PR #44):** intentos persistentes, fills idempotentes, conciliación contra el ledger, recuperación de tareas con leases y caducidad de aprobaciones stale.
+3. **Siguiente — backups externos y restauración:** copia cifrada fuera del volumen/servidor Docker, retención, verificación de integridad y restauración probada.
+4. **Dashboard ampliado:** gráficos, investigación, salud de conectores, órdenes/fills y gestión de retiradas.
+5. **Abstracción multi-venue y catálogo de instrumentos:** capabilities explícitas, cuentas, permisos, precisión/ticks, multiplicadores, vencimientos, margen/colateral, settlement, corporate actions, funding y FX.
+6. **Despliegue persistente 24/7:** VPS, secretos, aislamiento, TLS/reverse proxy, monitorización, alertas, readiness y recuperación.
+7. **Madurez por mercado:** paper/backtest y sandbox/testnet para cada venue/clase; implementar supervisión paper de stops/take-profit equity antes de decisiones autónomas equity.
+8. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## Estado integrado
 
 | Área | Estado |
 |---|---|
+| Ciclo de vida y conciliación de órdenes paper | Implementado y fusionado en PR #44 (`df76011`); 292 tests y Docker hardening correctos |
 | Cartera paper multidivisa EUR/USD, conversiones FX y manual equity/ETF paper | Implementado y fusionado en PR #41 (`23cfcb5`); 270 tests y Docker hardening correctos |
 | Backend FastAPI y paper portfolio SQLite | Implementado |
 | Datos públicos crypto spot vía CCXT | Implementado; solo datos públicos |
@@ -45,8 +57,8 @@ Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de 
 | Sniper y generación de propuestas | Implementado; propuestas deterministas bajo Risk Manager obligatorio |
 | Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada para crypto spot EUR; monitor equity stop/take pendiente |
 | Datos de acciones/ETF estadounidenses | Adaptador Twelve Data Basic y pipeline autónomo read-only; órdenes manuales paper USD integradas, sin broker ni ejecución real |
-| Broker de acciones/ETF y ejecución | Pendiente; requiere broker adapter, elegibilidad y validación |
-| DEX, wallets, blockchain y DeFi | Pendiente; no hay integración ni firma |
+| Ejecución real multi-venue (CEX/broker/DEX/wallet) | No implementada; requiere adaptadores autenticados, elegibilidad, sandbox y gates de seguridad |
+| DEX, wallets, blockchain y DeFi | Pendiente; sin conexión, firma ni ejecución |
 | Futuros, opciones, margin y derivados | Deshabilitados; perfiles y límites específicos pendientes |
 | News/Sentiment con fuentes auditables | Pendiente |
 | Valoración a mercado, P/L realizado/no realizado | Implementado en cartera paper; depende de cotización fresca |
