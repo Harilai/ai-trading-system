@@ -213,3 +213,238 @@ class BinanceSpotDemoAccount:
             "discovered": len(result),
             "markets": result,
         }
+
+
+class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
+    """Limit-order execution and reconciliation restricted to Binance Demo Trading."""
+
+    def describe(self) -> dict:
+        result = super().describe()
+        result.update({
+            "order_submission": True,
+            "order_management": True,
+            "order_types": ["limit"],
+            "market_orders": False,
+            "max_order_quote_default": "25",
+        })
+        return result
+
+    @staticmethod
+    def _decimal(value: Any, field: str) -> Decimal:
+        if isinstance(value, bool) or value is None:
+            raise BinanceDemoError(f"Demo order {field} is invalid")
+        try:
+            result = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            raise BinanceDemoError(f"Demo order {field} is invalid") from None
+        if not result.is_finite() or result <= 0:
+            raise BinanceDemoError(f"Demo order {field} must be finite and positive")
+        if len(result.as_tuple().digits) > 50 or abs(result.as_tuple().exponent) > 50:
+            raise BinanceDemoError(f"Demo order {field} precision is unsupported")
+        return result
+
+    @staticmethod
+    def _canonical_decimal(value: Decimal) -> str:
+        text = format(value, "f")
+        if "." in text:
+            text = text.rstrip("0").rstrip(".")
+        return "0" if text in ("", "-0") else text
+
+    @staticmethod
+    def _market_limit(value: Any) -> Decimal | None:
+        if value is None:
+            return None
+        try:
+            number = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            raise BinanceDemoError("Binance Demo returned malformed market limits") from None
+        if not number.is_finite() or number < 0:
+            raise BinanceDemoError("Binance Demo returned invalid market limits")
+        return number
+
+    def validate_limit_order(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        amount: str,
+        price: str,
+        client_order_id: str,
+        max_order_quote: str = "25",
+    ) -> dict:
+        if not isinstance(symbol, str) or not symbol.strip():
+            raise BinanceDemoError("Demo order symbol is required")
+        symbol = symbol.strip().upper()
+        if side not in ("buy", "sell"):
+            raise BinanceDemoError("Demo order side must be buy or sell")
+        if not isinstance(client_order_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,36}", client_order_id):
+            raise BinanceDemoError("client_order_id must contain 1-36 safe characters")
+
+        amount_value = self._decimal(amount, "amount")
+        price_value = self._decimal(price, "price")
+        max_quote_value = self._decimal(max_order_quote, "max order quote cap")
+        try:
+            markets = self._exchange.load_markets()
+        except Exception as exc:
+            raise BinanceDemoError(
+                f"Binance Demo market metadata request failed ({type(exc).__name__})"
+            ) from None
+        market = markets.get(symbol) if isinstance(markets, dict) else None
+        if not isinstance(market, dict) or market.get("spot") is not True:
+            raise BinanceDemoError("Order symbol is not a supported Binance Demo Spot market")
+        if market.get("active") is False:
+            raise BinanceDemoError("Order symbol is inactive on Binance Demo Spot")
+        quote_asset = market.get("quote")
+        if not isinstance(quote_asset, str) or not quote_asset:
+            raise BinanceDemoError("Binance Demo market is missing quote asset metadata")
+
+        amount_formatter = getattr(self._exchange, "amount_to_precision", None)
+        price_formatter = getattr(self._exchange, "price_to_precision", None)
+        if not callable(amount_formatter) or not callable(price_formatter):
+            raise BinanceDemoError("CCXT market precision helpers are unavailable")
+        try:
+            formatted_amount = Decimal(str(amount_formatter(symbol, str(amount_value))))
+            formatted_price = Decimal(str(price_formatter(symbol, str(price_value))))
+        except Exception as exc:
+            raise BinanceDemoError(
+                f"Demo order precision validation failed ({type(exc).__name__})"
+            ) from None
+        if formatted_amount != amount_value or formatted_price != price_value:
+            raise BinanceDemoError("Order amount or price exceeds the market precision")
+
+        limits = market.get("limits") or {}
+        amount_limits = limits.get("amount") or {}
+        cost_limits = limits.get("cost") or {}
+        minimum_amount = self._market_limit(amount_limits.get("min"))
+        maximum_amount = self._market_limit(amount_limits.get("max"))
+        minimum_cost = self._market_limit(cost_limits.get("min"))
+        maximum_cost = self._market_limit(cost_limits.get("max"))
+        notional = amount_value * price_value
+        if minimum_amount is not None and amount_value < minimum_amount:
+            raise BinanceDemoError("Order amount is below the market minimum")
+        if maximum_amount is not None and amount_value > maximum_amount:
+            raise BinanceDemoError("Order amount exceeds the market maximum")
+        if minimum_cost is not None and notional < minimum_cost:
+            raise BinanceDemoError("Order notional is below the market minimum")
+        if maximum_cost is not None and notional > maximum_cost:
+            raise BinanceDemoError("Order notional exceeds the market maximum")
+        if notional > max_quote_value:
+            raise BinanceDemoError("Order notional exceeds the configured Demo quote cap")
+
+        return {
+            "client_order_id": client_order_id,
+            "symbol": symbol,
+            "side": side,
+            "amount": self._canonical_decimal(formatted_amount),
+            "price": self._canonical_decimal(formatted_price),
+            "quote_asset": quote_asset,
+        }
+
+    def normalize_order(self, response: Any, *, expected_client_order_id: str) -> dict:
+        if not isinstance(response, dict):
+            raise BinanceDemoError("Binance Demo returned an invalid order response")
+        info = response.get("info") if isinstance(response.get("info"), dict) else {}
+        client_id = (
+            response.get("clientOrderId")
+            or info.get("clientOrderId")
+            or info.get("origClientOrderId")
+        )
+        if client_id != expected_client_order_id:
+            return {
+                "status": "reconciliation_required",
+                "error": "Exchange order response did not match the immutable client order ID",
+            }
+        raw_status = str(response.get("status") or "").lower()
+        filled = self._amount_text(self._decimal(response.get("filled") or "0", "filled") if response.get("filled") not in (None, 0, "0") else Decimal("0"))
+        remaining_value = response.get("remaining")
+        remaining = self._amount_text(
+            self._decimal(remaining_value, "remaining") if remaining_value not in (None, 0, "0") else Decimal("0")
+        )
+        average_value = response.get("average")
+        average = self._amount_text(
+            self._decimal(average_value, "average") if average_value not in (None, 0, "0") else None
+        )
+        if raw_status == "closed":
+            status = "filled"
+        elif raw_status in ("canceled", "cancelled"):
+            status = "cancelled"
+        elif raw_status == "expired":
+            status = "expired"
+        elif raw_status == "rejected":
+            status = "rejected"
+        elif raw_status == "open":
+            status = "partially_filled" if Decimal(filled or "0") > 0 else "open"
+        else:
+            status = "reconciliation_required"
+        return {
+            "status": status,
+            "exchange_order_id": str(response.get("id")) if response.get("id") is not None else None,
+            "exchange_status": raw_status or "unknown",
+            "filled": filled,
+            "remaining": remaining,
+            "average": average,
+            "error": None if status != "reconciliation_required" else "Exchange returned an unknown order status",
+        }
+
+    def submit_limit_order(self, request: dict) -> dict:
+        try:
+            response = self._exchange.create_order(
+                request["symbol"],
+                "limit",
+                request["side"],
+                float(Decimal(request["amount"])),
+                float(Decimal(request["price"])),
+                {
+                    "newClientOrderId": request["client_order_id"],
+                    "timeInForce": "GTC",
+                },
+            )
+        except Exception as exc:
+            # The exchange may have accepted the request before the connection failed.
+            # Callers must reconcile by client order ID and must never resubmit blindly.
+            raise BinanceDemoError(
+                f"Binance Demo order submission outcome is unknown ({type(exc).__name__})"
+            ) from None
+        return self.normalize_order(
+            response,
+            expected_client_order_id=request["client_order_id"],
+        )
+
+    def fetch_order_by_client_id(self, *, symbol: str, client_order_id: str) -> dict | None:
+        try:
+            response = self._exchange.fetch_order(
+                None,
+                symbol,
+                {"origClientOrderId": client_order_id},
+            )
+        except Exception as exc:
+            if type(exc).__name__ in ("OrderNotFound", "OrderNotFoundError"):
+                return None
+            raise BinanceDemoError(
+                f"Binance Demo order reconciliation failed ({type(exc).__name__})"
+            ) from None
+        return self.normalize_order(response, expected_client_order_id=client_order_id)
+
+    def fetch_order_by_id(self, *, symbol: str, exchange_order_id: str, client_order_id: str) -> dict:
+        try:
+            response = self._exchange.fetch_order(exchange_order_id, symbol)
+        except Exception as exc:
+            raise BinanceDemoError(
+                f"Binance Demo order status request failed ({type(exc).__name__})"
+            ) from None
+        return self.normalize_order(response, expected_client_order_id=client_order_id)
+
+    def cancel_limit_order(
+        self,
+        *,
+        symbol: str,
+        exchange_order_id: str,
+        client_order_id: str,
+    ) -> dict:
+        try:
+            response = self._exchange.cancel_order(exchange_order_id, symbol)
+        except Exception as exc:
+            raise BinanceDemoError(
+                f"Binance Demo cancel outcome is unknown ({type(exc).__name__})"
+            ) from None
+        return self.normalize_order(response, expected_client_order_id=client_order_id)
