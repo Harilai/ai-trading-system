@@ -170,6 +170,9 @@ def test_periodic_reconciliation_retries_transient_exchange_errors_with_backoff(
     status = store.reconciliation_status()
     assert status["last_status"] == "failed"
     assert status["last_error"] == "1 Demo order reconciliation(s) failed"
+    event = store.list_events("demo-periodic-1")[-1]
+    assert event["payload"]["outcome"] == "transient_failure"
+    assert event["payload"]["last_known_order_state_preserved"] is True
     assert reconciler.run_due() is None
 
 
