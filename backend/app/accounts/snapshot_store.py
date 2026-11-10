@@ -17,7 +17,11 @@ class AccountSnapshotError(RuntimeError):
 
 
 class AccountSnapshotStore:
-    """Append-only snapshots of external account balances, separate from paper portfolio."""
+    """Append-only, multi-venue external account snapshots, separate from paper portfolio."""
+
+    SUPPORTED_MARKET_TYPES = frozenset({
+        "spot", "cash_equity", "margin", "futures", "options", "forex", "onchain",
+    })
 
     def __init__(self, database_path: str):
         self.database_path = str(Path(database_path).expanduser().resolve())
@@ -55,6 +59,16 @@ class AccountSnapshotStore:
                     change_count INTEGER NOT NULL,
                     balance_count INTEGER NOT NULL,
                     content_hash TEXT NOT NULL,
+                    environment TEXT NOT NULL DEFAULT 'unspecified',
+                    venue_type TEXT NOT NULL DEFAULT 'unknown',
+                    read_only INTEGER NOT NULL DEFAULT 1,
+                    execution_enabled INTEGER NOT NULL DEFAULT 0,
+                    withdrawals_enabled INTEGER NOT NULL DEFAULT 0,
+                    transfers_enabled INTEGER NOT NULL DEFAULT 0,
+                    wallet_signing_enabled INTEGER NOT NULL DEFAULT 0,
+                    permissions_verified INTEGER NOT NULL DEFAULT 0,
+                    position_count INTEGER NOT NULL DEFAULT 0,
+                    position_change_count INTEGER NOT NULL DEFAULT 0,
                     FOREIGN KEY(previous_snapshot_id) REFERENCES account_snapshots(snapshot_id)
                 );
                 CREATE INDEX IF NOT EXISTS idx_account_snapshots_account
@@ -68,6 +82,30 @@ class AccountSnapshotStore:
                     PRIMARY KEY(snapshot_id,asset),
                     FOREIGN KEY(snapshot_id) REFERENCES account_snapshots(snapshot_id) ON DELETE RESTRICT
                 );
+                CREATE TABLE IF NOT EXISTS account_snapshot_positions (
+                    snapshot_id TEXT NOT NULL,
+                    instrument_id TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    asset_class TEXT NOT NULL,
+                    market_type TEXT NOT NULL,
+                    quantity TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    quote_currency TEXT NOT NULL,
+                    average_entry_price TEXT,
+                    mark_price TEXT,
+                    market_value TEXT,
+                    unrealized_pnl TEXT,
+                    PRIMARY KEY(snapshot_id,instrument_id,side),
+                    FOREIGN KEY(snapshot_id) REFERENCES account_snapshots(snapshot_id) ON DELETE RESTRICT
+                );
+                CREATE INDEX IF NOT EXISTS idx_account_snapshot_positions_instrument
+                    ON account_snapshot_positions(instrument_id,snapshot_id);
+                CREATE TRIGGER IF NOT EXISTS account_snapshot_positions_no_update
+                    BEFORE UPDATE ON account_snapshot_positions
+                    BEGIN SELECT RAISE(ABORT,'account snapshot positions are append-only'); END;
+                CREATE TRIGGER IF NOT EXISTS account_snapshot_positions_no_delete
+                    BEFORE DELETE ON account_snapshot_positions
+                    BEGIN SELECT RAISE(ABORT,'account snapshot positions are append-only'); END;
                 CREATE TRIGGER IF NOT EXISTS account_snapshots_no_update
                     BEFORE UPDATE ON account_snapshots
                     BEGIN SELECT RAISE(ABORT,'account snapshots are append-only'); END;
@@ -81,6 +119,28 @@ class AccountSnapshotStore:
                     BEFORE DELETE ON account_snapshot_balances
                     BEGIN SELECT RAISE(ABORT,'account snapshot balances are append-only'); END;
                 """
+            )
+            existing_columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(account_snapshots)").fetchall()
+            }
+            migrations = {
+                "environment": "TEXT NOT NULL DEFAULT 'unspecified'",
+                "venue_type": "TEXT NOT NULL DEFAULT 'unknown'",
+                "read_only": "INTEGER NOT NULL DEFAULT 1",
+                "execution_enabled": "INTEGER NOT NULL DEFAULT 0",
+                "withdrawals_enabled": "INTEGER NOT NULL DEFAULT 0",
+                "transfers_enabled": "INTEGER NOT NULL DEFAULT 0",
+                "wallet_signing_enabled": "INTEGER NOT NULL DEFAULT 0",
+                "permissions_verified": "INTEGER NOT NULL DEFAULT 0",
+                "position_count": "INTEGER NOT NULL DEFAULT 0",
+                "position_change_count": "INTEGER NOT NULL DEFAULT 0",
+            }
+            for column, definition in migrations.items():
+                if column not in existing_columns:
+                    db.execute(f"ALTER TABLE account_snapshots ADD COLUMN {column} {definition}")
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_account_snapshots_account_environment "
+                "ON account_snapshots(provider_id,account_alias,market_type,environment,fetched_at DESC)"
             )
 
     @staticmethod
