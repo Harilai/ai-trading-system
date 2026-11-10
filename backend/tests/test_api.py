@@ -917,6 +917,9 @@ def test_instrument_catalogue_api_lists_filters_and_returns_detail(monkeypatch, 
     listing = client.get("/api/instruments?asset_class=equity&provider_id=twelve_data")
     assert listing.status_code == 200
     assert len(listing.json()["items"]) == 1
+    venue_listing = client.get("/api/instruments?venue_id=XNAS")
+    assert venue_listing.status_code == 200
+    assert len(venue_listing.json()["items"]) == 1
     catalogue_id = listing.json()["items"][0]["catalogue_id"]
 
     detail = client.get(f"/api/instruments/{catalogue_id}")
