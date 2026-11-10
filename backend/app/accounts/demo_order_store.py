@@ -238,6 +238,26 @@ class BinanceDemoOrderStore:
                     "A previous Demo order is still open or requires reconciliation"
                 )
 
+            completed_orders = db.execute(
+                """
+                SELECT client_order_id,filled FROM binance_demo_orders
+                WHERE status IN ('filled','cancelled','expired') AND filled IS NOT NULL
+                """
+            ).fetchall()
+            for completed_order in completed_orders:
+                expected_filled = Decimal(completed_order["filled"] or "0")
+                if expected_filled <= 0:
+                    continue
+                fill_rows = db.execute(
+                    "SELECT amount FROM binance_demo_order_fills WHERE client_order_id=?",
+                    (completed_order["client_order_id"],),
+                ).fetchall()
+                recorded_filled = sum((Decimal(item["amount"]) for item in fill_rows), Decimal("0"))
+                if recorded_filled != expected_filled:
+                    raise DemoOrderConflict(
+                        "A previous Demo order has incomplete individual fill/fee evidence"
+                    )
+
             db.execute(
                 """
                 INSERT INTO binance_demo_orders(
@@ -443,6 +463,8 @@ class BinanceDemoOrderStore:
             normalized[field] = format(parsed, "f")
         fee_cost = fill.get("fee_cost")
         fee_currency = fill.get("fee_currency")
+        if fee_cost is None:
+            raise DemoOrderStoreError("Exchange trade commission evidence is missing")
         if fee_cost is not None:
             if not isinstance(fee_cost, str):
                 raise DemoOrderStoreError("Exchange trade fee must be a decimal string")
