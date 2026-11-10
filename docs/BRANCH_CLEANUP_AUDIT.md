@@ -40,6 +40,7 @@ feature/market-regime-diagnostics
 feature/operations-dashboard
 feature/paper-execution-idempotency
 feature/persist-strategy-research-history
+feature/persistent-instrument-catalog
 feature/rotating-equity-universe-sampling
 feature/scheduled-sqlite-backups
 feature/sprint-1-paper-trading
