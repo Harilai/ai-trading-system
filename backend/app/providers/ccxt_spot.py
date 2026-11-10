@@ -111,8 +111,11 @@ class CcxtSpotProvider:
         for symbol, market in self._load_markets().items():
             if not market.get("spot") or market.get("active") is False:
                 continue
-            if market.get("quote") != "EUR":
+            if market.get("quote") != "EUR" or not market.get("base"):
                 continue
+            limits = market.get("limits") or {}
+            amount_limits = limits.get("amount") or {}
+            cost_limits = limits.get("cost") or {}
             result.append(
                 MarketInstrument(
                     provider_id=self.provider_id,
@@ -122,10 +125,10 @@ class CcxtSpotProvider:
                     base=str(market.get("base", "")),
                     quote=str(market.get("quote", "")),
                     active=market.get("active") is not False,
-                    min_amount=self._optional_float(market.get("limits", {}).get("amount", {}).get("min")),
-                    max_amount=self._optional_float(market.get("limits", {}).get("amount", {}).get("max")),
-                    min_cost=self._optional_float(market.get("limits", {}).get("cost", {}).get("min")),
-                    max_cost=self._optional_float(market.get("limits", {}).get("cost", {}).get("max")),
+                    min_amount=self._optional_float(amount_limits.get("min")),
+                    max_amount=self._optional_float(amount_limits.get("max")),
+                    min_cost=self._optional_float(cost_limits.get("min")),
+                    max_cost=self._optional_float(cost_limits.get("max")),
                     maker_fee=self._optional_float(market.get("maker")),
                     taker_fee=self._optional_float(market.get("taker")),
                     venue_id=self.exchange_id,
