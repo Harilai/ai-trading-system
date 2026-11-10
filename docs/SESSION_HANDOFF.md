@@ -16,7 +16,13 @@
 
 ## Siguiente acción
 
-Continuar PR #74 (`phase/account-position-snapshots`): código integrado localmente sobre el `main` posterior a PR #75/#76. Se añadió persistencia de `positions_supported` y `positions_complete`; una observación parcial no convierte una posición ausente en una liquidación, y la reconciliación posterior usa la última captura completa como baseline. Validación local: 476 tests pasan en Docker; `docker compose -f docker-compose.demo.yml config --quiet` correcto; imagen Docker construida y usuario de ejecución UID 999. Pendiente: subir los cambios a la rama de la PR, comprobar CI del head exacto y marcar ready solo si CI y revisión están limpias. No fusionar todavía.
+Continuar PR #74 (`phase/account-position-snapshots`): código integrado sobre el `main` posterior a PR #75/#76. Se añadió persistencia de `positions_supported` y `positions_complete`; una observación parcial no convierte una posición ausente en una liquidación, y la reconciliación posterior usa la última captura completa como baseline. Validación local: 476 tests pasan en Docker; `docker compose -f docker-compose.demo.yml config --quiet` correcto; imagen Docker construida y usuario de ejecución UID 999. GitHub Actions pasó para el head `fd2658588e10cf950bd54ba4682ca58d1625d777` (Python tests y Docker hardening). La PR está abierta y lista para revisión, no fusionada; requiere revisión de repositorio antes de merge.
+
+## Ramas de GitHub — auditoría de limpieza
+
+- `demo` está publicada y fijada a `35b894800ebf24324aebb2f09c363bdda8d1fca8`, la misma versión de `main` que incluye el Compose de paper demo.
+- En el inventario de 85 ramas remotas, 65 candidatas tienen evidencia de integración (su punta está contenida en `main` o corresponde a una PR fusionada). No se borraron ramas durante la auditoría.
+- Mantener `main`, `demo` y la rama de la PR #74 abierta. Revisar antes de borrar estas ocho puntas divergentes/no concluyentes: `feature/persistent-agent-main`, `feature/portfolio-valuation-withdrawals`, `feature/provider-scoped-portfolio`, `fix/market-discovery-malformed-tickers`, `phase/account-position-snapshots-v2`, `phase/dashboard-research-withdrawals`, `phase/external-backups`, `phase/multicurrency-paper-portfolio`.
 
 ## 1. Cómo retomar en una conversación nueva
 
