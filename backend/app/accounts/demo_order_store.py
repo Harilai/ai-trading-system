@@ -132,7 +132,7 @@ class BinanceDemoOrderStore:
         for field, value in (("amount", amount), ("price", price)):
             if (
                 not isinstance(value, str)
-                or not re.fullmatch(r"\\d+(?:\\.\\d+)?", value)
+                or not re.fullmatch(r"\d+(?:\.\d+)?", value)
                 or len(value) > 80
             ):
                 raise DemoOrderStoreError(f"Demo order {field} must be a plain decimal string")
@@ -152,7 +152,7 @@ class BinanceDemoOrderStore:
             raise DemoOrderStoreError("Demo order quote asset is invalid")
         if (
             not isinstance(max_order_quote, str)
-            or not re.fullmatch(r"\\d+(?:\\.\\d+)?", max_order_quote)
+            or not re.fullmatch(r"\d+(?:\.\d+)?", max_order_quote)
         ):
             raise DemoOrderStoreError("Demo order quote cap must be a plain decimal string")
         try:
