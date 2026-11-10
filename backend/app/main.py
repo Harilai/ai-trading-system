@@ -304,6 +304,12 @@ def _paper_equity_order(order: OrderRequest):
         raise HTTPException(422, "USD equity/ETF paper orders require client_order_id for idempotency")
     previous = portfolio.get_trade_by_client_order_id(order.client_order_id.strip())
     if previous:
+        portfolio.reconcile_order_intents()
+        existing_intent = portfolio.get_order_intent(order.client_order_id.strip())
+        if existing_intent and existing_intent["status"] == "reconciliation_required":
+            raise HTTPException(503, "Paper order requires reconciliation; replay is blocked")
+        if existing_intent and existing_intent["status"] != "filled":
+            raise HTTPException(503, "Trade ledger and order intent are not reconciled")
         same_intent = (
             previous["symbol"] == order.symbol.strip().upper()
             and previous["side"] == order.side
@@ -527,6 +533,12 @@ def paper_order(
     try:
         previous = portfolio.get_trade_by_client_order_id(order.client_order_id.strip())
         if previous:
+            portfolio.reconcile_order_intents()
+            existing_intent = portfolio.get_order_intent(order.client_order_id.strip())
+            if existing_intent and existing_intent["status"] == "reconciliation_required":
+                raise HTTPException(503, "Paper order requires reconciliation; replay is blocked")
+            if existing_intent and existing_intent["status"] != "filled":
+                raise HTTPException(503, "Trade ledger and order intent are not reconciled")
             same_intent = (
                 previous["symbol"] == symbol
                 and previous["side"] == order.side
