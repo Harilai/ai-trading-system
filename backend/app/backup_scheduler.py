@@ -94,18 +94,9 @@ def run_backup_cycle(
             local_failures.append({"source": source.name, "error": str(exc)})
             logger.exception("SQLite backup failed for %s", source)
 
-    cutoff = timestamp - timedelta(days=retention_days)
-    for old_backup in destination_dir.glob("*.sqlite3"):
-        try:
-            modified = datetime.fromtimestamp(old_backup.stat().st_mtime, timezone.utc)
-            if modified < cutoff:
-                old_backup.unlink()
-                logger.info("Expired SQLite backup removed: %s", old_backup)
-        except OSError:
-            logger.exception("Unable to apply backup retention to %s", old_backup)
-
     external_uploads: list[dict] = []
     external_failures: list[dict] = []
+    remote_keys: set[str] = set()
     uploaded_sources = {
         name: record
         for name, record in previous_sources.items()
@@ -117,7 +108,6 @@ def run_backup_cycle(
         elif external_store is None:
             external_failures.append({"operation": "configure", "error": "External store is unavailable"})
         else:
-            remote_keys: set[str] = set()
             try:
                 remote_keys = {item["key"] for item in external_store.list_backups()}
             except BackupError as exc:
@@ -156,6 +146,27 @@ def run_backup_cycle(
                         "error": str(exc),
                     })
                     logger.exception("Off-host backup failed for %s", local_backup)
+
+    # Do not delete a local snapshot until its off-host copy is verified.
+    cutoff = timestamp - timedelta(days=retention_days)
+    for old_backup in destination_dir.glob("*.sqlite3"):
+        try:
+            modified = datetime.fromtimestamp(old_backup.stat().st_mtime, timezone.utc)
+            if modified >= cutoff:
+                continue
+            if external_enabled:
+                remote_record = uploaded_sources.get(old_backup.name)
+                if not remote_record or remote_record.get("key") not in remote_keys:
+                    logger.warning(
+                        "Retaining expired local snapshot because its off-host copy is unverified: %s",
+                        old_backup,
+                    )
+                    continue
+            old_backup.unlink()
+            uploaded_sources.pop(old_backup.name, None)
+            logger.info("Expired SQLite backup removed: %s", old_backup)
+        except OSError:
+            logger.exception("Unable to apply backup retention to %s", old_backup)
 
     external_status = "disabled"
     if external_enabled:
