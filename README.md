@@ -160,6 +160,7 @@ El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y contr
 - `GET /api/providers` — proveedores configurados y capability matrix. Twelve Data aparece si `TWELVE_DATA_API_KEY` está configurada.
 - `GET /api/accounts` — estado y capacidades de conectores de cuenta; requiere `X-Agent-Token`.
 - `GET /api/accounts/{provider_id}/balances?account_alias=...` — balances normalizados por proveedor/cuenta; requiere `X-Agent-Token`.
+- `GET /api/accounts/{provider_id}/positions?account_alias=...` — posiciones normalizadas solo para conectores que declaren y ejecuten explícitamente la capacidad `positions`; no infiere posiciones spot a partir de balances. Devuelve `409` si el proveedor no soporta posiciones; requiere `X-Agent-Token`.
 - El conector CCXT read-only permite añadir un CEX compatible (Kraken por defecto) mediante `CCXT_READONLY_EXCHANGE_ID`, `CCXT_READONLY_API_KEY` y `CCXT_READONLY_API_SECRET`; solo consulta balances Spot y no expone métodos de trading.
 - `POST /api/accounts/{provider_id}/snapshots?account_alias=...` — snapshot inmutable solo para cuentas Spot declaradas explícitamente read-only; rechaza cuentas Demo/trading-enabled.
 - `GET /api/accounts` también devuelve `normalized_accounts` con capacidades y permisos declarados. `permissions_verified=false` indica que el software no ha verificado los scopes reales de la API key; el operador debe crearla con privilegios mínimos.
