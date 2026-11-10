@@ -23,9 +23,10 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 7. **Completado — preparación de operación 24/7 (PR #56):** healthcheck de backups, reintentos, rotación de logs, runbook VPS y systemd unit. El VPS real aún no está desplegado.
 8. **Completado — Binance Spot read-only (PR #57):** consulta autenticada de balances con permisos mínimos, sin órdenes ni retiradas; requiere configurar una API key read-only en el servidor.
 9. **Completado — account snapshot ledger y conciliación read-only (PR #59):** historial inmutable por cuenta/venue, snapshots por activo, deltas exactos y separación de la cartera paper.
-10. **Siguiente — Binance Spot testnet/sandbox:** adaptador aislado de testnet, limit orders, client order IDs, order status, partial fills, cancelación y conciliación; fail-closed y sin fallback a producción.
-11. **Generalización multi-venue:** contratos de ejecución, balances, posiciones, permisos y conciliación para otros CEX/brokers y clases de activo.
-12. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+10. **Completado — Binance Spot Demo Trading connector (PR #61):** CCXT Demo mode, verificación estricta de `demo-api.binance.com`, balances virtuales y discovery Spot; sin órdenes.
+11. **Siguiente — lifecycle de órdenes Demo:** intents persistentes, clientOrderId, timeout/unknown-state reconciliation, partial fills, cancelación y recuperación tras restart. Demo-only, fail-closed y sin fallback a producción.
+12. **Generalización multi-venue:** contratos de ejecución, balances, posiciones, permisos y conciliación para otros CEX/brokers y clases de activo.
+13. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## Estado integrado
 
@@ -35,6 +36,8 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 | Preparación operativa 24/7 | Implementada en PR #56 (`c892ff3`); 330 tests y Docker hardening correctos; VPS pendiente |
 | Binance Spot account connector (read-only) | Implementado en PR #57 (`8773d75`); 345 tests y Docker hardening correctos; API key no configurada |
 | Snapshots y conciliación read-only de cuentas | Implementado en PR #59 (`b3cca3d`); 360 tests y Docker hardening correctos; no altera cartera paper |
+| Binance Spot Demo Trading | Implementado en PR #61 (`6fb6350`); 372 tests y Docker hardening correctos; desactivado por defecto y sin órdenes |
+
 
 
 | Contrato normalizado de instrumentos v2 | Implementado y fusionado en PR #52 (`1d6ad47`); 312 tests y Docker hardening correctos; no habilita trading de derivados |
