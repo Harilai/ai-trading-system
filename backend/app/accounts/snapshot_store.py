@@ -536,6 +536,8 @@ class AccountSnapshotStore:
         *,
         provider_id: str | None = None,
         account_alias: str | None = None,
+        environment: str | None = None,
+        market_type: str | None = None,
         limit: int = 50,
     ) -> list[dict]:
         if not isinstance(limit, int) or not 1 <= limit <= 200:
@@ -548,12 +550,20 @@ class AccountSnapshotStore:
         if account_alias:
             clauses.append("account_alias=?")
             params.append(account_alias)
+        if environment:
+            clauses.append("environment=?")
+            params.append(environment)
+        if market_type:
+            clauses.append("market_type=?")
+            params.append(market_type)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(limit)
         with self.connect() as db:
             rows = db.execute(
-                f"SELECT snapshot_id,provider_id,account_alias,market_type,fetched_at,recorded_at,"
-                f"previous_snapshot_id,reconciliation_status,change_count,balance_count,content_hash "
+                f"SELECT snapshot_id,provider_id,account_alias,market_type,environment,venue_type,"
+                f"read_only,execution_enabled,withdrawals_enabled,transfers_enabled,wallet_signing_enabled,"
+                f"permissions_verified,fetched_at,recorded_at,previous_snapshot_id,reconciliation_status,"
+                f"change_count,balance_count,position_count,position_change_count,content_hash "
                 f"FROM account_snapshots {where} "
                 f"ORDER BY fetched_at DESC,recorded_at DESC,snapshot_id DESC LIMIT ?",
                 params,
@@ -575,7 +585,18 @@ class AccountSnapshotStore:
                 (snapshot_id.strip(),),
             ).fetchall()
             current = {item["asset"]: dict(item) for item in current_rows}
+            current_position_rows = db.execute(
+                "SELECT instrument_id,symbol,asset_class,market_type,quantity,side,quote_currency,"
+                "average_entry_price,mark_price,market_value,unrealized_pnl "
+                "FROM account_snapshot_positions WHERE snapshot_id=? ORDER BY instrument_id,side",
+                (snapshot_id.strip(),),
+            ).fetchall()
+            current_positions = {
+                (item["instrument_id"], item["side"]): dict(item)
+                for item in current_position_rows
+            }
             previous = {}
+            previous_positions = {}
             previous_id = row["previous_snapshot_id"]
             if previous_id:
                 previous_rows = db.execute(
@@ -583,8 +604,27 @@ class AccountSnapshotStore:
                     (previous_id,),
                 ).fetchall()
                 previous = {item["asset"]: dict(item) for item in previous_rows}
+                previous_position_rows = db.execute(
+                    "SELECT instrument_id,symbol,asset_class,market_type,quantity,side,quote_currency,"
+                    "average_entry_price,mark_price,market_value,unrealized_pnl "
+                    "FROM account_snapshot_positions WHERE snapshot_id=? ORDER BY instrument_id,side",
+                    (previous_id,),
+                ).fetchall()
+                previous_positions = {
+                    (item["instrument_id"], item["side"]): dict(item)
+                    for item in previous_position_rows
+                }
 
         result = dict(row)
+        for field in (
+            "read_only", "execution_enabled", "withdrawals_enabled", "transfers_enabled",
+            "wallet_signing_enabled", "permissions_verified",
+        ):
+            result[field] = bool(result[field])
         result["balances"] = list(current.values())
+        result["positions"] = list(current_positions.values())
         result["changes"] = self._diff(previous, current) if previous_id else []
+        result["position_changes"] = (
+            self._diff_positions(previous_positions, current_positions) if previous_id else []
+        )
         return result
