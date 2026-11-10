@@ -133,3 +133,25 @@ def test_catalogue_persists_across_instances_and_tracks_run_timestamps(tmp_path)
     assert run["run_id"] == result["run_id"]
     assert run["started_at"] == started.isoformat()
     assert run["completed_at"] == completed.isoformat()
+
+
+def test_catalogue_filters_by_venue_and_redacts_nested_provider_secrets(tmp_path):
+    catalog = InstrumentCatalog(str(tmp_path / "venue-filter.db"))
+    nasdaq = make_equity(
+        venue="XNAS",
+        metadata={
+            "api_key": "never-persist-this",
+            "nested": {"Authorization": "Bearer do-not-store", "mic_code": "XNAS"},
+        },
+    )
+    nyse = make_equity(venue="XNYS")
+    catalog.record_discovery([nasdaq, nyse])
+
+    filtered = catalog.list_instruments(venue_id="XNAS")
+    assert len(filtered) == 1
+    metadata = filtered[0]["metadata"]
+    assert metadata["api_key"] == "[REDACTED]"
+    assert metadata["nested"]["Authorization"] == "[REDACTED]"
+    assert metadata["nested"]["mic_code"] == "XNAS"
+    assert "never-persist-this" not in str(catalog.list_instruments())
+    assert "do-not-store" not in str(catalog.list_instruments())
