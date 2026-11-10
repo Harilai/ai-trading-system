@@ -1138,3 +1138,92 @@ def test_binance_account_snapshot_api_returns_404_for_unknown_snapshot(monkeypat
     headers = configure_order_auth(monkeypatch)
     response = client.get("/api/accounts/snapshots/unknown", headers=headers)
     assert response.status_code == 404
+
+
+def test_binance_demo_endpoints_require_owner_auth_and_are_explicitly_demo_only(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+
+    class FakeDemoAccount:
+        def describe(self):
+            return {
+                "provider_id": "ccxt:binance-demo",
+                "environment": "demo",
+                "demo_only": True,
+                "order_submission": False,
+                "production_endpoint_allowed": False,
+            }
+
+        def fetch_balances(self):
+            return {
+                "provider_id": "ccxt:binance-demo",
+                "environment": "demo",
+                "read_only": True,
+                "execution_enabled": False,
+                "withdrawals_enabled": False,
+                "balances": [{"asset": "BTC", "free": "1", "used": "0", "total": "1"}],
+            }
+
+        def discover_spot_markets(self, limit=100):
+            return {
+                "provider_id": "ccxt:binance-demo",
+                "environment": "demo",
+                "demo_only": True,
+                "discovered": 1,
+                "markets": [{"symbol": "BTC/USDT"}],
+            }
+
+    monkeypatch.setattr("app.main.binance_demo_account_provider", FakeDemoAccount())
+    monkeypatch.setattr("app.main.binance_demo_configuration_status", "configured")
+
+    unauthorized = client.get("/api/demo/binance/spot/balances")
+    assert unauthorized.status_code == 401
+    unauthorized_markets = client.get("/api/demo/binance/spot/markets")
+    assert unauthorized_markets.status_code == 401
+
+    balances = client.get("/api/demo/binance/spot/balances", headers=headers)
+    assert balances.status_code == 200
+    assert balances.json()["environment"] == "demo"
+    assert balances.json()["execution_enabled"] is False
+    assert balances.json()["withdrawals_enabled"] is False
+
+    markets = client.get("/api/demo/binance/spot/markets?limit=10", headers=headers)
+    assert markets.status_code == 200
+    assert markets.json()["demo_only"] is True
+    assert markets.json()["markets"][0]["symbol"] == "BTC/USDT"
+
+    accounts = client.get("/api/accounts", headers=headers)
+    assert accounts.status_code == 200
+    assert accounts.json()["demo_configuration_status"] == "configured"
+    assert any(
+        item["provider_id"] == "ccxt:binance-demo"
+        for item in accounts.json()["accounts"]
+    )
+
+
+def test_binance_demo_endpoints_are_disabled_by_default(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    monkeypatch.setattr("app.main.binance_demo_account_provider", None)
+    monkeypatch.setattr("app.main.binance_demo_configuration_status", "disabled")
+
+    balances = client.get("/api/demo/binance/spot/balances", headers=headers)
+    markets = client.get("/api/demo/binance/spot/markets", headers=headers)
+    assert balances.status_code == 503
+    assert markets.status_code == 503
+    assert "not configured" in balances.json()["detail"]
+
+
+def test_binance_demo_account_configuration_uses_masked_secret_settings():
+    from app.config import Settings
+
+    api_key = "demo-only-api-key"
+    api_secret = "demo-only-api-secret"
+    config = Settings(
+        _env_file=None,
+        binance_spot_demo_enabled=True,
+        binance_spot_demo_api_key=api_key,
+        binance_spot_demo_api_secret=api_secret,
+    )
+    assert config.binance_spot_demo_api_key.get_secret_value() == api_key
+    assert config.binance_spot_demo_api_secret.get_secret_value() == api_secret
+    assert api_key not in repr(config)
+    assert api_secret not in repr(config)
