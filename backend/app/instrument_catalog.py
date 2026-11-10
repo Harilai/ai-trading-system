@@ -127,10 +127,17 @@ class InstrumentCatalog:
 
     @staticmethod
     def _safe_failure(failure: dict) -> dict:
+        if not isinstance(failure, dict):
+            return {"provider_id": "unknown", "reason": "Malformed provider failure record"}
         provider_id = str(failure.get("provider_id") or "unknown")[:128]
         reason = str(failure.get("reason") or "provider discovery failed")
         reason = re.sub(
-            r"(?i)(api[_-]?key|secret|token|authorization)(\s*[:=]\s*|\s+)[^\s&,;]+",
+            r"(?i)authorization\s*[:=]\s*(?:bearer|basic)\s+[^\s&,;]+",
+            "Authorization=[REDACTED]",
+            reason,
+        )
+        reason = re.sub(
+            r"(?i)(api[_-]?key|secret|token)\s*[:=]\s*[^\s&,;]+",
             r"\1=[REDACTED]",
             reason,
         )
@@ -144,8 +151,10 @@ class InstrumentCatalog:
         discovered_at: datetime | None = None,
         started_at: datetime | None = None,
     ) -> dict:
-        stamp = (discovered_at or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
-        started = (started_at or discovered_at or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+        completed_dt = discovered_at or datetime.now(timezone.utc)
+        started_dt = started_at or completed_dt
+        stamp = completed_dt.astimezone(timezone.utc).isoformat()
+        started = started_dt.astimezone(timezone.utc).isoformat()
         run_id = str(uuid4())
         safe_failures = [self._safe_failure(item) for item in failures]
         prepared = []
