@@ -489,6 +489,75 @@ class PaperPortfolio:
             ).fetchone()
         return self._decode_order_intent(row) if row else None
 
+    def order_intent_is_fresh(
+        self,
+        client_order_id: str,
+        max_data_age_seconds: int,
+        max_fx_age_seconds: int,
+        now_ms: int | None = None,
+    ) -> bool:
+        intent = self.get_order_intent(client_order_id)
+        if not intent or intent["status"] != "risk_approved":
+            return False
+        request = intent["request"]
+        now = int(now_ms if now_ms is not None else datetime.now(timezone.utc).timestamp() * 1000)
+        try:
+            market_timestamp = int(request.get("market_timestamp"))
+            max_data_age = int(max_data_age_seconds) * 1000
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if market_timestamp <= 0 or market_timestamp > now or now - market_timestamp > max_data_age:
+            return False
+        if str(request.get("quote_currency") or "EUR").upper() == "USD":
+            try:
+                fx_timestamp = int(request.get("fx_timestamp"))
+                max_fx_age = int(max_fx_age_seconds) * 1000
+            except (TypeError, ValueError, OverflowError):
+                return False
+            if fx_timestamp <= 0 or fx_timestamp > now or now - fx_timestamp > max_fx_age:
+                return False
+        return True
+
+    def expire_order_intent(self, client_order_id: str, reason: str) -> bool:
+        if not isinstance(reason, str) or not reason.strip():
+            raise PortfolioError("Order intent expiry requires a reason")
+        with self.lock, self.connect() as db:
+            stamp = datetime.now(timezone.utc).isoformat()
+            current = db.execute(
+                "SELECT status FROM order_intents WHERE client_order_id=?",
+                (client_order_id,),
+            ).fetchone()
+            if current is None:
+                return False
+            if current["status"] == "expired":
+                return True
+            if current["status"] != "risk_approved":
+                return False
+            changed = db.execute(
+                "UPDATE order_intents SET status='expired',rejection_reason=?,updated_at=? "
+                "WHERE client_order_id=? AND status='risk_approved'",
+                (reason.strip()[:2000], stamp, client_order_id),
+            ).rowcount
+            if changed == 1:
+                self._insert_order_intent_event(
+                    db, client_order_id, "risk_approved", "expired",
+                    {"reason": reason.strip()[:500]}, stamp,
+                )
+            return changed == 1
+
+    def list_order_intent_events(self, client_order_id: str) -> list[dict]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM order_intent_events WHERE client_order_id=? ORDER BY id",
+                (client_order_id,),
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["details"] = json.loads(item.pop("details_json") or "{}")
+            result.append(item)
+        return result
+
     def list_order_intents(self, limit: int = 100) -> list[dict]:
         if not isinstance(limit, int) or not 1 <= limit <= 1000:
             raise PortfolioError("Order intent limit must be between 1 and 1000")
