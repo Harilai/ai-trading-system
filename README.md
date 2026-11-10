@@ -90,6 +90,26 @@ docker compose logs -f api
 
 El contenedor API se ejecuta como usuario no privilegiado, con sistema de archivos raíz de solo lectura, capacidades Linux eliminadas y volumen persistente para SQLite. Un servicio independiente `backup` ejecuta copias diarias de ambas bases SQLite y, si se configura, las replica a un almacén S3-compatible por una red de egreso dedicada. El contenedor no publica puertos, usa usuario no privilegiado, filesystem read-only, capacidades eliminadas y healthcheck propio; los ciclos fallidos se reintentan sin esperar 24 horas. Ambos contenedores tienen rotación de logs. Las credenciales de almacenamiento se cargan únicamente desde `.env.backup` en el servicio `backup`; no se inyectan en el contenedor API. El puerto se publica solo en `127.0.0.1`; no queda expuesto directamente a Internet. Para administrar una instancia remota, usa un túnel SSH (`ssh -L 8000:127.0.0.1:8000 usuario@servidor`) o configura un reverse proxy TLS independiente y restringido.
 
+## Demo local paper
+
+Para probar el dashboard sin cuenta de exchange ni claves de trading, desde la raíz del repositorio ejecuta un único comando:
+
+```bash
+docker compose -f docker-compose.demo.yml up --build
+```
+
+Abre <http://localhost:8000/dashboard>. La instancia usa **10.000 EUR virtuales**, una base de datos/volumen separado (`paper_demo_data`) y cotizaciones públicas de Kraken. Las órdenes de la cartera son paper: no se envían a ningún exchange. Binance Spot Demo, Binance read-only, CCXT autenticado y backups externos se fuerzan desactivados; el compose no declara ningún servicio de producción. El puerto queda enlazado a localhost.
+
+El control local del dashboard usa el token fijo `local-paper-demo-only`; solo es apropiado para esta instancia enlazada a localhost. No expongas este compose a una red ni lo reutilices como despliegue. Para apagar la demo, pulsa `Ctrl+C`; para iniciarla en segundo plano, añade `-d` y usa `docker compose -f docker-compose.demo.yml down` para detenerla. Los datos virtuales persisten en el volumen `paper_demo_data`.
+
+Por defecto se muestra crypto con datos públicos. Para habilitar datos de acciones/ETF, copia `.env.demo.example` a `.env.demo` y añade una clave Twelve Data Basic de **solo datos**. Esa clave es opcional y solo se inyecta al servicio API como proveedor de cotizaciones; no se requieren ni deben añadirse credenciales de exchange, broker, Binance Demo, wallets o producción. `.env.demo` está excluido de Git.
+
+La configuración se puede revisar sin iniciar contenedores con:
+
+```bash
+docker compose -f docker-compose.demo.yml config --quiet
+```
+
 
 ## Copias de seguridad y restauración SQLite
 

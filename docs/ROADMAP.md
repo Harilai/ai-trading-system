@@ -31,11 +31,10 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 15. **Completado — contratos normalizados de cuenta (PR #71):** registry multi-account, permisos y balances normalizados.
 16. **Completado — adaptador genérico CCXT read-only (PR #72):** CEX Spot configurable por exchange ID, Kraken por defecto; consulta balances sin métodos de escritura.
 17. **Completado — contrato y endpoint de posiciones normalizadas (PR #73):** snapshot tipado por proveedor/cuenta/entorno, validación decimal e identidad de instrumento y capability gate. Los adaptadores actuales siguen declarando `positions=false`; endpoint preparado para proveedores que implementen lectura de posiciones.
-18. **Siguiente — ledger persistente de posiciones multi-venue:** snapshots append-only por proveedor/cuenta/instrumento, diferencias sin asumir ausencias como cero, coste/mark/P&L y divisa con procedencia y frescura; después conectar adaptadores de broker que soporten posiciones.
-19. Supervisión paper equity y operación 24/7: stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
-20. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
-17. Supervisión paper equity y operación 24/7: stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
-18. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+18. **En curso — ledger persistente de posiciones multi-venue (PR #74 abierta):** snapshots append-only por proveedor/cuenta/instrumento, diferencias sin asumir ausencias como cero, coste/mark/P&L y divisa con procedencia y frescura; después conectar adaptadores de broker que soporten posiciones.
+19. **Completado en PR #75 — demo local paper:** Compose aislado con 10.000 EUR virtuales, datos públicos Kraken, clave Twelve Data opcional solo para cotizaciones, sin credenciales de cuenta ni ruta de ejecución. CI: 460 tests Python y validación/build Docker correctos en el SHA `7abd5f527612d0c593e93d8a94852cc29d0a72d8`.
+20. Supervisión paper equity y operación 24/7: stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
+21. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario. Sigue fuera del alcance de esta fase.
 
 
 ## Estado integrado
