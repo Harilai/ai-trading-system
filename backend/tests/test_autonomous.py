@@ -804,3 +804,39 @@ def test_decision_cycle_blocks_new_scan_when_another_intent_needs_reconciliation
         asyncio.run(worker._execute({
             "id": "new-decision-task", "kind": "decision_cycle", "payload": {},
         }))
+
+
+def test_decision_cycle_expires_stale_approved_intent_instead_of_filling(tmp_path):
+    import asyncio
+    from datetime import datetime, timezone
+
+    from app.portfolio import PaperPortfolio
+
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    task_id = "stale-approved-task"
+    path = str(tmp_path / "stale-approved-order.db")
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": task_id,
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": "ema_12_26", "stop_loss": 9800, "take_profit": 10400,
+        "market_timestamp": now_ms - 600_000,
+    }
+    portfolio = PaperPortfolio(path, 20)
+    portfolio.record_order_intent(task_id, request, {"action": "buy", "risk": {"accepted": True}})
+
+    class ScoutMustNotRescan:
+        def scan(self, *args, **kwargs):
+            raise AssertionError("Stale approved intent must expire without new scan")
+
+    worker = AutonomousAgent(
+        AutonomousStore(path), scout=ScoutMustNotRescan(), chief=object(), portfolio=portfolio,
+    )
+    result = asyncio.run(worker._execute({
+        "id": task_id, "kind": "decision_cycle", "payload": {},
+    }))
+
+    assert result["execution"] == "expired"
+    assert portfolio.get_order_intent(task_id)["status"] == "expired"
+    assert portfolio.history() == []
