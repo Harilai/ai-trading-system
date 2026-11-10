@@ -13,7 +13,7 @@
 - Dashboard: distinguir validación de promoción y elegibilidad paper experimental, mostrando los motivos de cada una y advirtiendo que aptitud experimental no equivale a rentabilidad.
 - Chief: registrar contadores concretos de candidatos, señales, exclusiones por símbolo/posición/precio y propuestas rechazadas por Sniper/Risk Manager.
 - Se añadieron pruebas para persistencia, compatibilidad legacy y decisiones hold sin señal de entrada.
-- CI de los primeros commits de implementación ha pasado; tras los últimos ajustes, CI y revisión independiente siguen pendientes sobre el head actualizado. No considerar completado hasta verificar el SHA exacto y mergear a `demo`.
+- CI completo (Python tests y Docker build/runtime hardening) pasó en el head `a299b8732890c80999ff53fa9b5520aa23d3b4cf`; si cambia el código o este handoff, repetir CI sobre el nuevo head. Revisión independiente pendiente antes del merge.
 - Seguridad: paper-only; no se amplían permisos, límites ni rutas de ejecución real.
 
 ## Fase completada — timestamps Kraken (PR #81)
