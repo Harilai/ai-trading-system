@@ -92,7 +92,8 @@ class AccountCapabilities:
         if any(not isinstance(value, bool) for value in flags.values()):
             raise AccountProviderError("Account capability flags must be explicit booleans")
         if flags["read_only"] and (
-            flags["order_submission"] or flags["transfers"] or flags["withdrawals"] or flags["wallet_signing"]
+            flags["order_management"] or flags["order_submission"] or flags["order_cancellation"]
+            or flags["transfers"] or flags["withdrawals"] or flags["wallet_signing"]
         ):
             raise AccountProviderError("Read-only account capability conflicts with write permissions")
         restrictions = description.get("restrictions", [])
@@ -380,7 +381,9 @@ class AccountProviderRegistry:
     ) -> dict:
         capabilities = self.capabilities(provider_id, account_alias)
         if not capabilities.read_only or any((
+            capabilities.order_management,
             capabilities.order_submission,
+            capabilities.order_cancellation,
             capabilities.transfers,
             capabilities.withdrawals,
             capabilities.wallet_signing,
