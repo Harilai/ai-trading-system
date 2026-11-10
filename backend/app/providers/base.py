@@ -168,12 +168,14 @@ class MarketInstrument:
             raise ValueError("Unsupported instrument trading_status")
 
         if self.option_type is not None:
+            if not isinstance(self.option_type, str):
+                raise ValueError("option_type must be call or put")
             normalized_option_type = self.option_type.strip().lower()
             if self.asset_class != AssetClass.OPTION or normalized_option_type not in {"call", "put"}:
                 raise ValueError("option_type is only valid as call or put for option instruments")
             object.__setattr__(self, "option_type", normalized_option_type)
         if self.asset_class == AssetClass.OPTION:
-            if not self.expiry or not self.underlying:
+            if not isinstance(self.expiry, str) or not self.expiry.strip() or not isinstance(self.underlying, str) or not self.underlying.strip():
                 raise ValueError("Option instruments require expiry, positive strike and underlying")
             if self.option_type not in {"call", "put"} or self.strike is None:
                 raise ValueError("Option instruments require option_type call or put and a positive strike")
