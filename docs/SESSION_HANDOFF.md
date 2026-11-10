@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `353023840da4037a2014ff68833740ef32374c7c` — main revisado antes de la fase dashboard PR #50.  
+> **Último commit observado en `main`:** `848d1d375bedbd463f6433b42a47ea9d94c39733` — merge de PR #50, dashboard ampliado.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -122,6 +122,9 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 ### Fase dashboard — PR #50
 
 - PR: https://github.com/Harilai/ai-trading-system/pull/50
+- Merge commit: `848d1d375bedbd463f6433b42a47ea9d94c39733`.
+- Head validado: `3c993a79e4448a909cdc310e5a6245914cfe9ba6`.
+- CI: 305 pruebas Python correctas; Compose, build Docker y ejecución non-root correctos.
 - Rama: `feature/dashboard-operations-v2`.
 - Añade gráfico nativo de velas OHLC, selector de símbolo/proveedor/intervalo y divisa de cotización correcta.
 - Muestra capabilities declaradas y readiness API/worker; no equipara descubrimiento de instrumentos con cuenta autenticada o trading habilitado.
@@ -131,7 +134,7 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - Añade solicitudes y aprobación/cancelación de retiradas paper. Son cambios en el ledger simulado; no hay transferencia bancaria, exchange ni wallet.
 - El token se mantiene en memoria JavaScript, se borra del campo al validarse y las respuestas autenticadas usan `cache: no-store`.
 - Todo el contenido recibido de API se representa mediante text nodes; no se inserta como HTML.
-- CI inicial pasó en un head anterior; la validación final debe comprobarse en el HEAD exacto antes de mergear.
+- La validación se ejecutó en el HEAD exacto indicado arriba antes del merge.
 
 ## 5. Objetivo de producto y siguientes fases
 

@@ -27,7 +27,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 
 | Área | Estado |
 |---|---|
-| Dashboard de supervisión y operaciones paper | Implementado en PR #50: OHLC candlesticks, provider/readiness health, equity research, strategy history, order intents, backup status y paper withdrawals; CI pendiente de validación final |
+| Dashboard de supervisión y operaciones paper | Implementado y fusionado en PR #50 (`848d1d3`); 305 tests y Docker hardening correctos |
 | Backups externos S3-compatible y restore candidate verificado | Implementado y fusionado en PR #48 (`ed08cec`); off-host desactivado por defecto hasta configurar `.env.backup`; 304 tests y Docker hardening correctos |
 | Ciclo de vida y conciliación de órdenes paper | Implementado y fusionado en PR #44 (`df76011`); 292 tests y Docker hardening correctos |
 | Cartera paper multidivisa EUR/USD, conversiones FX y manual equity/ETF paper | Implementado y fusionado en PR #41 (`23cfcb5`); 270 tests y Docker hardening correctos |
