@@ -496,7 +496,7 @@ def _paper_equity_order(order: OrderRequest):
     except PortfolioError as exc:
         raise HTTPException(422, str(exc)) from exc
     try:
-        return portfolio.execute(**execution_request)
+        return portfolio.execute(**execution_request, require_order_intent=True)
     except PortfolioError as exc:
         current_intent = portfolio.get_order_intent(order.client_order_id.strip())
         if current_intent and current_intent["status"] == "risk_approved":
@@ -625,7 +625,7 @@ def paper_order(
             {"risk": risk.model_dump(), "proposal": proposal.model_dump()},
         )
         try:
-            return portfolio.execute(**execution_request)
+            return portfolio.execute(**execution_request, require_order_intent=True)
         except PortfolioError as exc:
             current_intent = portfolio.get_order_intent(order.client_order_id.strip())
             if current_intent and current_intent["status"] == "risk_approved":
