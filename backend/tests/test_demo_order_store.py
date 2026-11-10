@@ -371,3 +371,73 @@ def test_demo_order_store_rejects_noncanonical_fill_decimals_and_fee_assets(tmp_
         store.record_fills("demo-order-1", [{**base, "amount": "1e-3"}])
     with pytest.raises(DemoOrderStoreError, match="fee currency"):
         store.record_fills("demo-order-1", [{**base, "trade_id": "trade-validate-2", "fee_currency": "USDT!"}])
+
+
+def test_demo_reconciliation_lease_is_exclusive_and_fences_stale_writers(tmp_path):
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-reconcile-lease.db"))
+    store.prepare_intent(request())
+    first = store.claim_reconciliation_lease(interval_seconds=15, lease_seconds=30)
+    assert first is not None
+    assert store.claim_reconciliation_lease(interval_seconds=15, lease_seconds=30) is None
+
+    with store.connect() as db:
+        db.execute(
+            "UPDATE binance_demo_reconciliation_control SET lease_until='2000-01-01T00:00:00+00:00',next_due_at='2000-01-01T00:00:00+00:00' WHERE id=1"
+        )
+    second = store.claim_reconciliation_lease(interval_seconds=15, lease_seconds=30)
+    assert second is not None
+    assert second["lease_token"] != first["lease_token"]
+
+    with pytest.raises(DemoOrderConflict, match="lease was lost"):
+        store.transition(
+            "demo-order-1", "submission_unknown",
+            payload={"source": "stale_worker"},
+            lease_token=first["lease_token"],
+        )
+    updated = store.transition(
+        "demo-order-1", "submission_unknown",
+        payload={"source": "current_worker"},
+        lease_token=second["lease_token"],
+    )
+    assert updated["status"] == "submission_unknown"
+
+
+def test_demo_reconciliation_lease_completion_enforces_persistent_interval(tmp_path):
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-reconcile-interval.db"))
+    lease = store.claim_reconciliation_lease(interval_seconds=15, lease_seconds=30)
+    assert lease is not None
+    assert store.complete_reconciliation_lease(
+        lease["lease_token"], success=True, interval_seconds=15,
+    ) is True
+    assert store.claim_reconciliation_lease(interval_seconds=15, lease_seconds=30) is None
+
+    with store.connect() as db:
+        db.execute(
+            "UPDATE binance_demo_reconciliation_control SET next_due_at='2000-01-01T00:00:00+00:00' WHERE id=1"
+        )
+    next_lease = store.claim_reconciliation_lease(interval_seconds=15, lease_seconds=30)
+    assert next_lease is not None
+    assert next_lease["lease_token"] != lease["lease_token"]
+
+
+def test_demo_reconciliation_candidates_include_incomplete_terminal_fill_ledger(tmp_path):
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-reconcile-candidates.db"))
+    store.prepare_intent(request())
+    store.transition("demo-order-1", "submission_unknown")
+    store.transition(
+        "demo-order-1", "filled",
+        exchange_order_id="exchange-1",
+        filled="0.001", remaining="0", average="20000",
+    )
+    assert [item["client_order_id"] for item in store.list_reconciliation_candidates()] == [
+        "demo-order-1",
+    ]
+    store.record_fills("demo-order-1", [{
+        "trade_id": "candidate-fill",
+        "exchange_order_id": "exchange-1",
+        "symbol": "BTC/USDT", "side": "buy",
+        "amount": "0.001", "price": "20000", "cost": "20",
+        "fee_cost": "0", "fee_currency": "USDT",
+        "timestamp_ms": 1794312000000,
+    }])
+    assert store.list_reconciliation_candidates() == []

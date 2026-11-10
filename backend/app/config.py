@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     agent_control_token: str = ""
     decision_cycle_interval_seconds: int = Field(default=300, ge=60)
     equity_research_interval_seconds: int = Field(default=21600, ge=3600)
+    binance_demo_reconciliation_interval_seconds: int = Field(default=30, ge=15, le=3600)
     backup_interval_seconds: int = Field(default=86400, ge=3600)
     backup_retry_interval_seconds: int = Field(default=300, ge=60, le=3600)
     backup_retention_days: int = Field(default=14, ge=1, le=365)
