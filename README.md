@@ -90,6 +90,26 @@ docker compose logs -f api
 
 El contenedor API se ejecuta como usuario no privilegiado, con sistema de archivos raíz de solo lectura, capacidades Linux eliminadas y volumen persistente para SQLite. Un servicio independiente `backup` ejecuta copias diarias de ambas bases SQLite y, si se configura, las replica a un almacén S3-compatible por una red de egreso dedicada. El contenedor no publica puertos, usa usuario no privilegiado, filesystem read-only, capacidades eliminadas y healthcheck propio; los ciclos fallidos se reintentan sin esperar 24 horas. Ambos contenedores tienen rotación de logs. Las credenciales de almacenamiento se cargan únicamente desde `.env.backup` en el servicio `backup`; no se inyectan en el contenedor API. El puerto se publica solo en `127.0.0.1`; no queda expuesto directamente a Internet. Para administrar una instancia remota, usa un túnel SSH (`ssh -L 8000:127.0.0.1:8000 usuario@servidor`) o configura un reverse proxy TLS independiente y restringido.
 
+## Demo local paper
+
+Para probar el dashboard sin cuenta de exchange ni claves de trading, desde la raíz del repositorio ejecuta un único comando:
+
+```bash
+docker compose -f docker-compose.demo.yml up --build
+```
+
+Abre <http://localhost:8000/dashboard>. La instancia usa **10.000 EUR virtuales**, una base de datos/volumen separado (`paper_demo_data`) y cotizaciones públicas de Kraken. Las órdenes de la cartera son paper: no se envían a ningún exchange. Binance Spot Demo, Binance read-only, CCXT autenticado y backups externos se fuerzan desactivados; el compose no declara ningún servicio de producción. El puerto queda enlazado a localhost.
+
+El control local del dashboard usa el token fijo `local-paper-demo-only`; solo es apropiado para esta instancia enlazada a localhost. No expongas este compose a una red ni lo reutilices como despliegue. Para apagar la demo, pulsa `Ctrl+C`; para iniciarla en segundo plano, añade `-d` y usa `docker compose -f docker-compose.demo.yml down` para detenerla. Los datos virtuales persisten en el volumen `paper_demo_data`.
+
+Por defecto se muestra crypto con datos públicos. Para habilitar datos de acciones/ETF, copia `.env.demo.example` a `.env.demo` y añade una clave Twelve Data Basic de **solo datos**. Esa clave es opcional y solo se inyecta al servicio API como proveedor de cotizaciones; no se requieren ni deben añadirse credenciales de exchange, broker, Binance Demo, wallets o producción. `.env.demo` está excluido de Git.
+
+La configuración se puede revisar sin iniciar contenedores con:
+
+```bash
+docker compose -f docker-compose.demo.yml config --quiet
+```
+
 
 ## Copias de seguridad y restauración SQLite
 
@@ -160,10 +180,10 @@ El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y contr
 - `GET /api/providers` — proveedores configurados y capability matrix. Twelve Data aparece si `TWELVE_DATA_API_KEY` está configurada.
 - `GET /api/accounts` — estado y capacidades de conectores de cuenta; requiere `X-Agent-Token`.
 - `GET /api/accounts/{provider_id}/balances?account_alias=...` — balances normalizados por proveedor/cuenta; requiere `X-Agent-Token`.
-- `GET /api/accounts/{provider_id}/positions?account_alias=...&market_type=...` — posiciones normalizadas cuando el adaptador declara esa capability; requiere `X-Agent-Token`.
+- `GET /api/accounts/{provider_id}/positions?account_alias=...&market_type=...` — posiciones normalizadas solo para conectores que declaren y ejecuten explícitamente la capacidad `positions`; no infiere posiciones spot a partir de balances. El `market_type` es obligatorio en cuentas multi-market. Devuelve `409` si el proveedor no soporta posiciones y `422` si el alcance solicitado no coincide; requiere `X-Agent-Token`.
 - El conector CCXT read-only permite añadir un CEX compatible (Kraken por defecto) mediante `CCXT_READONLY_EXCHANGE_ID`, `CCXT_READONLY_API_KEY` y `CCXT_READONLY_API_SECRET`; solo consulta balances Spot y no expone métodos de trading.
-- `POST /api/accounts/{provider_id}/snapshots?account_alias=...&market_type=...` — snapshot inmutable de balances y posiciones para cuentas declaradas explícitamente read-only; rechaza cuentas Demo/trading-enabled.
-- `GET /api/accounts` también devuelve `normalized_accounts` con capacidades y permisos declarados. El ledger admite snapshots separados por entorno y market type (`spot`, `cash_equity`, `margin`, `futures`, `options`, `forex`, `onchain`); no mezcla cuentas ni modifica la cartera paper. `permissions_verified=false` indica que el software no ha verificado los scopes reales de la API key; el operador debe crearla con privilegios mínimos.
+- `POST /api/accounts/{provider_id}/snapshots?account_alias=...&market_type=...` — snapshot inmutable de balances/posiciones solo para cuentas declaradas explícitamente read-only; rechaza cuentas Demo/trading-enabled. Las ausencias solo se interpretan como cierres si la captura de posiciones declara `positions_complete=true`.
+- `GET /api/accounts` también devuelve `normalized_accounts` con capacidades y permisos declarados. `permissions_verified=false` indica que el software no ha verificado los scopes reales de la API key; el operador debe crearla con privilegios mínimos.
 - `GET /api/accounts/binance/spot/balances` — balances reales de Binance Spot, solo lectura y sin persistencia; requiere `X-Agent-Token`.
 - `GET /api/demo/binance/spot/balances` — balances virtuales de Binance Spot Demo Trading; requiere `X-Agent-Token` y configuración demo explícita.
 - `GET /api/demo/binance/spot/markets` — catálogo de mercados Spot disponibles en Demo Trading; requiere `X-Agent-Token`.

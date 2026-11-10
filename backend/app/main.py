@@ -31,8 +31,7 @@ from .accounts.ccxt_readonly import CcxtReadOnlyAccount, CcxtReadOnlyAccountErro
 from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
 from .accounts.contracts import (
     AccountProviderError, AccountProviderNotFound, AccountProviderRegistry, AmbiguousAccountProvider,
-    InvalidAccountRequest,
-    UnsupportedAccountCapability,
+    InvalidAccountRequest, UnsupportedAccountCapability,
 )
 from .accounts.binance_demo import BinanceDemoError, BinanceSpotDemoExecution
 from .accounts.demo_order_store import (
@@ -229,9 +228,7 @@ def account_provider_positions(
         }
     except AccountProviderNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
-    except AmbiguousAccountProvider as exc:
-        raise HTTPException(409, str(exc)) from exc
-    except UnsupportedAccountCapability as exc:
+    except (UnsupportedAccountCapability, AmbiguousAccountProvider) as exc:
         raise HTTPException(409, str(exc)) from exc
     except InvalidAccountRequest as exc:
         raise HTTPException(422, str(exc)) from exc

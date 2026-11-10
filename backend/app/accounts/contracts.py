@@ -205,88 +205,88 @@ class AccountPosition:
 
     @classmethod
     def normalize(cls, raw: Any) -> "AccountPosition":
-        if isinstance(raw, cls):
+        if isinstance(raw, AccountPosition):
             raw = asdict(raw)
         if not isinstance(raw, dict):
-            raise AccountProviderError("Position record must be an object")
-        text_fields = ("instrument_id", "symbol", "asset_class", "market_type", "side", "quote_currency")
-        if any(not isinstance(raw.get(field), str) or not raw[field].strip() for field in text_fields):
-            raise AccountProviderError("Position identity fields are missing")
-        if len(raw["instrument_id"]) > 256 or len(raw["symbol"]) > 128:
-            raise AccountProviderError("Position identity field is too long")
-        if raw["asset_class"] not in {
-            "crypto", "forex", "equity", "etf", "index", "commodity",
-            "future", "option", "defi", "tokenized",
-        }:
-            raise AccountProviderError("Position asset class is unsupported")
-        if raw["market_type"] not in {
-            "spot", "cash_equity", "margin", "futures", "options", "forex", "onchain",
-        }:
-            raise AccountProviderError("Position market type is unsupported")
-        if raw["side"] not in ("long", "short"):
-            raise AccountProviderError("Position side must be long or short")
-        quote = raw["quote_currency"].strip().upper()
-        if not re.fullmatch(r"[A-Z0-9._-]{1,24}", quote):
-            raise AccountProviderError("Position quote currency is invalid")
-        quantity = _decimal_text(raw.get("quantity"), field="position quantity")
-        if quantity is None or Decimal(quantity) <= 0:
-            raise AccountProviderError("Position quantity must be positive")
+            raise AccountProviderError("Account position record must be an object")
+        fields = ("instrument_id", "symbol", "asset_class", "market_type", "side", "quote_currency")
+        values = {}
+        for field in fields:
+            value = raw.get(field)
+            if not isinstance(value, str) or not value.strip() or len(value) > 128:
+                raise AccountProviderError(f"Account position {field} is invalid")
+            values[field] = value.strip()
+        instrument_id = values["instrument_id"]
+        symbol = values["symbol"]
+        if not re.fullmatch(r"[A-Za-z0-9._:/-]{1,256}", instrument_id):
+            raise AccountProviderError("Account position instrument_id is invalid")
+        if not re.fullmatch(r"[A-Za-z0-9._:/-]{1,128}", symbol):
+            raise AccountProviderError("Account position symbol is invalid")
+        asset_class = values["asset_class"].lower()
+        market_type = values["market_type"].lower()
+        side = values["side"].lower()
+        quote_currency = values["quote_currency"].upper()
+        if asset_class not in {"crypto", "equity", "etf", "forex", "index", "commodity", "future", "option", "bond", "other", "defi", "tokenized"}:
+            raise AccountProviderError("Account position asset_class is unsupported")
+        if market_type not in {"spot", "margin", "future", "futures", "option", "options", "perpetual", "cash", "cash_equity", "forex", "onchain"}:
+            raise AccountProviderError("Account position market_type is unsupported")
+        if side not in {"long", "short"}:
+            raise AccountProviderError("Account position side is invalid")
+        if not re.fullmatch(r"[A-Z0-9._-]{1,24}", quote_currency):
+            raise AccountProviderError("Account position quote_currency is invalid")
+        quantity = _decimal_text(raw.get("quantity"), field="position quantity", allow_zero=False)
+        if quantity is None:
+            raise AccountProviderError("Account position quantity is required")
         optional = {}
         for field in ("average_entry_price", "mark_price", "market_value"):
             optional[field] = _decimal_text(raw.get(field), field=f"position {field}")
         for field in ("average_entry_price", "mark_price"):
             if optional[field] is not None and Decimal(optional[field]) <= 0:
-                raise AccountProviderError(f"Position {field} must be positive")
+                raise AccountProviderError(f"Account position {field} must be positive")
         pnl = raw.get("unrealized_pnl")
         if pnl is not None:
-            if not isinstance(pnl, str):
-                raise AccountProviderError("Position unrealized P&L must be a decimal string")
-            try:
-                amount = Decimal(pnl)
-            except (InvalidOperation, ValueError):
-                raise AccountProviderError("Position unrealized P&L is malformed") from None
+            if not isinstance(pnl, str) or not re.fullmatch(r"-?\d+(?:\.\d+)?", pnl):
+                raise AccountProviderError("Account position unrealized_pnl must be a plain decimal string")
+            amount = Decimal(pnl)
             if not amount.is_finite() or len(amount.as_tuple().digits) > 80 or abs(amount.as_tuple().exponent) > 80:
-                raise AccountProviderError("Position unrealized P&L is invalid")
+                raise AccountProviderError("Account position unrealized_pnl is invalid")
             pnl = format(amount, "f")
             if "." in pnl:
                 pnl = pnl.rstrip("0").rstrip(".")
-            if pnl in ("", "-0"):
-                pnl = "0"
         return cls(
-            instrument_id=raw["instrument_id"].strip(),
-            symbol=raw["symbol"].strip(),
-            asset_class=raw["asset_class"],
-            market_type=raw["market_type"],
+            instrument_id=instrument_id,
+            symbol=symbol,
+            asset_class=asset_class,
+            market_type=market_type,
             quantity=quantity,
-            side=raw["side"],
-            quote_currency=quote,
-            average_entry_price=optional["average_entry_price"],
-            mark_price=optional["mark_price"],
-            market_value=optional["market_value"],
+            side=side,
+            quote_currency=quote_currency,
+            **optional,
             unrealized_pnl=pnl,
         )
 
-    def to_dict(self) -> dict:
-        return asdict(self)
-
 
 @dataclass(frozen=True)
-class AccountOrder:
+class AccountPositionSnapshot:
     provider_id: str
     account_alias: str
-    client_order_id: str | None
-    exchange_order_id: str
-    instrument_id: str
-    symbol: str
-    side: str
-    order_type: str
-    status: str
-    quantity: str
-    filled_quantity: str
-    remaining_quantity: str
-    average_fill_price: str | None
-    quote_currency: str
-    updated_at: str
+    market_type: str
+    environment: str
+    fetched_at: str
+    positions_complete: bool
+    positions: tuple[AccountPosition, ...]
+
+    def to_dict(self) -> dict:
+        return {
+            "provider_id": self.provider_id,
+            "account_alias": self.account_alias,
+            "market_type": self.market_type,
+            "environment": self.environment,
+            "fetched_at": self.fetched_at,
+            "positions_complete": self.positions_complete,
+            "positions": [asdict(item) for item in self.positions],
+            "position_count": len(self.positions),
+        }
 
 
 @runtime_checkable
@@ -354,20 +354,13 @@ class AccountProviderRegistry:
 
     def list_accounts(self) -> list[dict]:
         with self._lock:
-            return [
-                self._capabilities[key].to_dict()
-                for key in sorted(self._capabilities)
-            ]
+            return [self._capabilities[key].to_dict() for key in sorted(self._capabilities)]
 
     def capabilities(self, provider_id: str, account_alias: str | None = None) -> AccountCapabilities:
         _, capabilities, _ = self._resolve(provider_id, account_alias)
         return capabilities
 
-    def fetch_balances(
-        self,
-        provider_id: str,
-        account_alias: str | None = None,
-    ) -> dict:
+    def fetch_balances(self, provider_id: str, account_alias: str | None = None) -> dict:
         provider, capabilities, lock = self._resolve(provider_id, account_alias)
         if not capabilities.balances:
             raise UnsupportedAccountCapability("Account provider does not declare balance support")
@@ -377,9 +370,7 @@ class AccountProviderRegistry:
         except AccountProviderError:
             raise
         except Exception as exc:
-            raise AccountProviderError(
-                f"Account balance request failed ({type(exc).__name__})"
-            ) from None
+            raise AccountProviderError(f"Account balance request failed ({type(exc).__name__})") from None
         if not isinstance(raw, dict):
             raise AccountProviderError("Account provider returned an invalid balance snapshot")
         if raw.get("provider_id") != capabilities.provider_id:
@@ -390,10 +381,7 @@ class AccountProviderRegistry:
         if not isinstance(market_type, str) or market_type not in capabilities.market_types:
             raise AccountProviderError("Account market type is not declared by the provider")
         raw_environment = raw.get("environment", capabilities.environment)
-        if (
-            not isinstance(raw_environment, str)
-            or raw_environment.strip().lower() != capabilities.environment
-        ):
+        if not isinstance(raw_environment, str) or raw_environment.strip().lower() != capabilities.environment:
             raise AccountProviderError("Account environment conflicts with declared provider capabilities")
         fetched_at = raw.get("fetched_at")
         if not isinstance(fetched_at, str):
@@ -459,9 +447,12 @@ class AccountProviderRegistry:
         provider, capabilities, lock = self._resolve(provider_id, account_alias)
         if not capabilities.positions:
             raise UnsupportedAccountCapability("Account provider does not declare position support")
+        fetcher = getattr(provider, "fetch_positions", None)
+        if not callable(fetcher):
+            raise UnsupportedAccountCapability("Account provider declares positions but has no position reader")
         try:
             with lock:
-                raw = provider.fetch_positions(market_type=market_type)
+                raw = fetcher(market_type=market_type)
         except AccountProviderError:
             raise
         except Exception as exc:
@@ -478,7 +469,7 @@ class AccountProviderRegistry:
         if not isinstance(selected_market, str) or selected_market not in capabilities.market_types:
             raise AccountProviderError("Position market_type is not declared by the provider")
         if market_type is not None and selected_market != market_type:
-            raise AccountProviderError("Position market_type conflicts with requested account market")
+            raise InvalidAccountRequest("Position market_type conflicts with requested account market")
         fetched_at = raw.get("fetched_at")
         if not isinstance(fetched_at, str):
             raise AccountProviderError("Position snapshot timestamp is missing")
@@ -491,28 +482,33 @@ class AccountProviderRegistry:
         age = (datetime.now(timezone.utc) - timestamp.astimezone(timezone.utc)).total_seconds()
         if age < -60 or age > 300:
             raise AccountProviderError("Position snapshot is stale or future-dated")
+        positions_complete = raw.get("positions_complete", False)
+        if not isinstance(positions_complete, bool):
+            raise AccountProviderError("Position completeness flag must be a boolean")
         raw_positions = raw.get("positions")
         if not isinstance(raw_positions, list):
             raise AccountProviderError("Account provider returned an invalid positions collection")
-        normalized = []
+        positions = []
         seen = set()
         for item in raw_positions:
             position = AccountPosition.normalize(item)
             if position.market_type != selected_market:
                 raise AccountProviderError("Position record market_type conflicts with snapshot")
-            key = (position.instrument_id, position.side)
-            if key in seen:
+            identity = (position.instrument_id, position.side)
+            if identity in seen:
                 raise AccountProviderError("Account provider returned duplicate instrument/side positions")
-            seen.add(key)
-            normalized.append(position.to_dict())
-        return {
-            "provider_id": capabilities.provider_id,
-            "account_alias": capabilities.account_alias,
-            "market_type": selected_market,
-            "environment": capabilities.environment,
-            "fetched_at": timestamp.astimezone(timezone.utc).isoformat(),
-            "positions": sorted(normalized, key=lambda item: (item["instrument_id"], item["side"])),
-        }
+            seen.add(identity)
+            positions.append(position)
+        return AccountPositionSnapshot(
+            provider_id=capabilities.provider_id,
+            account_alias=capabilities.account_alias,
+            market_type=selected_market,
+            environment=capabilities.environment,
+            fetched_at=timestamp.astimezone(timezone.utc).isoformat(),
+            positions_complete=positions_complete,
+            positions=tuple(sorted(positions, key=lambda item: (item.instrument_id, item.side))),
+        ).to_dict()
+
     def fetch_account_snapshot(
         self, provider_id: str, account_alias: str | None = None, *, market_type: str | None = None,
     ) -> dict:
@@ -529,8 +525,6 @@ class AccountProviderRegistry:
             selected_market = capabilities.market_types[0]
         if selected_market not in capabilities.market_types:
             raise UnsupportedAccountCapability("Requested market_type is not declared by this account")
-        if balance_snapshot is not None and balance_snapshot["market_type"] != selected_market:
-            raise AccountProviderError("Balance and position snapshots cannot mix market types")
         position_snapshot = (
             self.fetch_positions(provider_id, account_alias, market_type=selected_market)
             if capabilities.positions else None
@@ -557,6 +551,8 @@ class AccountProviderRegistry:
             "wallet_signing_enabled": capabilities.wallet_signing,
             "permissions_verified": capabilities.permissions_verified,
             "balances": balance_snapshot["balances"] if balance_snapshot else [],
+            "positions_supported": capabilities.positions,
+            "positions_complete": position_snapshot["positions_complete"] if position_snapshot else False,
             "positions": position_snapshot["positions"] if position_snapshot else [],
         }
     def record_read_only_snapshot(

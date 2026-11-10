@@ -69,6 +69,8 @@ class AccountSnapshotStore:
                     permissions_verified INTEGER NOT NULL DEFAULT 0,
                     position_count INTEGER NOT NULL DEFAULT 0,
                     position_change_count INTEGER NOT NULL DEFAULT 0,
+                    positions_supported INTEGER NOT NULL DEFAULT 0,
+                    positions_complete INTEGER NOT NULL DEFAULT 0,
                     FOREIGN KEY(previous_snapshot_id) REFERENCES account_snapshots(snapshot_id)
                 );
                 CREATE INDEX IF NOT EXISTS idx_account_snapshots_account
@@ -134,6 +136,8 @@ class AccountSnapshotStore:
                 "permissions_verified": "INTEGER NOT NULL DEFAULT 0",
                 "position_count": "INTEGER NOT NULL DEFAULT 0",
                 "position_change_count": "INTEGER NOT NULL DEFAULT 0",
+                "positions_supported": "INTEGER NOT NULL DEFAULT 0",
+                "positions_complete": "INTEGER NOT NULL DEFAULT 0",
             }
             for column, definition in migrations.items():
                 if column not in existing_columns:
@@ -182,16 +186,17 @@ class AccountSnapshotStore:
     def _signed_decimal_text(cls, value: Any, *, field: str, allow_zero: bool = True) -> str | None:
         if value is None:
             return None
+        label = "P&L" if field == "unrealized_pnl" else f"Position {field}"
         if not isinstance(value, str):
-            raise AccountSnapshotError(f"Position {field} must be a decimal string")
+            raise AccountSnapshotError(f"{label} must be a decimal string")
         try:
             amount = Decimal(value)
         except (InvalidOperation, ValueError):
-            raise AccountSnapshotError(f"Position {field} is malformed") from None
+            raise AccountSnapshotError(f"{label} is malformed") from None
         if not amount.is_finite() or (not allow_zero and amount == 0):
-            raise AccountSnapshotError(f"Position {field} is invalid")
+            raise AccountSnapshotError(f"{label} is invalid")
         if len(amount.as_tuple().digits) > 80 or abs(amount.as_tuple().exponent) > 80:
-            raise AccountSnapshotError(f"Position {field} exceeds supported precision")
+            raise AccountSnapshotError(f"{label} exceeds supported precision")
         return cls._format_decimal(amount)
 
     @classmethod
@@ -272,7 +277,7 @@ class AccountSnapshotStore:
         if any(permission_flags[key] for key in (
             "execution_enabled", "withdrawals_enabled", "transfers_enabled", "wallet_signing_enabled",
         )):
-            raise AccountSnapshotError("Account snapshot cannot include write, transfer, withdrawal or signing permissions")
+            raise AccountSnapshotError("Account snapshot cannot include execution or withdrawals/transfers/wallet-signing permissions")
 
         environment = snapshot.get("environment", "unspecified")
         venue_type = snapshot.get("venue_type", "unknown")
@@ -318,6 +323,12 @@ class AccountSnapshotStore:
         raw_positions = snapshot.get("positions", [])
         if not isinstance(raw_positions, list):
             raise AccountSnapshotError("Account snapshot positions must be a list")
+        positions_supported = snapshot.get("positions_supported", False)
+        positions_complete = snapshot.get("positions_complete", False)
+        if not isinstance(positions_supported, bool) or not isinstance(positions_complete, bool):
+            raise AccountSnapshotError("Position support and completeness flags must be booleans")
+        if not positions_supported and (raw_positions or positions_complete):
+            raise AccountSnapshotError("Positions cannot be present or complete when the provider lacks position support")
         positions = []
         seen_positions = set()
         for raw_position in raw_positions:
@@ -339,6 +350,8 @@ class AccountSnapshotStore:
             **permission_flags,
             "fetched_at": fetched_at.isoformat(),
             "balances": balances,
+            "positions_supported": positions_supported,
+            "positions_complete": positions_complete,
             "positions": positions,
         }
         return normalized, balances, positions
@@ -394,7 +407,13 @@ class AccountSnapshotStore:
         return changes
 
     @staticmethod
-    def _diff_positions(previous: dict[tuple[str, str], dict], current: dict[tuple[str, str], dict]) -> list[dict]:
+    def _diff_positions(
+        previous: dict[tuple[str, str], dict],
+        current: dict[tuple[str, str], dict],
+        *,
+        previous_complete: bool,
+        current_complete: bool,
+    ) -> list[dict]:
         changes = []
         fields = (
             "symbol", "asset_class", "market_type", "quantity", "quote_currency",
@@ -406,13 +425,15 @@ class AccountSnapshotStore:
             instrument_id, side = key
             if before is None:
                 changes.append({
-                    "instrument_id": instrument_id, "side": side, "state": "added",
+                    "instrument_id": instrument_id, "side": side,
+                    "state": "added" if previous_complete else "not_observed_in_previous_partial_snapshot",
                     "previous_present": False, "current_present": True,
                     "previous": None, "current": after,
                 })
             elif after is None:
                 changes.append({
-                    "instrument_id": instrument_id, "side": side, "state": "absent_from_latest_snapshot",
+                    "instrument_id": instrument_id, "side": side,
+                    "state": "absent_from_latest_snapshot" if current_complete else "not_observed_in_partial_snapshot",
                     "previous_present": True, "current_present": False,
                     "previous": before, "current": None,
                 })
@@ -442,7 +463,7 @@ class AccountSnapshotStore:
             db.execute("BEGIN IMMEDIATE")
             previous_row = db.execute(
                 """
-                SELECT snapshot_id,fetched_at FROM account_snapshots
+                SELECT snapshot_id,fetched_at,positions_supported,positions_complete FROM account_snapshots
                 WHERE provider_id=? AND account_alias=? AND market_type=? AND environment=?
                 ORDER BY fetched_at DESC, recorded_at DESC, snapshot_id DESC LIMIT 1
                 """,
@@ -456,17 +477,33 @@ class AccountSnapshotStore:
 
             previous_balances = {}
             previous_positions = {}
+            previous_positions_complete = bool(previous_row["positions_complete"]) if previous_row else False
             if previous_id:
                 rows = db.execute(
                     "SELECT asset,free,used,total FROM account_snapshot_balances WHERE snapshot_id=?",
                     (previous_id,),
                 ).fetchall()
                 previous_balances = {row["asset"]: dict(row) for row in rows}
+                position_baseline_id = previous_id
+                if not previous_positions_complete:
+                    complete_row = db.execute(
+                        """
+                        SELECT snapshot_id FROM account_snapshots
+                        WHERE provider_id=? AND account_alias=? AND market_type=? AND environment=?
+                          AND positions_supported=1 AND positions_complete=1
+                          AND fetched_at<=?
+                        ORDER BY fetched_at DESC,recorded_at DESC,snapshot_id DESC LIMIT 1
+                        """,
+                        (provider_id, account_alias, market_type, environment, normalized["fetched_at"]),
+                    ).fetchone()
+                    if complete_row:
+                        position_baseline_id = complete_row["snapshot_id"]
+                        previous_positions_complete = True
                 position_rows = db.execute(
                     "SELECT instrument_id,symbol,asset_class,market_type,quantity,side,quote_currency,"
                     "average_entry_price,mark_price,market_value,unrealized_pnl "
                     "FROM account_snapshot_positions WHERE snapshot_id=?",
-                    (previous_id,),
+                    (position_baseline_id,),
                 ).fetchall()
                 previous_positions = {
                     (row["instrument_id"], row["side"]): dict(row) for row in position_rows
@@ -477,11 +514,33 @@ class AccountSnapshotStore:
                 (item["instrument_id"], item["side"]): item for item in positions
             }
             balance_changes = self._diff(previous_balances, current_balances) if previous_id else []
-            position_changes = self._diff_positions(previous_positions, current_positions) if previous_id else []
+            position_changes = (
+                self._diff_positions(
+                    previous_positions, current_positions,
+                    previous_complete=previous_positions_complete,
+                    current_complete=normalized["positions_complete"],
+                ) if previous_id else []
+            )
             balance_change_count = sum(item["state"] != "unchanged" for item in balance_changes)
-            position_change_count = sum(item["state"] != "unchanged" for item in position_changes)
+            position_change_count = sum(
+                item["state"] in {"added", "changed", "absent_from_latest_snapshot"}
+                for item in position_changes
+            )
             change_count = balance_change_count + position_change_count
-            status = "initial" if previous_id is None else ("changed" if change_count else "unchanged")
+            positions_incomplete = (
+                (normalized["positions_supported"] and not normalized["positions_complete"])
+                or (
+                    previous_row is not None
+                    and bool(previous_row["positions_supported"])
+                    and not normalized["positions_supported"]
+                )
+            )
+            status = (
+                "initial" if previous_id is None and not positions_incomplete
+                else "incomplete" if positions_incomplete
+                else "changed" if change_count
+                else "unchanged"
+            )
 
             db.execute(
                 """
@@ -490,8 +549,8 @@ class AccountSnapshotStore:
                     previous_snapshot_id,reconciliation_status,change_count,balance_count,content_hash,
                     environment,venue_type,read_only,execution_enabled,withdrawals_enabled,
                     transfers_enabled,wallet_signing_enabled,permissions_verified,
-                    position_count,position_change_count
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    position_count,position_change_count,positions_supported,positions_complete
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     snapshot_id, provider_id, account_alias, market_type,
@@ -499,6 +558,7 @@ class AccountSnapshotStore:
                     status, change_count, len(balances), content_hash,
                     environment, venue_type, 1, 0, 0, 0, 0,
                     int(normalized["permissions_verified"]), len(positions), position_change_count,
+                    int(normalized["positions_supported"]), int(normalized["positions_complete"]),
                 ),
             )
             db.executemany(
@@ -563,7 +623,8 @@ class AccountSnapshotStore:
                 f"SELECT snapshot_id,provider_id,account_alias,market_type,environment,venue_type,"
                 f"read_only,execution_enabled,withdrawals_enabled,transfers_enabled,wallet_signing_enabled,"
                 f"permissions_verified,fetched_at,recorded_at,previous_snapshot_id,reconciliation_status,"
-                f"change_count,balance_count,position_count,position_change_count,content_hash "
+                f"change_count,balance_count,position_count,position_change_count,positions_supported,"
+                f"positions_complete,content_hash "
                 f"FROM account_snapshots {where} "
                 f"ORDER BY fetched_at DESC,recorded_at DESC,snapshot_id DESC LIMIT ?",
                 params,
@@ -573,7 +634,7 @@ class AccountSnapshotStore:
             item = dict(row)
             for field in (
                 "read_only", "execution_enabled", "withdrawals_enabled", "transfers_enabled",
-                "wallet_signing_enabled", "permissions_verified",
+                "wallet_signing_enabled", "permissions_verified", "positions_supported", "positions_complete",
             ):
                 item[field] = bool(item[field])
             results.append(item)
@@ -607,7 +668,31 @@ class AccountSnapshotStore:
             previous = {}
             previous_positions = {}
             previous_id = row["previous_snapshot_id"]
+            previous_positions_complete = False
             if previous_id:
+                previous_meta = db.execute(
+                    "SELECT positions_supported,positions_complete FROM account_snapshots WHERE snapshot_id=?",
+                    (previous_id,),
+                ).fetchone()
+                previous_positions_complete = bool(previous_meta["positions_supported"] and previous_meta["positions_complete"])
+                position_baseline_id = previous_id
+                if not previous_positions_complete:
+                    complete_meta = db.execute(
+                        """
+                        SELECT snapshot_id FROM account_snapshots
+                        WHERE provider_id=? AND account_alias=? AND market_type=? AND environment=?
+                          AND positions_supported=1 AND positions_complete=1
+                          AND fetched_at<=? AND snapshot_id<>?
+                        ORDER BY fetched_at DESC,recorded_at DESC,snapshot_id DESC LIMIT 1
+                        """,
+                        (
+                            row["provider_id"], row["account_alias"], row["market_type"],
+                            row["environment"], row["fetched_at"], snapshot_id.strip(),
+                        ),
+                    ).fetchone()
+                    if complete_meta:
+                        position_baseline_id = complete_meta["snapshot_id"]
+                        previous_positions_complete = True
                 previous_rows = db.execute(
                     "SELECT asset,free,used,total FROM account_snapshot_balances WHERE snapshot_id=? ORDER BY asset",
                     (previous_id,),
@@ -617,7 +702,7 @@ class AccountSnapshotStore:
                     "SELECT instrument_id,symbol,asset_class,market_type,quantity,side,quote_currency,"
                     "average_entry_price,mark_price,market_value,unrealized_pnl "
                     "FROM account_snapshot_positions WHERE snapshot_id=? ORDER BY instrument_id,side",
-                    (previous_id,),
+                    (position_baseline_id,),
                 ).fetchall()
                 previous_positions = {
                     (item["instrument_id"], item["side"]): dict(item)
@@ -627,13 +712,17 @@ class AccountSnapshotStore:
         result = dict(row)
         for field in (
             "read_only", "execution_enabled", "withdrawals_enabled", "transfers_enabled",
-            "wallet_signing_enabled", "permissions_verified",
+            "wallet_signing_enabled", "permissions_verified", "positions_supported", "positions_complete",
         ):
             result[field] = bool(result[field])
         result["balances"] = list(current.values())
         result["positions"] = list(current_positions.values())
         result["changes"] = self._diff(previous, current) if previous_id else []
         result["position_changes"] = (
-            self._diff_positions(previous_positions, current_positions) if previous_id else []
+            self._diff_positions(
+                previous_positions, current_positions,
+                previous_complete=previous_positions_complete,
+                current_complete=bool(result["positions_supported"] and result["positions_complete"]),
+            ) if previous_id else []
         )
         return result

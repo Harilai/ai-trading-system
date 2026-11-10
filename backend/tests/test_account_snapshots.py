@@ -29,6 +29,8 @@ def make_snapshot(
             {"asset": "EUR", "free": "20", "used": "0", "total": "20"},
         ],
         "positions": positions if positions is not None else [],
+        "positions_supported": positions is not None,
+        "positions_complete": positions is not None,
         "transfers_enabled": False,
         "wallet_signing_enabled": False,
         "permissions_verified": False,
@@ -269,6 +271,8 @@ def test_account_snapshot_store_reconciles_added_changed_and_removed_positions(t
             instrument_id="binance:cash_equity:MSFT", symbol="MSFT", quantity="1",
         )],
     ))
+    assert first["positions_supported"] is True
+    assert first["positions_complete"] is True
     second = store.record_snapshot(make_snapshot(
         market_type="cash_equity",
         positions=[
@@ -287,6 +291,33 @@ def test_account_snapshot_store_reconciles_added_changed_and_removed_positions(t
     assert changes[("binance:cash_equity:MSFT", "long")]["state"] == "absent_from_latest_snapshot"
     assert changes[("binance:cash_equity:NVDA", "long")]["state"] == "added"
     assert changes[("binance:cash_equity:AAPL", "long")]["current"]["unrealized_pnl"] == "-20"
+
+
+def test_partial_position_snapshots_never_report_false_closures_and_recover_from_last_complete(tmp_path):
+    store = AccountSnapshotStore(str(tmp_path / "accounts.db"))
+    first = store.record_snapshot(make_snapshot(
+        market_type="cash_equity",
+        positions=[make_position(), make_position(
+            instrument_id="binance:cash_equity:MSFT", symbol="MSFT", quantity="1",
+        )],
+    ))
+    partial = make_snapshot(market_type="cash_equity", positions=[make_position(quantity="3")])
+    partial["positions_complete"] = False
+    partial = store.record_snapshot(partial)
+    assert partial["positions_complete"] is False
+
+    partial_changes = {(item["instrument_id"], item["side"]): item for item in partial["position_changes"]}
+    assert partial["reconciliation_status"] == "incomplete"
+    assert partial["position_change_count"] == 1
+    assert partial_changes[("binance:cash_equity:MSFT", "long")]["state"] == "not_observed_in_partial_snapshot"
+
+    complete = store.record_snapshot(make_snapshot(
+        market_type="cash_equity", positions=[make_position(quantity="4")],
+    ))
+    complete_changes = {(item["instrument_id"], item["side"]): item for item in complete["position_changes"]}
+    assert complete["reconciliation_status"] == "changed"
+    assert complete_changes[("binance:cash_equity:MSFT", "long")]["state"] == "absent_from_latest_snapshot"
+    assert complete_changes[("binance:cash_equity:AAPL", "long")]["state"] == "changed"
 
 
 def test_account_snapshot_store_keeps_environments_and_market_types_separate(tmp_path):

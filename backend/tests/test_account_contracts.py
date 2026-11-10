@@ -246,6 +246,7 @@ def test_registry_supports_position_only_readonly_accounts_and_combined_snapshot
                 "market_type": "cash_equity",
                 "environment": "production",
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "positions_complete": True,
                 "positions": [{
                     "instrument_id": "broker:equity:AAPL",
                     "symbol": "AAPL",
@@ -333,7 +334,7 @@ def test_registry_rejects_duplicate_or_wrong_market_positions():
                 "account_key_permissions_verified": False,
             }
 
-        def fetch_positions(self):
+        def fetch_positions(self, market_type=None):
             return {
                 "provider_id": "test:positions",
                 "account_alias": "one",
@@ -382,13 +383,14 @@ def test_registry_rejects_stale_position_source_timestamps():
                 "account_key_permissions_verified": False,
             }
 
-        def fetch_positions(self):
+        def fetch_positions(self, market_type=None):
             return {
                 "provider_id": "test:stale-positions",
                 "account_alias": "account",
                 "market_type": "cash_equity",
                 "environment": "production",
                 "fetched_at": (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(),
+                "positions_complete": True,
                 "positions": [],
             }
 
@@ -463,6 +465,7 @@ def test_registry_combines_balances_and_positions_only_when_source_times_are_clo
                     datetime.now(timezone.utc)
                     - timedelta(seconds=self.position_time_offset_seconds)
                 ).isoformat(),
+                "positions_complete": True,
                 "positions": [{
                     "instrument_id": "broker:AAPL", "symbol": "AAPL",
                     "asset_class": "equity", "market_type": "cash_equity",

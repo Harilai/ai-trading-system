@@ -29,10 +29,12 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 13. **Completado en PR #66 — ledger idempotente de fills individuales y comisiones:** trade IDs, order ID, cantidad, precio, quote cost, comisión/activo, timestamp, persistencia append-only y bloqueo fail-closed hasta cubrir el fill acumulado.
 14. **Completado en PR #68 — reconciliación periódica Demo:** polling de órdenes abiertas/unknown y fills con leases persistentes, fencing, backoff, lotes acotados y recuperación tras restart; funciona con estrategia pausada y nunca reenvía órdenes.
 15. **Completado — contratos normalizados de cuenta (PR #71):** registry multi-account, permisos y balances normalizados.
-16. **Completado — adaptador genérico CCXT read-only (PR #72):** CEX Spot configurable por exchange ID (Kraken por defecto), autenticación API key/secret y solo lectura.
-17. **En curso — PR #73: ledger inmutable de posiciones multi-market:** snapshots por instrumento, market type y entorno, deltas exactos y separación de la cartera paper. Aún no incorpora un broker/venue con posiciones habilitadas.
-18. Incorporar adaptadores específicos de broker y posiciones por mercado; después supervisión paper equity y operación 24/7.
-19. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+16. **Completado — adaptador genérico CCXT read-only (PR #72):** CEX Spot configurable por exchange ID, Kraken por defecto; consulta balances sin métodos de escritura.
+17. **Completado — contrato y endpoint de posiciones normalizadas (PR #73):** snapshot tipado por proveedor/cuenta/entorno, validación decimal e identidad de instrumento y capability gate. Los adaptadores actuales siguen declarando `positions=false`; endpoint preparado para proveedores que implementen lectura de posiciones.
+18. **En curso — ledger persistente de posiciones multi-venue (PR #74):** integrado localmente con `main` tras PR #75/#76. Guarda snapshots append-only por proveedor/cuenta/market type/entorno; registra soporte y completitud de posiciones, y no interpreta ausencias como cierres cuando el proveedor marca la observación parcial. El reporte completo siguiente compara contra la última captura completa. Deltas exactos, identidad y timestamps validados. Suite local en Docker: 476 tests correctos; CI de GitHub pendiente sobre el head actualizado. Sin adaptador actual que publique posiciones.
+19. **Completado en PR #75 — demo local paper:** Compose aislado con 10.000 EUR virtuales, datos públicos Kraken, clave Twelve Data opcional solo para cotizaciones, sin credenciales de cuenta ni ruta de ejecución. CI: 460 tests Python y validación/build Docker correctos en el SHA `7abd5f527612d0c593e93d8a94852cc29d0a72d8`.
+20. Supervisión paper equity y operación 24/7: stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
+21. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario. Sigue fuera del alcance de esta fase.
 
 
 ## Estado integrado
@@ -40,8 +42,10 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 | Área | Estado |
 |---|---|
 | Contratos normalizados de account providers | Integrado en PR #71 (`a7a9bb8`); 433 tests, Docker hardening y endpoints genéricos autenticados |
-| Adaptador CCXT read-only multi-CEX | Integrado en PR #72 (`c44bc97`); 446 tests, balance Spot only y sin operaciones de escritura |
-| Ledger de posiciones multi-market | En revisión en PR #73; snapshots append-only por instrumento/entorno, aún sin adaptador de broker que publique posiciones |
+| Adaptador CCXT read-only multi-CEX | Integrado en PR #72 (`c44bc97`); Spot balance reads only, sin operaciones de escritura |
+| Contrato y endpoint de posiciones normalizadas | Integrado en PR #73 (`d9fefaf`); CI Python y Docker correctos; capability gate, sin adaptador de lectura real conectado |
+| Ledger append-only de posiciones multi-venue | PR #74 actualizado localmente sobre `main`; 476 pruebas Python pasan en contenedor; CI y revisión de GitHub pendientes; las ausencias solo producen deltas de cierre con snapshots completos |
+| Adaptador CCXT read-only multi-CEX | Integrado en PR #72; balance Spot only, API key scope no verificado por software, sin operaciones de escritura |
 | Catálogo persistente de instrumentos | Implementado y fusionado en PR #54 (`b9dbba5`); 323 tests y Docker hardening correctos |
 | Preparación operativa 24/7 | Implementada en PR #56 (`c892ff3`); 330 tests y Docker hardening correctos; VPS pendiente |
 | Binance Spot account connector (read-only) | Implementado en PR #57 (`8773d75`); 345 tests y Docker hardening correctos; API key no configurada |
@@ -119,7 +123,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [x] Conectar Risk Manager como puerta obligatoria para propuestas del Chief y órdenes paper.
 - [x] Añadir idempotencia de órdenes paper mediante `client_order_id` vinculado a la tarea.
 - [x] Completar estados legales de órdenes paper (PR #44) y lifecycle limit-order Binance Spot Demo (PR #63), con idempotencia, reconciliación y fail-closed.
-- [ ] Añadir reconciliación periódica automática de órdenes Demo abiertas/unknown tras restart, con lease, rate limit y sin reenvío ciego.
+- [x] Añadir reconciliación periódica automática de órdenes Demo abiertas/unknown tras restart, con lease, rate limit y sin reenvío ciego.
 - [ ] Añadir monitorización paper de stop-loss/take-profit equity con cotizaciones USD y FX frescas, cierres idempotentes y recuperación tras reinicio.
 - [x] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
 - [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
@@ -131,7 +135,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [x] Permitir solicitudes manuales sobre cualquier efectivo disponible, con aprobación explícita, reserva de efectivo para solicitudes pendientes y desglose entre beneficio reservado y capital no reservado.
 - [ ] Calcular mínimos y costes de retirada según proveedor; nunca conceder permisos de retirada a claves de trading.
 - [ ] Recalcular riesgo y capital viable tras una retirada.
-- [ ] Persistir fills individuales de Binance Demo con trade ID, cantidad, precio, comisión y activo de comisión; reconciliar idempotentemente contra el exchange antes de usar balances Demo como evidencia contable.
+- [x] Persistir fills individuales de Binance Demo con trade ID, cantidad, precio, comisión y activo de comisión; reconciliar idempotentemente contra el exchange antes de usar balances Demo como evidencia contable.
 
 ## Prioridad 4 — cobertura y producto
 
@@ -142,6 +146,8 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [ ] Implementar y validar un adaptador de broker de acciones/ETF, horarios, permisos, datos, mínimos y comisiones.
 - [x] Generalizar el portfolio a claves `provider_id + instrument_id`, con migración de datos legacy y aislamiento de símbolos duplicados.
 - [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución.
+- [x] Añadir contrato y endpoint autenticado para posiciones normalizadas, exigiendo capacidad explícita y sin sintetizarlas desde balances.
+- [ ] Persistir snapshots append-only de posiciones por cuenta/instrumento y conciliar sus cambios con coste, mark, P&L y divisa trazables.
 - [ ] Implementar adaptadores FX, índices y commodities solo tras validar APIs y elegibilidad.
 - [ ] Diseñar wallet read-only y blockchain monitoring antes de añadir firma aislada; no usar seeds en agentes.
 - [ ] Implementar DEX swaps con simulación, gas, slippage, MEV y reconciliación antes de habilitar ejecución.

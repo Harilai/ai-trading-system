@@ -1704,6 +1704,7 @@ def test_generic_account_position_routes_return_normalized_positions_and_snapsho
                 "market_type": "cash_equity",
                 "environment": "production",
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "positions_complete": True,
                 "positions": [{
                     "instrument_id": "broker:equity:AAPL",
                     "symbol": "AAPL",
