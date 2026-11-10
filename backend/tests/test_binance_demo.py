@@ -171,3 +171,13 @@ def test_binance_demo_connector_sanitizes_balance_errors():
 
     assert secret not in str(error.value)
     assert "auth header" not in str(error.value)
+
+
+def test_pinned_ccxt_binance_demo_mode_routes_to_demo_rest_host_without_network():
+    import ccxt
+
+    exchange = ccxt.binance()
+    enable_demo = getattr(exchange, "enable_demo_trading", None)
+    assert callable(enable_demo), f"CCXT {ccxt.__version__} lacks Binance Demo Trading support"
+    enable_demo(True)
+    BinanceSpotDemoAccount._verify_demo_endpoints(exchange)
