@@ -248,6 +248,8 @@ class AutonomousStore:
         return {"id": task_id, "kind": kind, "status": "pending", "due_at": due}
 
     def claim_due_task(self, lease_seconds: int = 120) -> dict[str, Any] | None:
+        if lease_seconds < 1:
+            raise ValueError("Task lease must be at least one second")
         now = utcnow()
         lease = (now + timedelta(seconds=lease_seconds)).isoformat()
         with self.lock, self.connect() as db:
