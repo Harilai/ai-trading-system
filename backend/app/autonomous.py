@@ -523,8 +523,8 @@ class AutonomousAgent:
         chief=None,
         portfolio=None,
         equity_research=None,
-        demo_reconciler=None,
         *,
+        demo_reconciler=None,
         poll_interval_seconds: float = 5.0,
     ):
         if poll_interval_seconds <= 0:
