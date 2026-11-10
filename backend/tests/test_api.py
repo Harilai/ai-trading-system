@@ -132,6 +132,12 @@ def test_manual_buy_passes_risk_manager_and_persists_protection(monkeypatch, tmp
     )
 
     assert response.status_code == 201
+    intent = paper.get_order_intent("manual-crypto-buy")
+    assert intent["status"] == "filled"
+    assert intent["request"]["market_timestamp"] == timestamp
+    assert [event["to_status"] for event in paper.list_order_intent_events("manual-crypto-buy")] == [
+        "risk_approved", "filled",
+    ]
     position = paper.snapshot()["positions"][0]
     assert position["stop_loss"] == 9800
     assert position["take_profit"] == 10500
@@ -474,6 +480,10 @@ def test_manual_usd_equity_paper_order_requires_conversion_and_records_native_cu
         headers=headers,
     )
     assert response.status_code == 201, response.text
+    intent = paper.get_order_intent("manual-aapl-1")
+    assert intent["status"] == "filled"
+    assert intent["request"]["market_timestamp"] == timestamp
+    assert intent["request"]["fx_timestamp"] == timestamp
     assert replay.status_code == 201
     assert replay.json()["idempotent_replay"] is True
     assert replay.json()["id"] == response.json()["id"]
