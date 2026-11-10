@@ -321,12 +321,11 @@ def _reconcile_binance_demo_fills(client_order_id: str) -> dict:
         if cumulative_filled == 0:
             result = demo_order_store.record_fills(client_order_id, [])
             return {**result, "exchange_history_complete": True}
-        created_at = datetime.fromisoformat(order["created_at"])
-        since = max(0, int(created_at.timestamp() * 1000) - 60_000)
+        # Binance /api/v3/myTrades permits orderId filtering only without
+        # startTime/endTime. The exchange order ID is the authoritative filter.
         exchange_result = binance_demo_account_provider.fetch_order_fills(
             symbol=order["symbol"],
             exchange_order_id=order["exchange_order_id"],
-            since=since,
             limit=1000,
         )
         result = demo_order_store.record_fills(client_order_id, exchange_result["fills"])
