@@ -125,6 +125,7 @@ class CcxtReadOnlyAccount:
                 "CCXT authenticated Spot balance reads only",
                 "No order submission, cancellation, transfer, withdrawal or wallet signing methods",
                 "The exchange API key's actual permissions are not independently verified",
+                "This generic adapter supports API key and secret authentication; exchanges requiring additional credential fields need a dedicated adapter",
             ],
         }
 
