@@ -34,7 +34,7 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 
 - Backend FastAPI y cartera paper persistida en SQLite.
 - Datos públicos de crypto spot mediante CCXT; Kraken es el proveedor inicial por defecto.
-- Twelve Data Basic opcional para datos e investigación read-only de acciones/ETF estadounidenses.
+- Twelve Data Basic opcional para datos/FX de acciones y ETF estadounidenses; el Chief mantiene investigación read-only y las órdenes equity solo son manuales paper.
 - Scout, Charts, Strategy Research, Chief, Risk Manager y Sniper integrados.
 - Backtesting cronológico 70/30, benchmark buy-and-hold, walk-forward y sensibilidad de costes.
 - Worker persistente con cola durable, leases, reintentos y ciclos periódicos.
