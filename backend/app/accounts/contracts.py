@@ -16,6 +16,10 @@ class AccountProviderNotFound(AccountProviderError):
     pass
 
 
+class AmbiguousAccountProvider(AccountProviderError):
+    pass
+
+
 class UnsupportedAccountCapability(AccountProviderError):
     pass
 
@@ -270,7 +274,7 @@ class AccountProviderRegistry:
             if not matches:
                 raise AccountProviderNotFound("Account provider is not configured")
             if len(matches) > 1:
-                raise AccountProviderError("Account provider ID is ambiguous; specify account_alias")
+                raise AmbiguousAccountProvider("Account provider ID is ambiguous; specify account_alias")
             key = matches[0]
             return self._providers[key], self._capabilities[key], self._locks[key]
 

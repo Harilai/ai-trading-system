@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `8943fdec94104d881d138d8d8d6da0bfd7cd4518` — merge de PR #68, reconciliación periódica Binance Spot Demo con leases y backoff.  
+> **Último commit observado en `main`:** `a7a9bb8487e7935f791cc6034dee8fd10e24ec6d` — merge de PR #71, contratos normalizados multi-venue para cuentas y balances.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -263,10 +263,12 @@ Siguiente secuencia:
 7. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** seguir `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md`; configurar las credenciales Demo únicamente en el servidor y verificar respuestas reales, filtros de mercado, precisión, partial fills, cancelación, timeout y reconciliación tras restart. No compartir claves en el chat ni guardarlas en Git. No usar claves de producción. Esta comprobación requiere una cuenta Demo y acceso al servidor del propietario; no se simula como si se hubiera ejecutado.
 8. **Completado — ledger individual de fills/fees (PR #66):** persistencia append-only, IDs de trade, cantidades, precios, costes, comisiones/activos y reconciliación idempotente por order ID. Nuevas órdenes Demo se bloquean mientras falte cobertura de fills o comisiones.
 9. **Completado — reconciliación periódica Binance Demo (PR #68):** worker con leases SQLite y fencing, backoff, polling por clientOrderId y conciliación de fills; corre aunque la estrategia esté pausada y nunca reenvía órdenes.
-10. **En curso — PR #71, contratos normalizados de account providers:** `AccountProviderRegistry` por `provider_id + account_alias`, balances normalizados, capacidades/permisos explícitos y endpoints genéricos autenticados. No añade brokers, posiciones live ni nuevos mercados ejecutables.
-11. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
-12. Completar despliegue persistente 24/7 en VPS y configurar el proveedor externo de backups en el entorno operativo.
-13. Evaluar live limitado por venue/clase solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+10. **Completado — PR #71, contratos normalizados de account providers:** `AccountProviderRegistry` por `provider_id + account_alias`, balances normalizados, capacidades/permisos explícitos y endpoints genéricos autenticados.
+11. **En curso — PR #72, adaptador CCXT read-only:** CEX Spot configurable por exchange ID (Kraken por defecto), API key/secret, sin métodos de escritura y con permisos reales de la key no verificados.
+12. **Siguiente — snapshots de posiciones y ledger de cuenta multi-venue:** ampliar el almacenamiento inmutable para posiciones por instrumento, coste/mark/P&L/moneda, con separación por cuenta y venue.
+13. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
+14. Completar despliegue persistente 24/7 en VPS y configurar el proveedor externo de backups en el entorno operativo.
+15. Evaluar live limitado por venue/clase solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ### PR #68 — conciliación periódica Binance Spot Demo
 
@@ -276,14 +278,23 @@ Siguiente secuencia:
 - Lease SQLite durable con fencing, polling acotado, backoff y recuperación tras restart.
 - Reconciliación de estados y fills sin reenvío ciego; funciona aunque la estrategia esté pausada o en emergency stop.
 
-### PR #71 — contratos normalizados de cuentas (en revisión)
+### PR #71 — contratos normalizados de cuentas
 
-- Rama: `phase/account-provider-contracts`; PR: https://github.com/Harilai/ai-trading-system/pull/71.
+- PR: https://github.com/Harilai/ai-trading-system/pull/71.
+- Merge commit: `a7a9bb8487e7935f791cc6034dee8fd10e24ec6d`.
+- Head validado: `aa8b8673bec7f6bab8eb7dab25107d8b7ccd525e`.
+- CI: **433 pruebas Python correctas**; Compose, build Docker y ejecución non-root correctos.
 - Registry por `provider_id + account_alias`; Binance production read-only y Binance Demo permanecen como cuentas separadas.
 - Contratos para capacidades/permisos, balances, posiciones y órdenes; endpoints genéricos para balances y snapshots read-only.
-- No añade broker genérico ni ejecución live. El estado de permisos reales de la API key sigue sin verificarse automáticamente.
-- Head final validado: `f6dd4affe0e824e0af21610e6cced440b6ea3fff`.
-- CI sobre ese SHA: **433 pruebas Python correctas**; Compose, build Docker y ejecución non-root correctos.
+- No añade broker genérico ni ejecución live.
+
+### PR #72 — adaptador genérico CCXT read-only (en revisión)
+
+- Rama: `phase/ccxt-readonly-account-adapter`.
+- Añade un adaptador CCXT configurable por exchange ID, alias y credenciales de solo lectura; Kraken es el valor por defecto.
+- Solo invoca `fetch_balance()` Spot. No contiene submit/cancel/transfer/withdraw/signing.
+- Las credenciales se leen del entorno del servidor; el software no puede verificar los scopes reales de la API key.
+- No se ha conectado una cuenta real ni se afirma que el smoke test operativo haya sido ejecutado.
 
 ## 6. Límites que no se deben saltar
 

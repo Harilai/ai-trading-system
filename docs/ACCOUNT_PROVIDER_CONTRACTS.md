@@ -26,6 +26,7 @@ Provide a venue-independent account boundary without merging accounts, environme
 ## Current adapters
 
 - `ccxt:binance` / `binance-spot-readonly`: production Spot balance observation only; no order submission, transfers, withdrawals or wallet signing. The account key's actual permissions are not verified by the adapter.
+- Optional generic `ccxt:{exchange_id}` read-only adapter (Kraken by default): configured with `CCXT_READONLY_EXCHANGE_ID`, `CCXT_READONLY_API_KEY` and `CCXT_READONLY_API_SECRET`; it calls only CCXT `fetch_balance()` for Spot. It does not implement order, transfer or withdrawal methods.
 - `ccxt:binance-demo` / `binance-spot-demo`: virtual Demo account; limit-order submission/management and reconciliation are separately declared. It cannot be stored as a read-only snapshot.
 - No generic broker, margin, futures, options, DEX or wallet account adapter is added by this phase.
 
