@@ -138,6 +138,39 @@ class ChiefAgent:
             identity = self._instrument_identity(provider_id, market.get("instrument_id"), symbol)
             scan_by_identity[identity] = item
 
+        diagnostics = {
+            "markets_analysed": len(scan.get("analyses", [])),
+            "open_positions": len(positions),
+            "validated_candidates": 0,
+            "experimental_candidates": 0,
+            "validated_entry_signals": 0,
+            "experimental_entry_signals": 0,
+            "candidates_without_entry_signal": 0,
+            "excluded_non_eur_symbols": 0,
+            "excluded_open_positions": 0,
+            "excluded_missing_price": 0,
+            "sniper_no_proposal": 0,
+            "risk_rejections": 0,
+        }
+        for analysed_item in scan.get("analyses", []):
+            research_candidates = analysed_item.get("strategy_research", {}).get("candidates", [])
+            for research_candidate in research_candidates:
+                validated = bool(research_candidate.get("eligible"))
+                experimental_candidate = bool(research_candidate.get("experimental_eligible"))
+                entry_signal = bool(research_candidate.get("current_entry_signal"))
+                if validated:
+                    diagnostics["validated_candidates"] += 1
+                    if entry_signal:
+                        diagnostics["validated_entry_signals"] += 1
+                    else:
+                        diagnostics["candidates_without_entry_signal"] += 1
+                if experimental_candidate:
+                    diagnostics["experimental_candidates"] += 1
+                    if entry_signal:
+                        diagnostics["experimental_entry_signals"] += 1
+                    else:
+                        diagnostics["candidates_without_entry_signal"] += 1
+
         # Manage existing positions before considering new entries.
         for identity, position in portfolio_positions.items():
             symbol = position["symbol"].upper()
@@ -251,11 +284,16 @@ class ChiefAgent:
             symbol = str(market.get("symbol", "")).upper()
             provider_id = str(market.get("provider_id") or "ccxt:kraken")
             identity = self._instrument_identity(provider_id, market.get("instrument_id"), symbol)
-            if (
-                not symbol.endswith("/EUR")
-                or identity in positions
-                or not isinstance(score, (int, float))
-            ):
+            if not symbol.endswith("/EUR"):
+                diagnostics["excluded_non_eur_symbols"] += 1
+                continue
+            if identity in positions:
+                diagnostics["excluded_open_positions"] += 1
+                continue
+            if not isinstance(score, (int, float)):
+                continue
+            if not (market.get("ask") or market.get("last")):
+                diagnostics["excluded_missing_price"] += 1
                 continue
             opportunities.append((float(score), item, candidate, strategy_id, symbol, experimental))
 
@@ -272,6 +310,7 @@ class ChiefAgent:
                 allow_experimental=experimental,
             )
             if proposal is None:
+                diagnostics["sniper_no_proposal"] += 1
                 continue
             risk = self.risk_manager.evaluate(proposal, context)
             if risk.accepted:
@@ -300,18 +339,19 @@ class ChiefAgent:
                     proposal=proposal,
                     risk=risk,
                 )
+            diagnostics["risk_rejections"] += 1
             return ChiefDecision(
                 symbol=symbol,
                 provider_id=proposal.provider_id,
                 instrument_id=proposal.instrument_id,
                 strategy_id=strategy_id,
                 rationale="Entry proposal rejected by Risk Manager",
-                evidence={"score": score},
+                evidence={"score": score, "diagnostics": diagnostics, "risk_rejection_reason": risk.reason},
                 proposal=proposal,
                 risk=risk,
             )
 
         return ChiefDecision(
             rationale="No eligible strategy produced a valid entry or exit signal; hold cash and monitor",
-            evidence={"markets_analysed": len(scan.get("analyses", [])), "eligible_opportunities": len(opportunities)},
+            evidence={**diagnostics, "eligible_opportunities": len(opportunities)},
         )
