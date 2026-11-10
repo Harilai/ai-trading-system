@@ -118,12 +118,25 @@ def test_decision_cycle_persists_proposal_only_result(tmp_path):
 def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
     import asyncio
 
+    from datetime import datetime, timezone
     from app.agents.contracts import RiskDecision, TradeProposal
     from app.chief import ChiefDecision
 
+    market_timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+
     class FakeScout:
         def scan(self, include_symbols=None):
-            return {"analyses": [], "included_positions": include_symbols or []}
+            return {
+                "analyses": [{
+                    "market": {
+                        "symbol": "BTC/EUR",
+                        "provider_id": "ccxt:kraken",
+                        "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+                        "ticker_timestamp_ms": market_timestamp,
+                    },
+                }],
+                "included_positions": include_symbols or [],
+            }
 
     class FakeChief:
         def decide(self, scan, portfolio):
@@ -709,9 +722,11 @@ def test_legacy_task_table_migrates_lease_token_column(tmp_path):
 
 def test_decision_cycle_resumes_persisted_risk_approved_intent_without_rescanning(tmp_path):
     import asyncio
+    from datetime import datetime, timezone
 
     from app.portfolio import PaperPortfolio
 
+    market_timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
     path = str(tmp_path / "resume-approved-order.db")
     task_id = "resume-approved-task"
     request = {
@@ -720,6 +735,7 @@ def test_decision_cycle_resumes_persisted_risk_approved_intent_without_rescannin
         "minimum": 1, "client_order_id": task_id,
         "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
         "strategy_id": "ema_12_26", "stop_loss": 9800, "take_profit": 10400,
+        "market_timestamp": market_timestamp,
     }
     portfolio = PaperPortfolio(path, 20)
     portfolio.record_order_intent(
