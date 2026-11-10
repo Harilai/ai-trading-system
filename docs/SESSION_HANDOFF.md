@@ -1,5 +1,17 @@
 # Session handoff — AI Trading System
 
+## En curso — ledger append-only de posiciones externas (PR #92)
+
+- Rama: `feat/external-position-snapshot-ledger`, apilada sobre PR #91, que depende de PR #89.
+- Añadida `PositionSnapshotStore` en `backend/app/accounts/position_snapshot_store.py`; almacena snapshots SQLite separados de la cartera paper.
+- Identidad aislada por `provider_id + account_alias + environment + market_type`; posiciones por `instrument_id`.
+- Conserva cantidad, lado, asset class, quote currency, entry, mark, market value y P&L no realizado como decimales exactos; hash SHA-256 y referencia al snapshot anterior.
+- `coverage_status=partial` no interpreta posiciones omitidas como cierres: se registran como `not_observed`. Solo una observación explícitamente `complete` puede producir estado `absent`; nunca se convierte ausencia en cantidad cero.
+- Añadidas pruebas de persistencia exacta, snapshots completos/parciales, aislamiento por cuenta/entorno, frescura, orden temporal, duplicados y triggers append-only.
+- Alcance actual: capa de almacenamiento y pruebas. No se añade endpoint de captura porque los adaptadores actuales declaran `positions=false`; no se debe aceptar un snapshot desde un proveedor sin capability demostrada.
+- Dependencias: PR #89 (investigación/diagnóstico) y PR #91 (salidas paper seguras). La PR #92 debe integrarse después de ambas. Ninguna integración ni despliegue se presupone.
+- Siguiente paso: extender registry para resolver `PositionProvider` con capability explícita, capturar snapshots con identidad/entorno/frescura de la cuenta, y exponer endpoints autenticados solo cuando exista un adaptador compatible.
+
 > **Última revisión del repositorio:** 2026-11-10
 > **Rama base revisada:** `main`
 > **Último feature merge:** `a9378266626aca81be46f854f8d11011ee4804ca` — PR #83, experimental paper demo.
