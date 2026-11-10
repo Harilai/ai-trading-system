@@ -83,18 +83,11 @@ def risk_profiles():
 
 @app.get("/api/markets")
 def markets():
-    started_at = datetime.now(timezone.utc)
     instruments, failures = market.discover_markets()
-    catalogue_sync = instrument_catalog.record_discovery(
-        instruments,
-        failures,
-        started_at=started_at,
-    )
     return {
         "discovered": len(instruments),
         "instruments": [
             {
-                "catalogue_id": instrument_catalog.catalogue_id(item),
                 "instrument_id": item.instrument_id,
                 "provider_id": item.provider_id,
                 "symbol": item.symbol,
@@ -128,8 +121,7 @@ def markets():
             }
             for item in instruments
         ],
-        "provider_failures": catalogue_sync["failures"],
-        "catalogue_sync": catalogue_sync,
+        "provider_failures": [instrument_catalog._safe_failure(item) for item in failures],
     }
 
 
