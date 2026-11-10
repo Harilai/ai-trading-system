@@ -44,11 +44,17 @@ class SniperAgent:
         *,
         equity: float,
         available_cash: float,
+        allow_experimental: bool = False,
     ) -> TradeProposal | None:
-        """Size an eligible long-only spot entry from stop distance, allocation and cash."""
-        if not candidate.get("eligible") or not candidate.get("current_entry_signal"):
+        """Size a bounded long-only spot entry; experimental use remains paper-only."""
+        candidate_is_validated = bool(candidate.get("eligible"))
+        candidate_is_experimental = bool(allow_experimental and candidate.get("experimental_eligible"))
+        if not (candidate_is_validated or candidate_is_experimental) or not candidate.get("current_entry_signal"):
             return None
-        score = candidate.get("score")
+        score = (
+            candidate.get("score")
+            if candidate_is_validated else candidate.get("experimental_score")
+        )
         if not isinstance(score, (int, float)) or not math.isfinite(float(score)):
             return None
         try:
