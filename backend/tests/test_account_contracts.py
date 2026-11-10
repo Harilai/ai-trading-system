@@ -5,6 +5,7 @@ import pytest
 from app.accounts.contracts import (
     AccountBalance,
     AccountCapabilities,
+    AmbiguousAccountProvider,
     AccountProviderError,
     AccountProviderNotFound,
     AccountProviderRegistry,
@@ -203,3 +204,13 @@ def test_registry_sanitizes_provider_errors_and_does_not_leak_credentials():
 
     assert secret not in str(error.value)
     assert "request failed with secret" not in str(error.value)
+
+
+def test_registry_requires_alias_when_multiple_accounts_share_provider_id():
+    registry = AccountProviderRegistry()
+    registry.register(FakeAccountProvider(account_alias="account-one"))
+    registry.register(FakeAccountProvider(account_alias="account-two"))
+
+    with pytest.raises(AmbiguousAccountProvider, match="specify account_alias"):
+        registry.fetch_balances("test:venue")
+    assert registry.fetch_balances("test:venue", "account-two")["account_alias"] == "account-two"
