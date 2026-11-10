@@ -1,4 +1,5 @@
 from pathlib import Path
+from decimal import Decimal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,6 +23,7 @@ class Settings(BaseSettings):
     binance_spot_demo_enabled: bool = False
     binance_spot_demo_api_key: SecretStr = Field(default=SecretStr(""), repr=False)
     binance_spot_demo_api_secret: SecretStr = Field(default=SecretStr(""), repr=False)
+    binance_spot_demo_max_order_quote: Decimal = Field(default=Decimal("25"), gt=0, le=Decimal("1000"))
     twelve_data_state_path: str = str(PROJECT_ROOT / "data" / "twelve_data_state.sqlite3")
     twelve_data_daily_credit_budget: int = Field(default=750, ge=1, le=800)
     twelve_data_min_request_interval_seconds: float = Field(default=7.5, ge=0)
