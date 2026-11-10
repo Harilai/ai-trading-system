@@ -351,3 +351,23 @@ def test_demo_order_store_allows_same_trade_id_on_different_symbols(tmp_path):
     }])
     assert len(store.list_fills("demo-order-1")) == 1
     assert len(store.list_fills("demo-order-2")) == 1
+
+
+def test_demo_order_store_rejects_noncanonical_fill_decimals_and_fee_assets(tmp_path):
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-fill-validation.db"))
+    store.prepare_intent(request())
+    store.transition("demo-order-1", "submission_unknown")
+    store.transition(
+        "demo-order-1", "filled", exchange_order_id="exchange-1",
+        filled="0.001", remaining="0", average="20000",
+    )
+    base = {
+        "trade_id": "trade-validate-1", "exchange_order_id": "exchange-1",
+        "symbol": "BTC/USDT", "side": "buy", "amount": "0.001",
+        "price": "20000", "cost": "20", "fee_cost": "0",
+        "fee_currency": "USDT", "timestamp_ms": 1794312000000,
+    }
+    with pytest.raises(DemoOrderStoreError, match="plain decimal"):
+        store.record_fills("demo-order-1", [{**base, "amount": "1e-3"}])
+    with pytest.raises(DemoOrderStoreError, match="fee currency"):
+        store.record_fills("demo-order-1", [{**base, "trade_id": "trade-validate-2", "fee_currency": "USDT!"}])
