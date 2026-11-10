@@ -213,13 +213,16 @@ class ChiefAgent:
         opportunities = []
         for item in scan.get("analyses", []):
             research = item.get("strategy_research", {})
-            validated_candidates = [
-                candidate for candidate in research.get("candidates", [])
-                if candidate.get("eligible")
-                and candidate.get("current_entry_signal")
-                and isinstance(candidate.get("score"), (int, float))
-                and math.isfinite(float(candidate["score"]))
-            ]
+            validated_candidates = (
+                [
+                    candidate for candidate in research.get("candidates", [])
+                    if candidate.get("eligible")
+                    and candidate.get("current_entry_signal")
+                    and isinstance(candidate.get("score"), (int, float))
+                    and math.isfinite(float(candidate["score"]))
+                ]
+                if research.get("recommended_strategy") else []
+            )
             experimental = False
             if validated_candidates:
                 candidate = max(validated_candidates, key=lambda row: float(row["score"]))
