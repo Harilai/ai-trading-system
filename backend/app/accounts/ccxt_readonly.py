@@ -30,7 +30,7 @@ class CcxtReadOnlyAccount:
             raise CcxtReadOnlyAccountError("CCXT read-only API key is required")
         if not isinstance(api_secret, str) or not api_secret.strip():
             raise CcxtReadOnlyAccountError("CCXT read-only API secret is required")
-        alias = f"{normalized_id}-spot-readonly" if account_alias is None else account_alias
+        alias = f"ccxt-{normalized_id}-spot-readonly" if account_alias is None else account_alias
         if not isinstance(alias, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", alias.strip()):
             raise CcxtReadOnlyAccountError("CCXT account alias is invalid")
 
