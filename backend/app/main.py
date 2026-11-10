@@ -25,6 +25,7 @@ from .portfolio import PaperPortfolio, PortfolioError
 from .fx import invert_fx_observation, validate_fx_observation
 from .backup_scheduler import read_backup_status
 from .accounts.binance_spot import AccountConnectorError, BinanceSpotReadOnlyAccount
+from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
 
 WORKER_HEARTBEAT_MAX_AGE_SECONDS = 600
 
@@ -43,6 +44,7 @@ if settings.twelve_data_api_key:
     ))
 portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 instrument_catalog = InstrumentCatalog(settings.database_path)
+account_snapshot_store = AccountSnapshotStore(settings.database_path)
 
 _binance_key = settings.binance_readonly_api_key.get_secret_value().strip()
 _binance_secret = settings.binance_readonly_api_secret.get_secret_value().strip()
@@ -108,6 +110,60 @@ def binance_spot_balances(x_agent_token: str | None = Header(default=None)):
         return binance_account_provider.fetch_balances()
     except AccountConnectorError as exc:
         raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/api/accounts/binance/spot/snapshots", status_code=201)
+def create_binance_account_snapshot(x_agent_token: str | None = Header(default=None)):
+    require_order_control_token(x_agent_token)
+    if binance_account_provider is None:
+        raise HTTPException(503, "Binance read-only account connector is not configured")
+    try:
+        live_snapshot = binance_account_provider.fetch_balances()
+        return account_snapshot_store.record_snapshot(live_snapshot)
+    except AccountConnectorError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except AccountSnapshotError as exc:
+        raise HTTPException(502, "Binance returned an invalid account snapshot") from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to persist the account snapshot") from exc
+
+
+@app.get("/api/accounts/snapshots")
+def account_snapshot_history(
+    provider_id: str | None = None,
+    account_alias: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        return {
+            "items": account_snapshot_store.list_snapshots(
+                provider_id=provider_id,
+                account_alias=account_alias,
+                limit=limit,
+            ),
+            "limit": limit,
+        }
+    except AccountSnapshotError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to read account snapshot history") from exc
+
+
+@app.get("/api/accounts/snapshots/{snapshot_id}")
+def account_snapshot_detail(
+    snapshot_id: str,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        snapshot = account_snapshot_store.get_snapshot(snapshot_id)
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to read account snapshot") from exc
+    if snapshot is None:
+        raise HTTPException(404, "Account snapshot not found")
+    return snapshot
 
 
 @app.get("/api/risk-profiles")
