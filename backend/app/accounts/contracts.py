@@ -517,6 +517,8 @@ class AccountProviderRegistry:
             raise UnsupportedAccountCapability("Account provider exposes no snapshot data")
         balance_snapshot = self.fetch_balances(provider_id, account_alias) if capabilities.balances else None
         selected_market = balance_snapshot["market_type"] if balance_snapshot is not None else market_type
+        if balance_snapshot is not None and market_type is not None and market_type != selected_market:
+            raise AccountProviderError("Requested market_type conflicts with the account balance market")
         if selected_market is None:
             if len(capabilities.market_types) != 1:
                 raise AccountProviderError("market_type is required for a multi-market account")
