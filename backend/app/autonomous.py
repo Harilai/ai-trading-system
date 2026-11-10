@@ -523,6 +523,7 @@ class AutonomousAgent:
         chief=None,
         portfolio=None,
         equity_research=None,
+        demo_reconciler=None,
         *,
         poll_interval_seconds: float = 5.0,
     ):
@@ -534,6 +535,7 @@ class AutonomousAgent:
         self.chief = chief
         self.portfolio = portfolio
         self.equity_research = equity_research
+        self.demo_reconciler = demo_reconciler
         self.lease_seconds = 120
         self._task: asyncio.Task | None = None
         self._stopping = asyncio.Event()
@@ -556,6 +558,14 @@ class AutonomousAgent:
                 self.store.recover_expired_tasks()
                 state = self.store.state()
                 self.store.heartbeat()
+                # Exchange reconciliation is operational safety work and must
+                # continue even when autonomous strategy execution is paused.
+                if self.demo_reconciler is not None:
+                    demo_reconciliation = await asyncio.to_thread(
+                        self.demo_reconciler.run_once
+                    )
+                    if demo_reconciliation.get("claimed"):
+                        self.store.audit("binance_demo_periodic_reconciliation", demo_reconciliation)
                 if self.portfolio is not None:
                     reconciliation = await asyncio.to_thread(
                         self.portfolio.reconcile_order_intents
