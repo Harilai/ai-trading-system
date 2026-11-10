@@ -84,20 +84,27 @@ class AccountSnapshotStore:
             )
 
     @staticmethod
-    def _decimal_text(value: Any, *, asset: str, field: str) -> str | None:
+    def _format_decimal(amount: Decimal) -> str:
+        text = format(amount, "f")
+        if "." in text:
+            text = text.rstrip("0").rstrip(".")
+        return "0" if text in ("", "-0") else text
+
+    @classmethod
+    def _decimal_text(cls, value: Any, *, asset: str, field: str) -> str | None:
         if value is None:
             return None
         if not isinstance(value, str):
             raise AccountSnapshotError(f"{field} balance for {asset} must be a decimal string")
         try:
             amount = Decimal(value)
-        except (InvalidOperation, ValueError) as exc:
+        except (InvalidOperation, ValueError):
             raise AccountSnapshotError(f"{field} balance for {asset} is malformed") from None
         if not amount.is_finite() or amount < 0:
             raise AccountSnapshotError(f"{field} balance for {asset} is invalid")
         if len(amount.as_tuple().digits) > 80 or abs(amount.as_tuple().exponent) > 80:
             raise AccountSnapshotError(f"{field} balance for {asset} exceeds supported precision")
-        return format(amount, "f")
+        return cls._format_decimal(amount)
 
     @staticmethod
     def _parse_time(value: Any, field: str) -> datetime:
@@ -158,7 +165,7 @@ class AccountSnapshotStore:
             if total is None and free is not None and used is not None:
                 with localcontext() as context:
                     context.prec = 100
-                    total = format(Decimal(free) + Decimal(used), "f")
+                    total = cls._format_decimal(Decimal(free) + Decimal(used))
             if free is None and used is None and total is None:
                 raise AccountSnapshotError(f"Balance for {asset} has no amount fields")
             balances.append({
@@ -214,7 +221,9 @@ class AccountSnapshotStore:
             if previous_total is not None and current_total is not None:
                 with localcontext() as context:
                     context.prec = 100
-                    delta = format(Decimal(current_total) - Decimal(previous_total), "f")
+                    delta = AccountSnapshotStore._format_decimal(
+                        Decimal(current_total) - Decimal(previous_total)
+                    )
             changes.append({
                 "asset": asset,
                 "state": "changed" if changed else "unchanged",
