@@ -1,18 +1,24 @@
 # Session handoff — AI Trading System
 
-> **Última revisión del repositorio:** 2026-11-10 18:23 Europe/Madrid
+> **Última revisión del repositorio:** 2026-11-11 Europe/Madrid
 > **Rama base revisada:** `main`
-> **Último commit integrado en `main`:** `35b894800ebf24324aebb2f09c363bdda8d1fca8` — documentación de la demo local paper.
+> **Último commit integrado en `main`:** `bf426d77286dce9a15dc8c067e2eab7caa4d11d8` — PR #80.
+> **Rama `demo`:** `bd34ff5114dd952b5d58fb8c93c470387f4eeaba`, con PR #91–#93 integradas.
 > **Estado de ejecución:** paper trading únicamente; Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
-## Fase en curso — completitud explícita del historial de fills (PR #80 draft)
+## Estado actual — 11 de noviembre de 2026
 
-- PR #78 normaliza órdenes y fills; GitHub Actions pasó en el head `8f91087100d7ef438c1fe6eed6b9e68b732f9634`; review independiente pendiente.
-- PR #79 añade un ledger SQLite append-only, scope isolation, deduplicación y validación de cobertura. Está listo para revisión; CI pasó en su head exacto `f14db503a50f579fad940b0b8e090dd9fc09a243`; review pendiente.
-- PR #80 (`feat/account-fill-history-contract`) añade `AccountFillHistory` con ámbito, timestamp y completeness explícita, y `AccountOrderReconciliationService`, que actualiza una orden conocida mediante llamadas read-only, valida identidad y guarda los fills en el ledger. No infiere cancelaciones ni completitud y no añade scheduler ni ruta de ejecución.
-- Tests dirigidos: **44 passed**. Suite completa: **510 passed, 1 warning** en Docker aislado sin red.
-- GitHub Actions pasó `Python tests` y `Docker build and runtime hardening` en el head con el servicio PR #80 `6e6b3a4bae26e00bbb24c7cf9a0761f66eec0e5a` (run 42863956611); review independiente pendiente. PR #74, #77, #78 y #79 tienen CI verde en sus heads actuales; no hay reviews independientes registrados.
-- La demo paper local sigue activa y no se reinició. Sin claves consultadas, fondos reales ni llamadas a producción.
+- PR #78 fusionada: contratos normalizados de órdenes y fills.
+- PR #79 fusionada: ledger SQLite append-only de órdenes y ejecuciones individuales, idempotencia, aislamiento por cuenta/entorno/mercado y cobertura explícita.
+- PR #80 fusionada: historial de fills con completitud explícita y reconciliación read-only de órdenes conocidas; no envía, cancela ni reintenta órdenes.
+- PR #77 en revisión: monitor paper de stop-loss/take-profit para acciones/ETF USD de Twelve Data. Head actual `be3b3376aa0bfd71653a73a6c5042db7528d94f5`; CI en ejecución. El monitor exige instrumento, cotización, FX y sesión válidos; mantiene los datos de procedencia y el dashboard de estrategias.
+- En `demo`, PR #91 endurece salidas paper y PR #92–#93 incorporan snapshots externos append-only e integración API. Los adaptadores existentes aún declaran `positions=false`; no hay captura real habilitada en esos conectores.
+- PR #74 se reabrió para preservar y revisar sus aportaciones de snapshots combinados de balances/posiciones y scope multi-market. No se fusionará sin resolver su solapamiento arquitectónico con #92–#93.
+- No se ha levantado ni reiniciado una demo local en esta sesión; no se han usado credenciales ni fondos reales.
+
+## Siguiente acción
+
+Completar CI y revisión independiente de PR #77. Después revisar la arquitectura de snapshots unificados frente al ledger separado de posiciones, y continuar con un adaptador real read-only de posiciones que declare cobertura verificable. Mantener paper-only y no habilitar live trading.
 
 ## Fase completada — Demo local paper (PR #75)
 
