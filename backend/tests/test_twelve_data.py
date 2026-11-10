@@ -83,7 +83,12 @@ def test_discovery_returns_us_equities_and_etfs_with_distinct_asset_classes(tmp_
     assert equity.market_type is MarketType.CASH_EQUITY
     assert equity.quote == "USD"
     assert equity.metadata["mic_code"] == "XNAS"
+    assert equity.venue_id == "XNAS"
+    assert equity.native_symbol == "AAPL"
+    assert equity.trading_status == "active"
     assert etf.symbol == "SPY"
+    assert etf.venue_id == "ARCX"
+    assert etf.native_symbol == "SPY"
     assert etf.metadata["exchange"] == "NYSE Arca"
     assert etf.metadata["mic_code"] == "ARCX"
     assert etf.asset_class is AssetClass.ETF
