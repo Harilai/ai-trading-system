@@ -430,7 +430,7 @@ class PaperPortfolio:
             ).fetchone()
             if existing:
                 if existing["request_json"] != request_json:
-                    raise PortfolioError("client_order_id was already used for a different order intent")
+                    raise PortfolioError("client_order_id was already used for a different paper order intent")
                 if decision_json is not None and existing["decision_json"] not in (None, decision_json):
                     raise PortfolioError("client_order_id was already used for a different approved decision")
                 return self._decode_order_intent(existing)
@@ -927,9 +927,6 @@ class PaperPortfolio:
                         raise PortfolioError("This order intent requires reconciliation before execution")
                     if intent_row["status"] == "expired":
                         raise PortfolioError("This order intent expired and cannot be executed")
-                    if intent_row["status"] == "filled":
-                        raise PortfolioError("Filled order intent has no matching trade; reconciliation is required")
-
                 existing = db.execute(
                     "SELECT * FROM trades WHERE client_order_id=?",
                     (client_order_id,),
