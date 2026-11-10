@@ -122,7 +122,7 @@ El servicio `backup` ejecuta este mismo mecanismo automáticamente cada 24 horas
 ### Activar copias externas S3
 
 1. Copia `.env.backup.example` a `.env.backup`.
-2. Configura un bucket privado S3 o compatible (R2, B2, MinIO), región, prefijo y modo de cifrado.
+2. Configura un bucket privado S3 o compatible (R2, B2, MinIO), región, prefijo y modo de cifrado. La identidad necesita listar el bucket y hacer Put/Get solo en el prefijo; no necesita permisos de borrado.
 3. Usa un IAM/workload role cuando sea posible; si necesitas claves estáticas, guárdalas solo en `.env.backup`. No las copies a `.env` ni al navegador.
 4. Configura versioning, bloqueo de acceso público y lifecycle/retención en el proveedor. El sistema no elimina objetos remotos ni necesita permiso de borrado.
 5. Arranca/actualiza con `docker compose up --build -d`.
