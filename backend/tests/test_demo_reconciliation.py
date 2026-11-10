@@ -205,5 +205,4 @@ def test_reconciliation_schedule_uses_bounded_exponential_backoff(tmp_path):
     )
     status = store.reconciliation_status()
     assert datetime.fromisoformat(status["next_run_at"]) == now + timedelta(seconds=60)
-    assert status["lease_token"] if "lease_token" in status else True
     assert "lease_token" not in status
