@@ -888,12 +888,18 @@ class AutonomousAgent:
                         require_order_intent=True,
                     )
                 except PortfolioError as exc:
-                    await asyncio.to_thread(
-                        self.portfolio.reject_order_intent,
-                        task["id"],
-                        str(exc),
+                    current_intent = await asyncio.to_thread(
+                        self.portfolio.get_order_intent, task["id"],
                     )
-                    execution = "rejected"
+                    if current_intent and current_intent["status"] == "risk_approved":
+                        await asyncio.to_thread(
+                            self.portfolio.reject_order_intent,
+                            task["id"],
+                            str(exc),
+                        )
+                        execution = "rejected"
+                    else:
+                        execution = current_intent["status"] if current_intent else "rejected"
                 else:
                     execution = "paper_order"
             result = {
