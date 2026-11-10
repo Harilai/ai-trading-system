@@ -264,8 +264,9 @@ def test_registry_supports_position_only_readonly_accounts_and_combined_snapshot
     registry = AccountProviderRegistry()
     registry.register(FakePositionProvider())
     positions = registry.fetch_positions("test:equity-broker")
-    assert positions[0]["quantity"] == "2"
-    assert positions[0]["unrealized_pnl"] == "-10.5"
+    assert positions["positions"][0]["quantity"] == "2"
+    assert positions["positions"][0]["unrealized_pnl"] == "-10.5"
+    assert positions["fetched_at"]
 
     class SnapshotStore:
         def record_snapshot(self, snapshot):
