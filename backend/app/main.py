@@ -325,6 +325,8 @@ def _paper_equity_order(order: OrderRequest):
     intent = portfolio.get_order_intent(order.client_order_id.strip())
     if intent and intent["status"] != "filled" and previous:
         raise HTTPException(409, "Order intent and trade ledger require reconciliation")
+    if intent and previous is None:
+        raise HTTPException(409, f"Order intent is {intent['status']} and cannot be replayed by the manual API")
     if previous:
         same_intent = (
             previous["symbol"] == order.symbol.strip().upper()
