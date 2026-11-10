@@ -18,15 +18,17 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 2. **Completado — ciclo de vida y conciliación paper (PR #44):** intentos persistentes, fills idempotentes, conciliación contra el ledger, recuperación de tareas con leases y caducidad de aprobaciones stale.
 3. **Completado — backups externos y restauración (PR #48):** replicación S3-compatible verificada, status API y descarga/validación de restore candidate. La configuración real del proveedor sigue pendiente en el entorno operativo.
 4. **Completado en PR #50 — dashboard ampliado:** velas OHLC, salud/readiness de conectores, investigación de acciones/ETF, historial de estrategias, intentos/fills paper, backup status y gestión contable de retiradas paper. No hay transferencia real.
-5. **Siguiente — abstracción multi-venue y catálogo de instrumentos:** capabilities explícitas, cuentas, permisos, precisión/ticks, multiplicadores, vencimientos, margen/colateral, settlement, corporate actions, funding y FX.
-6. **Despliegue persistente 24/7:** VPS, secretos, aislamiento, TLS/reverse proxy, monitorización, alertas, readiness y recuperación.
-7. **Madurez por mercado:** paper/backtest y sandbox/testnet para cada venue/clase; implementar supervisión paper de stops/take-profit equity antes de decisiones autónomas equity.
-8. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+5. **En curso — contrato normalizado de instrumentos v2:** venue/native symbol, precision mode, tick/step, amount/cost bounds, contract size, settlement, expiry, strike, option right, underlying y trading status. No añade aún ejecución de nuevos mercados.
+6. **Siguiente — catálogo persistente y venue-aware identity:** guardar discovery snapshots, first/last seen, proveedor/venue, restricciones y fallos; diseñar migración de identidad para símbolos duplicados sin romper posiciones históricas.
+7. **Despliegue persistente 24/7:** VPS, secretos, aislamiento, TLS/reverse proxy, monitorización, alertas, readiness y recuperación.
+8. **Madurez por mercado:** paper/backtest y sandbox/testnet para cada venue/clase; implementar supervisión paper de stops/take-profit equity antes de decisiones autónomas equity.
+9. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## Estado integrado
 
 | Área | Estado |
 |---|---|
+| Contrato normalizado de instrumentos v2 | En curso en PR de expansión multiactivo: restricciones, precisión, venue y metadatos de derivados con validación estricta; no habilita trading de derivados |
 | Dashboard de supervisión y operaciones paper | Implementado y fusionado en PR #50 (`848d1d3`); 305 tests y Docker hardening correctos |
 | Backups externos S3-compatible y restore candidate verificado | Implementado y fusionado en PR #48 (`ed08cec`); off-host desactivado por defecto hasta configurar `.env.backup`; 304 tests y Docker hardening correctos |
 | Ciclo de vida y conciliación de órdenes paper | Implementado y fusionado en PR #44 (`df76011`); 292 tests y Docker hardening correctos |

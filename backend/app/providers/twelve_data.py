@@ -304,6 +304,9 @@ class TwelveDataProvider:
                     base=symbol,
                     quote=str(item.get("currency") or "USD").upper(),
                     active=True,
+                    venue_id=str(item.get("mic_code") or item.get("exchange") or "") or None,
+                    native_symbol=symbol,
+                    trading_status="active",
                     metadata={
                         "name": item.get("name"),
                         "exchange": item.get("exchange"),
@@ -328,6 +331,9 @@ class TwelveDataProvider:
                     base=symbol,
                     quote=str(item.get("currency") or "USD").upper(),
                     active=True,
+                    venue_id=str(item.get("mic_code") or item.get("exchange") or "") or None,
+                    native_symbol=symbol,
+                    trading_status="active",
                     metadata={
                         "name": item.get("name"),
                         "exchange": item.get("exchange"),
