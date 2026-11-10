@@ -89,6 +89,9 @@ class AutonomousStore:
                 db.execute('ALTER TABLE agent_state ADD COLUMN last_decision_enqueued_at TEXT')
             if 'last_equity_research_enqueued_at' not in columns:
                 db.execute('ALTER TABLE agent_state ADD COLUMN last_equity_research_enqueued_at TEXT')
+            task_columns = {row['name'] for row in db.execute('PRAGMA table_info(agent_tasks)')}
+            if 'lease_token' not in task_columns:
+                db.execute('ALTER TABLE agent_tasks ADD COLUMN lease_token TEXT')
         # Recover expired work on startup as well as during the worker loop.
         self.recover_expired_tasks()
 
@@ -110,7 +113,7 @@ class AutonomousStore:
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             recovered = db.execute(
-                "UPDATE agent_tasks SET status='pending', lease_until=NULL, updated_at=? "
+                "UPDATE agent_tasks SET status='pending', lease_until=NULL, lease_token=NULL, updated_at=? "
                 "WHERE status='running' AND (lease_until IS NULL OR lease_until < ?)",
                 (now, now),
             ).rowcount
@@ -255,40 +258,90 @@ class AutonomousStore:
             ).fetchone()
             if row is None:
                 return None
+            lease_token = str(uuid4())
             changed = db.execute(
-                "UPDATE agent_tasks SET status='running', attempts=attempts+1, lease_until=?, updated_at=? "
+                "UPDATE agent_tasks SET status='running', attempts=attempts+1, lease_until=?, lease_token=?, updated_at=? "
                 "WHERE id=? AND status='pending'",
-                (lease, now.isoformat(), row["id"]),
+                (lease, lease_token, now.isoformat(), row["id"]),
             ).rowcount
             if changed != 1:
                 return None
             task = dict(row)
             task["attempts"] += 1
+            task["lease_token"] = lease_token
             task["payload"] = json.loads(task["payload"])
             return task
 
-    def finish_task(self, task_id: str, result: dict[str, Any]) -> None:
+    def extend_task_lease(
+        self,
+        task_id: str,
+        lease_token: str,
+        lease_seconds: int = 120,
+    ) -> bool:
+        if not lease_token or lease_seconds < 1:
+            return False
+        now = utcnow()
+        lease = (now + timedelta(seconds=lease_seconds)).isoformat()
+        with self.connect() as db:
+            changed = db.execute(
+                "UPDATE agent_tasks SET lease_until=?, updated_at=? "
+                "WHERE id=? AND status='running' AND lease_token=?",
+                (lease, now.isoformat(), task_id, lease_token),
+            ).rowcount
+        return changed == 1
+
+    def active_task_ids(self) -> set[str]:
         now = utcnow().isoformat()
         with self.connect() as db:
-            db.execute(
-                "UPDATE agent_tasks SET status='completed', result=?, lease_until=NULL, updated_at=? "
-                "WHERE id=? AND status='running'",
-                (json.dumps(result, ensure_ascii=False), now, task_id),
-            )
-        self.audit("task_completed", {"task_id": task_id, "result": result})
+            rows = db.execute(
+                "SELECT id FROM agent_tasks WHERE status='running' AND lease_until>=?",
+                (now,),
+            ).fetchall()
+        return {str(row["id"]) for row in rows}
 
-    def fail_task(self, task: dict[str, Any], error: str, max_attempts: int = 3) -> None:
+    def finish_task(
+        self,
+        task_id: str,
+        result: dict[str, Any],
+        lease_token: str,
+    ) -> bool:
+        if not lease_token:
+            return False
+        now = utcnow().isoformat()
+        with self.connect() as db:
+            changed = db.execute(
+                "UPDATE agent_tasks SET status='completed', result=?, lease_until=NULL, lease_token=NULL, updated_at=? "
+                "WHERE id=? AND status='running' AND lease_token=?",
+                (json.dumps(result, ensure_ascii=False), now, task_id, lease_token),
+            ).rowcount
+        if changed != 1:
+            return False
+        self.audit("task_completed", {"task_id": task_id, "result": result})
+        return True
+
+    def fail_task(
+        self,
+        task: dict[str, Any],
+        error: str,
+        max_attempts: int = 3,
+    ) -> bool:
+        lease_token = task.get("lease_token")
+        if not lease_token:
+            return False
         now = utcnow()
         retry = task["attempts"] < max_attempts
         due = (now + timedelta(seconds=min(300, 15 * 2 ** (task["attempts"] - 1)))).isoformat()
         with self.connect() as db:
-            db.execute(
-                "UPDATE agent_tasks SET status=?, due_at=?, error=?, lease_until=NULL, updated_at=? "
-                "WHERE id=? AND status='running'",
-                ("pending" if retry else "failed", due, error[:2000], now.isoformat(), task["id"]),
-            )
+            changed = db.execute(
+                "UPDATE agent_tasks SET status=?, due_at=?, error=?, lease_until=NULL, lease_token=NULL, updated_at=? "
+                "WHERE id=? AND status='running' AND lease_token=?",
+                ("pending" if retry else "failed", due, error[:2000], now.isoformat(), task["id"], lease_token),
+            ).rowcount
+        if changed != 1:
+            return False
         self.audit("task_retry_scheduled" if retry else "task_failed",
                    {"task_id": task["id"], "error": error[:500]})
+        return True
 
     def remember(self, category: str, content: dict[str, Any], validated: bool = False) -> int:
         with self.connect() as db:
@@ -444,6 +497,7 @@ class AutonomousAgent:
         self.chief = chief
         self.portfolio = portfolio
         self.equity_research = equity_research
+        self.lease_seconds = 120
         self._task: asyncio.Task | None = None
         self._stopping = asyncio.Event()
 
@@ -471,11 +525,22 @@ class AutonomousAgent:
                         self.store.schedule_equity_research(settings.equity_research_interval_seconds)
                     task = self.store.claim_due_task()
                     if task:
+                        heartbeat = asyncio.create_task(self._heartbeat_task_lease(task))
                         try:
                             result = await self._execute(task)
-                            self.store.finish_task(task["id"], result)
+                            completed = self.store.finish_task(
+                                task["id"], result, task["lease_token"]
+                            )
+                            if not completed:
+                                self.store.audit("task_lease_lost", {"task_id": task["id"]})
                         except Exception as exc:
                             self.store.fail_task(task, str(exc))
+                        finally:
+                            heartbeat.cancel()
+                            try:
+                                await heartbeat
+                            except asyncio.CancelledError:
+                                pass
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -492,6 +557,28 @@ class AutonomousAgent:
                 )
             except asyncio.TimeoutError:
                 pass
+
+    async def _heartbeat_task_lease(self, task: dict[str, Any]) -> None:
+        interval = max(1.0, self.lease_seconds / 3)
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                extended = await asyncio.to_thread(
+                    self.store.extend_task_lease,
+                    task["id"],
+                    task["lease_token"],
+                    self.lease_seconds,
+                )
+            except Exception as exc:
+                try:
+                    self.store.audit("task_lease_heartbeat_error", {
+                        "task_id": task["id"], "error": str(exc)[:500],
+                    })
+                except Exception:
+                    pass
+                return
+            if not extended:
+                return
 
     async def _execute(self, task: dict[str, Any]) -> dict[str, Any]:
         if task["kind"] == "health_check":
