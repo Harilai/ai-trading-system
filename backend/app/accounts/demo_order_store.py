@@ -314,6 +314,31 @@ class BinanceDemoOrderStore:
         result["last_result"] = json.loads(raw) if raw else None
         return result
 
+    def record_reconciliation_failure(self, client_order_id: str, error_type: str) -> None:
+        if not isinstance(error_type, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,80}", error_type):
+            raise DemoOrderStoreError("Reconciliation failure type is invalid")
+        stamp = datetime.now(timezone.utc).isoformat()
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT status FROM binance_demo_orders WHERE client_order_id=?",
+                (client_order_id,),
+            ).fetchone()
+            if row is None:
+                raise DemoOrderStoreError("Demo order intent not found")
+            if row["status"] not in ("intent_created", "submission_unknown", "open", "partially_filled"):
+                return
+            self._insert_event(
+                db, client_order_id, row["status"], row["status"],
+                {
+                    "source": "periodic_exchange_reconciliation",
+                    "outcome": "transient_failure",
+                    "error_type": error_type,
+                    "last_known_order_state_preserved": True,
+                },
+                stamp,
+            )
+
     def list_reconcilable_orders(self, *, limit: int = 10) -> list[dict]:
         if not isinstance(limit, int) or not 1 <= limit <= 100:
             raise DemoOrderStoreError("Reconciliation batch limit must be between 1 and 100")
