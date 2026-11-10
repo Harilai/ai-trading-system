@@ -80,6 +80,11 @@ class ChiefAgent:
         )
 
     def decide(self, scan: dict[str, Any], portfolio: dict[str, Any]) -> ChiefDecision:
+        if portfolio.get("valuation_complete") is False:
+            return ChiefDecision(
+                rationale="Portfolio valuation is incomplete; no autonomous order is permitted",
+                evidence={"valuation_complete": False},
+            )
         portfolio_positions = {}
         for position in portfolio.get("positions", []):
             symbol = position["symbol"].upper()

@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from app.providers.base import (
     AssetClass,
     MarketInstrument,
@@ -187,3 +189,11 @@ def test_registry_discovery_continues_when_one_provider_fails():
         "provider_id": "unavailable",
         "reason": "temporary exchange outage",
     }]
+
+
+def test_provider_registry_rejects_future_and_malformed_timestamps():
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    assert ProviderRegistry.is_stale({"timestamp": now_ms + 1}, 60) is True
+    assert ProviderRegistry.is_stale({"timestamp": float("nan")}, 60) is True
+    assert ProviderRegistry.is_stale({}, 60) is True
+    assert ProviderRegistry.is_stale({"timestamp": now_ms - 1000}, 60) is False

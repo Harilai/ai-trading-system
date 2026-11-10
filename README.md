@@ -2,7 +2,7 @@
 
 Plataforma modular de trading algorítmico autónomo, construida por fases con prioridad en la validación, la trazabilidad y la protección del capital.
 
-**Continuidad entre conversaciones:** consulta [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) para conocer el último estado revisado y el siguiente paso concreto. El método obligatorio de trabajo por roles especializados está en [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md). Comprueba siempre el estado vivo de `main` y las PR antes de continuar.
+**Continuidad entre conversaciones:** consulta [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) para conocer el último estado revisado y el siguiente paso concreto. El método obligatorio de trabajo por roles especializados está en [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md). El diseño de cartera EUR/USD está en [`docs/MULTICURRENCY_DESIGN.md`](docs/MULTICURRENCY_DESIGN.md). Comprueba siempre el estado vivo de `main` y las PR antes de continuar.
 
 ## Estado real de implementación
 
@@ -16,7 +16,9 @@ La rama integrada contiene actualmente:
 - Descubrimiento y enrutamiento de datos por proveedor; endpoints `/api/providers`, `/api/markets` y `/api/risk-profiles`.
 - Indicadores EMA, SMA, RSI, MACD, Bollinger Bands y ATR.
 - Simulación de compras y ventas con comisiones y slippage configurables.
-- Cartera paper con posiciones y operaciones aisladas por `provider_id + instrument_id`, incluida migración automática de bases SQLite anteriores.
+- Cartera paper multidivisa con efectivo EUR/USD separado, posiciones por `provider_id + instrument_id`, coste base EUR por posición USD y migración automática de bases SQLite anteriores.
+- Conversión paper EUR/USD explícita, autenticada, idempotente y auditada; tipos FX de Twelve Data con caché, cuota persistente y validación de frescura.
+- Órdenes paper manuales (solo propietario autenticado) para acciones/ETF cash USD de EE. UU. descubiertas por Twelve Data, con cotización reciente, spread máximo si hay bid/ask, sesión abierta, conversión FX, stop-loss obligatorio en compras y Risk Manager determinista. No hay ejecución mediante broker ni operaciones autónomas de equities.
 - Rechazo de pares no admitidos y datos de mercado obsoletos.
 - Worker asíncrono persistente con cola durable, leases, reintentos, recuperación de tareas expiradas y tolerancia a fallos transitorios del bucle de supervisión.
 - API de supervisión autenticada: estado, pausa, reanudación, parada de emergencia y encolado de tareas.
@@ -24,11 +26,11 @@ La rama integrada contiene actualmente:
 - Charts Agent determinista.
 - Strategy Research Agent con tres estrategias candidatas long-only (EMA 12/26, RSI(14) y Bollinger(20,2)), backtesting cronológico 70/30, validación de OHLCV finito y cronológico, benchmark buy-and-hold OOS con la misma exposición, tres ventanas walk-forward con gates de promoción, escenarios de estrés de comisiones/slippage a 1,5x y 2x, ejecución simulada en la apertura de la vela siguiente y costes configurables. La promoción exige al menos 3 operaciones OOS, tres ventanas walk-forward con al menos 40 velas evaluables y una operación por ventana, dos ventanas positivas como mínimo, retorno medio walk-forward positivo, drawdown dentro del límite y superar buy-and-hold neto de costes. El escenario 1,5x es un gate obligatorio: la estrategia debe conservar retorno neto positivo y superar buy-and-hold; el escenario 2x sigue siendo diagnóstico adicional. El análisis también etiqueta tendencia alcista/bajista/rango y volatilidad relativa como contexto diagnóstico, sin alterar la elegibilidad ni habilitar órdenes.
 
-**Límite funcional actual:** el `decision_cycle` puede ejecutar compras/ventas paper solo cuando el Risk Manager aprueba la propuesta. La capa universal es una arquitectura extensible, no soporte universal ya operativo: actualmente solo está implementado el adaptador de datos públicos crypto spot vía CCXT. No hay adaptadores de ejecución para brokers, DEX, wallets, forex, índices, materias primas, futuros, opciones ni DeFi. Twelve Data aporta datos de acciones/ETF de EE. UU., pero no ejecución ni conexión con brokers; el ciclo autónomo de selección/órdenes sigue limitado a crypto spot EUR. La investigación de acciones/ETF también puede ejecutarse como tarea autónoma de solo lectura cada 6 horas por defecto cuando el worker está habilitado y Twelve Data está configurado; no crea propuestas ni órdenes. La cartera paper ya identifica cada posición mediante `provider_id + instrument_id`, por lo que puede mantener el mismo símbolo en proveedores distintos. La migración SQLite conserva las posiciones antiguas asignándolas al proveedor histórico `ccxt:kraken`. No hay trading real ni permisos privados de proveedor.
+**Límite funcional actual:** el `decision_cycle` autónomo sigue limitado a crypto spot EUR y solo ejecuta cuando el Risk Manager aprueba. Las acciones/ETF estadounidenses pueden mantenerse y negociarse únicamente en modo paper mediante órdenes manuales autenticadas, después de convertir efectivo EUR a USD; el Chief no genera ni ejecuta propuestas de equities. Twelve Data es exclusivamente proveedor de datos/FX, no broker: no existe conexión de ejecución real. No hay adaptadores de ejecución para brokers, DEX, wallets, forex trading, índices, materias primas, futuros, opciones ni DeFi. La investigación de acciones/ETF puede ejecutarse como tarea autónoma de solo lectura cada 6 horas por defecto; no crea propuestas ni órdenes. La cartera reporta equity consolidado en EUR y conserva saldos/valores nativos, pero la valoración queda incompleta si falta una cotización o FX fresco. No hay trading real ni permisos privados de proveedor.
 
 ## Capital y divisa
 
-El backend actual usa una cartera simulada de **20 EUR**, no 20 USD. La primera integración solo analiza pares crypto spot cotizados en EUR. La arquitectura de proveedores no implica acceso a todos los mercados. Forex, acciones, ETF, índices, commodities, derivados, DEX, wallets y DeFi siguen sin adaptadores operativos.
+El backend parte de una cartera simulada de **20 EUR**. EUR es la divisa base de reporting; el efectivo USD se mantiene en un saldo separado. Para comprar acciones/ETF estadounidenses en paper es obligatorio convertir EUR a USD mediante una operación explícita, autenticada e idempotente. La conversión conserva tipo, proveedor, timestamp, importes y coste. La valoración agregada convierte USD a EUR con FX fresco; si no hay tipo válido, se marca incompleta y se bloquean nuevas órdenes hasta recuperar una valoración fiable. El trading autónomo continúa limitado a crypto spot EUR. Los valores paper iniciales son supuestos configurables, no tarifas de un broker: conversión FX 0,10%, comisión equity 0,10%, slippage equity 0,10%, spread máximo 2%, FX máximo 300 s y orden mínima 1 USD, límite por orden del 10%, concentración máxima por instrumento del 20% y distancia máxima del stop del 5%. Se ajustan con `FX_CONVERSION_FEE_RATE`, `EQUITY_PAPER_FEE_RATE`, `EQUITY_PAPER_SLIPPAGE_RATE`, `MAX_EQUITY_SPREAD_FRACTION`, `MAX_EQUITY_ORDER_FRACTION`, `MAX_EQUITY_POSITION_FRACTION`, `MAX_EQUITY_STOP_DISTANCE_FRACTION`, `MAX_FX_DATA_AGE_SECONDS` y `MIN_ORDER_VALUE_USD`.
 
 ## Arquitectura objetivo
 
@@ -115,7 +117,7 @@ docker compose up -d api
 
 El servicio `backup` ejecuta este mismo mecanismo automáticamente cada 24 horas (`BACKUP_INTERVAL_SECONDS`) y elimina copias locales con más de 14 días (`BACKUP_RETENTION_DAYS`). Consulta su actividad con `docker compose logs -f backup`. Las copias siguen dentro del mismo volumen/servidor: no protegen frente a pérdida del servidor o del volumen. Conserva también una copia externa y comprueba periódicamente que puedes restaurarla.
 
-El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y controles del worker. Para pausar, reanudar, activar emergencia o encolar tareas, introduce `AGENT_CONTROL_TOKEN`; el token solo se mantiene en memoria de esa página y no se guarda en `localStorage`. No incluye envío manual de órdenes ni conexión de wallets.
+El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y controles del worker. Para pausar, reanudar, activar emergencia o encolar tareas, introduce `AGENT_CONTROL_TOKEN`; el token solo se mantiene en memoria de esa página y no se guarda en `localStorage`. La UI aún no incluye un formulario de conversión FX ni de órdenes manuales de equities; esas operaciones están disponibles por API autenticada. No hay conexión de wallets.
 
 ## Endpoints principales
 
@@ -128,12 +130,14 @@ El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y contr
 - `GET /api/market/{symbol}/ticker`
 - `GET /api/market/{symbol}/ohlcv`
 - `GET /api/market/{symbol}/indicators`
-- `GET /api/portfolio`
+- `GET /api/fx/EUR/USD` y `GET /api/fx/USD/EUR` — tipos FX frescos validados; USD/EUR se deriva invirtiendo la misma observación EUR/USD.
+- `GET /api/portfolio` — efectivo separado por moneda y equity consolidado en EUR.
 - `GET /api/trades`
 - `GET /api/agent/withdrawals` — requiere `X-Agent-Token`.
 - `POST /api/agent/withdrawals` — solicita retirada paper de cualquier efectivo disponible; se desglosa la parte de beneficio reservado y la parte no reservada.
 - `POST /api/agent/withdrawals/{id}/approve` y `/cancel` — aprobación/cancelación manual con token.
-- `POST /api/orders` — solo paper; exige `X-Agent-Token` válido (`AGENT_CONTROL_TOKEN`), aprobación del Risk Manager y stop-loss explícito en compras; admite `provider_id`, `instrument_id`, `strategy_id` y niveles protectores.
+- `GET /api/agent/fx-conversions` y `POST /api/agent/fx-conversions` — historial y conversión paper EUR/USD; requieren `X-Agent-Token` y clave idempotente.
+- `POST /api/orders` — solo paper; exige `X-Agent-Token` válido (`AGENT_CONTROL_TOKEN`), aprobación del Risk Manager y stop-loss explícito en compras. Admite crypto spot EUR y órdenes manuales de cash equities/ETF USD de Twelve Data; estas últimas requieren efectivo USD previamente convertido, cotización reciente, sesión abierta y slippage paper configurable; si el proveedor entrega bid/ask, se valida el spread y se usa el lado correspondiente.
 - `GET /api/agent/strategy-history?limit=100&strategy_id=ema_12_26&instrument_id=...` — historial persistente de validación, benchmark, walk-forward, costes y motivos de rechazo; requiere `X-Agent-Token`.
 - `GET /api/agent/status` — requiere `X-Agent-Token`.
 - `POST /api/agent/resume`, `/pause`, `/emergency-stop`, `/reset-emergency-stop`.
@@ -141,7 +145,7 @@ El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y contr
 
 ## Supervisión del worker
 
-Configura un secreto largo y aleatorio en `.env` como `AGENT_CONTROL_TOKEN` y ajusta `MAX_STOP_DISTANCE_FRACTION` si procede (por defecto 0,05). Los endpoints de control y el endpoint manual de órdenes paper requieren ese valor en la cabecera `X-Agent-Token`. Si no está configurado, permanecen deshabilitados y devuelven 503. Las compras manuales necesitan stop-loss y pasan por el mismo Risk Manager determinista que las decisiones autónomas.
+Configura un secreto largo y aleatorio en `.env` como `AGENT_CONTROL_TOKEN` y ajusta `MAX_STOP_DISTANCE_FRACTION` si procede (por defecto 0,05). Los endpoints de control y el endpoint manual de órdenes paper requieren ese valor en la cabecera `X-Agent-Token`. Si no está configurado, permanecen deshabilitados y devuelven 503. Las compras manuales necesitan stop-loss y pasan por el Risk Manager determinista. En equities, el stop-loss se almacena pero todavía no se ejecuta automáticamente; el worker autónomo sigue limitado a crypto spot EUR.
 
 El worker publica un heartbeat cada ciclo; `/api/health/ready` falla si la base de datos no responde o el heartbeat supera 600 segundos. Docker usa esta comprobación de readiness, no solo la respuesta HTTP del proceso. El worker se inicia pausado. Al reanudarlo explícitamente, programa un `decision_cycle` cada 5 minutos por defecto (`DECISION_CYCLE_INTERVAL_SECONDS`), sin solapar tareas pendientes/en ejecución. Si Twelve Data está configurado, también programa una tarea `equity_research` independiente cada 6 horas (`EQUITY_RESEARCH_INTERVAL_SECONDS`, mínimo 1 hora). Esta tarea muestrea el catálogo, analiza acciones/ETF y persiste el resultado en la memoria/auditoría del agente; nunca genera órdenes. La cuota de Twelve Data se protege con límites persistentes. Cada ciclo puede ejecutar órdenes paper si el Chief genera una propuesta y el Risk Manager la aprueba. También se pueden encolar análisis manuales. Las salidas stop-loss/take-profit se comprueban en cada ciclo, no continuamente entre ciclos. La contabilidad separa P/L realizado y no realizado; la reserva provisional destina el 50% del beneficio neto realizado a retirada y el 50% a reinversión. Las retiradas paper requieren solicitud y aprobación manual y pueden usar cualquier efectivo disponible, incluido principal y beneficio; la contabilidad identifica cuánto procede de la reserva de beneficio y cuánto de capital no reservado. Las solicitudes pendientes reservan efectivo para evitar compromisos duplicados. No se liquidan posiciones automáticamente: si el efectivo no basta, primero habría que autorizar una venta paper controlada. No expongas la API a Internet sin HTTPS, autenticación, restricciones de red, rate limiting y gestión segura de secretos.
 
@@ -150,7 +154,7 @@ El worker publica un heartbeat cada ciclo; `/api/health/ready` falla si la base 
 - Paper trading es el único modo de ejecución disponible.
 - No se almacenan claves privadas de exchanges ni se solicitan permisos de retirada.
 - El adaptador CCXT inicial es exclusivamente de datos públicos; no autentica cuentas ni envía órdenes.
-- Los perfiles de margin, futures, options, forex y DeFi están deshabilitados. El Risk Manager solo permite crypto spot.
+- Los perfiles de margin, futures, options, forex trading y DeFi están deshabilitados. El Risk Manager permite crypto spot EUR y, por separado, órdenes manuales autenticadas de cash equities/ETF USD en paper; no permite que el Chief opere equities.
 - No se solicita ni registra ninguna seed phrase o clave privada de wallet. No existe aún infraestructura de firma.
 - El worker depende de que el proceso de la aplicación esté desplegado y activo; una conversación de ChatGPT no mantiene el proceso en ejecución.
 - Los backtests son evidencia histórica, no una garantía de rentabilidad.

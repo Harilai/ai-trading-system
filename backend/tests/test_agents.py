@@ -88,3 +88,104 @@ def test_charts_agent_returns_typed_analysis():
 def test_charts_agent_rejects_insufficient_history():
     with pytest.raises(ValueError):
         ChartsAgent().analyze("BTC/EUR", "1m", [])
+
+
+def equity_proposal(**overrides):
+    values = {
+        "symbol": "AAPL",
+        "provider_id": "twelve_data",
+        "instrument_id": "twelve_data:cash_equity:AAPL",
+        "asset_class": "equity",
+        "market_type": "cash_equity",
+        "side": "buy",
+        "quantity": 1,
+        "reference_price": 100,
+        "stop_loss": 95,
+        "rationale": "Owner initiated paper equity purchase with a defined stop",
+        "source_agent": "manual_owner",
+    }
+    values.update(overrides)
+    return TradeProposal(**values)
+
+
+def equity_context(**overrides):
+    values = {
+        "equity_eur": 1000,
+        "available_cash_eur": 0,
+        "available_cash_by_currency": {"USD": 500},
+        "quote_currency": "USD",
+        "fx_rate_to_eur": 0.9,
+        "max_order_fraction": 0.25,
+        "max_stop_distance_fraction": 0.05,
+        "estimated_fee_rate": 0.001,
+        "estimated_slippage_rate": 0.001,
+    }
+    values.update(overrides)
+    return RiskContext(**values)
+
+
+def test_risk_manager_accepts_manual_usd_equity_with_fx_converted_exposure():
+    decision = RiskManager().evaluate(equity_proposal(), equity_context())
+    assert decision.accepted is True
+    assert decision.estimated_notional_eur == pytest.approx(90.18009)
+
+
+def test_risk_manager_rejects_equity_orders_from_autonomous_agents():
+    decision = RiskManager().evaluate(
+        equity_proposal(source_agent="sniper"),
+        equity_context(),
+    )
+    assert decision.accepted is False
+    assert "manual-owner only" in decision.reason
+
+
+def test_risk_manager_rejects_equity_buy_without_usd_cash():
+    decision = RiskManager().evaluate(
+        equity_proposal(), equity_context(available_cash_by_currency={"USD": 0}),
+    )
+    assert decision.accepted is False
+    assert "insufficient available usd" in decision.reason.lower()
+
+
+def test_risk_manager_rejects_equity_order_above_eur_allocation_limit():
+    decision = RiskManager().evaluate(
+        equity_proposal(quantity=4),
+        equity_context(available_cash_by_currency={"USD": 1000}),
+    )
+    assert decision.accepted is False
+    assert "maximum eur portfolio allocation" in decision.reason.lower()
+
+
+def test_risk_manager_allows_equity_sell_only_against_matching_position():
+    sell = equity_proposal(side="sell", stop_loss=None, quantity=1)
+    accepted = RiskManager().evaluate(
+        sell, equity_context(positions={"twelve_data:cash_equity:AAPL": 2}),
+    )
+    rejected = RiskManager().evaluate(
+        equity_proposal(side="sell", stop_loss=None, quantity=3),
+        equity_context(positions={"twelve_data:cash_equity:AAPL": 2}),
+    )
+    assert accepted.accepted is True
+    assert rejected.accepted is False
+    assert "shorting is disabled" in rejected.reason
+
+
+def test_risk_manager_rejects_equity_purchase_above_position_concentration_cap():
+    decision = RiskManager().evaluate(
+        equity_proposal(),
+        equity_context(positions={"twelve_data:cash_equity:AAPL": 2}),
+    )
+    assert decision.accepted is False
+    assert "instrument concentration" in decision.reason.lower()
+
+
+def test_equity_concentration_uses_current_eur_market_value_when_available():
+    decision = RiskManager().evaluate(
+        equity_proposal(),
+        equity_context(
+            positions={"twelve_data:cash_equity:AAPL": 1},
+            position_values_eur={"twelve_data:cash_equity:AAPL": 190},
+        ),
+    )
+    assert decision.accepted is False
+    assert "instrument concentration" in decision.reason.lower()

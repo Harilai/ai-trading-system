@@ -2,12 +2,21 @@
 
 > Continuity between ChatGPT sessions: read [`docs/SESSION_HANDOFF.md`](SESSION_HANDOFF.md) for project state and [`docs/AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) for the mandatory multi-agent development method.
 
-Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
+Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
+
+## Siguiente secuencia de desarrollo acordada
+
+1. **Cartera paper multidivisa para acciones/ETF:** efectivo EUR/USD separado, conversión FX paper explícita y auditable, valoración y riesgo consolidados en EUR. El soporte manual paper de equities se está validando en PR #41; el Chief sigue read-only para equities.
+2. **Conciliación de órdenes y fills:** estados legales, idempotencia, recuperación y fallos entre límites transaccionales.
+3. **Backups externos:** copia fuera del volumen/servidor Docker y restauración verificada.
+4. **Dashboard ampliado:** gráficos, investigación y retiradas.
+5. **Despliegue persistente 24/7:** VPS, seguridad, monitorización y recuperación.
 
 ## Estado integrado
 
 | Área | Estado |
 |---|---|
+| Cartera paper multidivisa EUR/USD, conversiones FX y manual equity/ETF paper | En validación en PR #41; no integrado hasta CI/revisión |
 | Backend FastAPI y paper portfolio SQLite | Implementado |
 | Datos públicos crypto spot vía CCXT | Implementado; solo datos públicos |
 | Datos públicos US equities/ETF vía Twelve Data Basic | Adaptador implementado y probado; API key gratuita opcional; solo datos, sin trading |
@@ -32,10 +41,10 @@ Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de 
 | Strategy Research: EMA, RSI, Bollinger, split 70/30, OHLCV validado, benchmark buy-and-hold y gates walk-forward | Implementado como filtro de investigación; no habilita ejecución |
 | Chief: selección de oportunidad y propuesta buy/sell/hold | Implementado con Risk Manager obligatorio |
 | Chief Agent y coordinación de decisiones | Implementado; ciclo ejecuta paper bajo gate de riesgo |
-| Risk Manager conectado obligatoriamente a órdenes paper | Implementado; solo crypto spot EUR |
+| Risk Manager conectado obligatoriamente a órdenes paper | Implementado; crypto spot EUR autónomo y cash equities/ETF USD manual-only paper en PR #41 |
 | Sniper y generación de propuestas | Pendiente |
 | Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada; ciclo periódico cada 5 min al reanudar worker |
-| Datos de acciones/ETF estadounidenses | Adaptador Twelve Data Basic y pipeline de investigación autónoma read-only integrados; ejecución sigue deshabilitada |
+| Datos de acciones/ETF estadounidenses | Adaptador Twelve Data Basic y pipeline autónomo read-only integrados; órdenes manuales paper USD en PR #41, sin broker ni ejecución real |
 | Broker de acciones/ETF y ejecución | Pendiente; requiere broker adapter, elegibilidad y validación |
 | DEX, wallets, blockchain y DeFi | Pendiente; no hay integración ni firma |
 | Futuros, opciones, margin y derivados | Deshabilitados; perfiles y límites específicos pendientes |

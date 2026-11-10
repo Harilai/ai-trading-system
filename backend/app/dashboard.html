@@ -83,18 +83,21 @@
 
     <section class="metrics" aria-label="Resumen de cartera">
       <div class="panel metric"><div class="label">Equity</div><div class="value" id="equity">—</div><div class="hint">Efectivo + valor de mercado</div></div>
-      <div class="panel metric"><div class="label">Efectivo</div><div class="value" id="cash">—</div><div class="hint">Saldo disponible</div></div>
+      <div class="panel metric"><div class="label">Efectivo EUR</div><div class="value" id="cash">—</div><div class="hint" id="cash-breakdown">Saldos por divisa</div></div>
       <div class="panel metric"><div class="label">P/L realizado</div><div class="value" id="realised">—</div><div class="hint">Operaciones cerradas</div></div>
       <div class="panel metric"><div class="label">P/L no realizado</div><div class="value" id="unrealised">—</div><div class="hint">Posiciones abiertas</div></div>
       <div class="panel metric"><div class="label">Reserva retirada</div><div class="value" id="reserve">—</div><div class="hint">50% del beneficio neto</div></div>
     </section>
 
+    <div id="valuation-warning" class="notice" hidden>Valoración incompleta: faltan cotizaciones o tipos FX recientes. El equity mostrado es parcial y no debe usarse para autorizar nuevas entradas.</div>
+
     <section class="grid">
       <div class="panel">
         <div class="section-head"><h2>Posiciones abiertas</h2><span id="position-count" class="badge">0</span></div>
         <div class="table-wrap">
-          <table><thead><tr><th>Activo</th><th>Proveedor</th><th>Cantidad</th><th>Precio medio</th><th>Precio mercado</th><th>P/L</th><th>Stop</th><th>Objetivo</th></tr></thead><tbody id="positions"><tr><td colspan="8" class="empty">Cargando…</td></tr></tbody></table>
+          <table><thead><tr><th>Activo</th><th>Proveedor</th><th>Cantidad</th><th>Precio medio</th><th>Precio mercado</th><th>P/L EUR</th><th>Stop</th><th>Objetivo</th></tr></thead><tbody id="positions"><tr><td colspan="8" class="empty">Cargando…</td></tr></tbody></table>
         </div>
+        <div class="hint">En acciones/ETF, stop-loss y take-profit son niveles registrados; todavía no activan cierres automáticos.</div>
       </div>
       <div class="panel">
         <div class="section-head"><h2>Estado del agente</h2><span id="agent-state" class="badge">Token requerido</span></div>
@@ -144,7 +147,7 @@
     (() => {
       let controlToken = "";
       const $ = (id) => document.getElementById(id);
-      const money = (value) => Number(value || 0).toLocaleString("es-ES", {style:"currency",currency:"EUR"});
+      const money = (value, currency="EUR") => Number(value || 0).toLocaleString("es-ES", {style:"currency",currency});
       const number = (value) => Number(value || 0).toLocaleString("es-ES",{maximumFractionDigits:8});
       const date = (value) => value ? new Date(value).toLocaleString("es-ES") : "—";
       const setMessage = (id, text, kind="") => {
@@ -174,9 +177,10 @@
           const row=document.createElement("tr");
           const pnl=Number(p.unrealised_pnl || 0);
           cell(row,p.symbol);cell(row,p.provider_id);cell(row,number(p.quantity));
-          cell(row,money(p.average_price));cell(row,money(p.market_price));
-          cell(row,money(pnl),pnl>=0?"positive":"negative");
-          cell(row,p.stop_loss==null?"—":money(p.stop_loss));cell(row,p.take_profit==null?"—":money(p.take_profit));
+          const currency=p.quote_currency||"EUR";
+          cell(row,money(p.average_price,currency));cell(row,money(p.market_price,currency));
+          cell(row,money(pnl,"EUR"),pnl>=0?"positive":"negative");
+          cell(row,p.stop_loss==null?"—":money(p.stop_loss,currency));cell(row,p.take_profit==null?"—":money(p.take_profit,currency));
           body.appendChild(row);
         }
       }
@@ -186,7 +190,8 @@
         for(const t of items){
           const row=document.createElement("tr");cell(row,date(t.created_at));cell(row,t.symbol);
           cell(row,String(t.side||"").toUpperCase());cell(row,number(t.quantity));
-          cell(row,money(t.price));cell(row,money(t.fee));cell(row,money(t.total));body.appendChild(row);
+          const currency=t.quote_currency||"EUR";
+          cell(row,money(t.price,currency));cell(row,money(t.fee,currency));cell(row,money(t.total,currency));body.appendChild(row);
         }
       }
       function statusRow(label,value){
@@ -229,7 +234,9 @@
             api("/api/portfolio"),api("/api/trades?limit=12"),api("/api/health")
           ]);
           $("equity").textContent=money(portfolio.equity);
-          $("cash").textContent=money(portfolio.cash);
+          $("cash").textContent=money(portfolio.cash,"EUR");
+          $("cash-breakdown").textContent="Por divisa: "+(portfolio.cash_balances||[]).map(item=>money(item.balance,item.currency)).join(" · ");
+          $("valuation-warning").hidden=!!portfolio.valuation_complete;
           $("realised").textContent=money(portfolio.realised_pnl);
           $("unrealised").textContent=money(portfolio.unrealised_pnl);
           $("reserve").textContent=money(portfolio.withdrawal_reserve);
