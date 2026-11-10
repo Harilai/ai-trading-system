@@ -36,7 +36,8 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 
 | Área | Estado |
 |---|---|
-| Contratos normalizados de account providers | En revisión en PR #71; registry multi-account, balance normalization, permission gates y endpoints genéricos; sin nuevos adaptadores de ejecución |
+| Contratos normalizados de account providers | Integrado en PR #71 (`a7a9bb8`); 433 tests, Docker hardening y endpoints genéricos autenticados |
+| Adaptador CCXT read-only multi-CEX | En revisión en PR #72; balance Spot only, API key scope no verificado por software, sin operaciones de escritura |
 | Catálogo persistente de instrumentos | Implementado y fusionado en PR #54 (`b9dbba5`); 323 tests y Docker hardening correctos |
 | Preparación operativa 24/7 | Implementada en PR #56 (`c892ff3`); 330 tests y Docker hardening correctos; VPS pendiente |
 | Binance Spot account connector (read-only) | Implementado en PR #57 (`8773d75`); 345 tests y Docker hardening correctos; API key no configurada |
