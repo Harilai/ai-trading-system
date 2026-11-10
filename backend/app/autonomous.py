@@ -11,6 +11,7 @@ from uuid import uuid4
 from .config import settings
 from .fx import invert_fx_observation, validate_fx_observation
 from .market_data import MarketDataError
+from .portfolio import PortfolioError
 
 
 def utcnow() -> datetime:
@@ -611,7 +612,9 @@ class AutonomousAgent:
             if self.scout is None or self.chief is None or self.portfolio is None:
                 raise RuntimeError("Decision cycle dependencies are not configured")
 
-            # A retry after a process crash must not place a second paper order.
+            # Reconcile the durable intent against the trade ledger before doing
+            # any new research. A retry resumes the exact approved request.
+            await asyncio.to_thread(self.portfolio.reconcile_order_intents)
             previous_order = await asyncio.to_thread(
                 self.portfolio.get_trade_by_client_order_id,
                 task["id"],
@@ -624,6 +627,48 @@ class AutonomousAgent:
                 }
                 self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
                 return result
+
+            existing_intent = await asyncio.to_thread(
+                self.portfolio.get_order_intent,
+                task["id"],
+            )
+            if existing_intent is not None:
+                if existing_intent["status"] == "risk_approved":
+                    try:
+                        resumed_order = await asyncio.to_thread(
+                            self.portfolio.execute,
+                            **existing_intent["request"],
+                        )
+                    except PortfolioError as exc:
+                        await asyncio.to_thread(
+                            self.portfolio.reject_order_intent,
+                            task["id"],
+                            str(exc),
+                        )
+                        result = {
+                            "execution": "rejected",
+                            "order_intent": await asyncio.to_thread(
+                                self.portfolio.get_order_intent, task["id"],
+                            ),
+                        }
+                    else:
+                        result = {
+                            "execution": "paper_order_resumed",
+                            "order": resumed_order,
+                            "idempotent_replay": True,
+                        }
+                    self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
+                    return result
+                if existing_intent["status"] == "rejected":
+                    result = {
+                        "execution": "rejected",
+                        "order_intent": existing_intent,
+                    }
+                    self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
+                    return result
+                raise RuntimeError(
+                    f"Order intent {task['id']} is in {existing_intent['status']} state; manual reconciliation required"
+                )
 
             unvalued_portfolio = await asyncio.to_thread(self.portfolio.snapshot)
             held_positions = [
@@ -720,24 +765,42 @@ class AutonomousAgent:
                 and decision.risk.accepted
             ):
                 proposal = decision.proposal
-                order = await asyncio.to_thread(
-                    self.portfolio.execute,
-                    proposal.symbol,
-                    proposal.side,
-                    decision.risk.approved_quantity,
-                    proposal.reference_price,
-                    settings.fee_rate,
-                    settings.slippage_rate,
-                    settings.max_order_fraction,
-                    settings.min_order_value_eur,
-                    client_order_id=task["id"],
-                    provider_id=proposal.provider_id,
-                    instrument_id=proposal.instrument_id,
-                    strategy_id=decision.strategy_id if proposal.side == "buy" else None,
-                    stop_loss=proposal.stop_loss,
-                    take_profit=proposal.take_profit,
+                execution_request = {
+                    "symbol": proposal.symbol,
+                    "side": proposal.side,
+                    "quantity": decision.risk.approved_quantity,
+                    "price": proposal.reference_price,
+                    "fee_rate": settings.fee_rate,
+                    "slippage_rate": settings.slippage_rate,
+                    "max_fraction": settings.max_order_fraction,
+                    "minimum": settings.min_order_value_eur,
+                    "client_order_id": task["id"],
+                    "provider_id": proposal.provider_id,
+                    "instrument_id": proposal.instrument_id,
+                    "strategy_id": decision.strategy_id if proposal.side == "buy" else None,
+                    "stop_loss": proposal.stop_loss,
+                    "take_profit": proposal.take_profit,
+                }
+                await asyncio.to_thread(
+                    self.portfolio.record_order_intent,
+                    task["id"],
+                    execution_request,
+                    decision.model_dump(),
                 )
-                execution = "paper_order"
+                try:
+                    order = await asyncio.to_thread(
+                        self.portfolio.execute,
+                        **execution_request,
+                    )
+                except PortfolioError as exc:
+                    await asyncio.to_thread(
+                        self.portfolio.reject_order_intent,
+                        task["id"],
+                        str(exc),
+                    )
+                    execution = "rejected"
+                else:
+                    execution = "paper_order"
             result = {
                 "scan": scan,
                 "decision": decision.model_dump(),
