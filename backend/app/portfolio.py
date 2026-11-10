@@ -657,7 +657,7 @@ class PaperPortfolio:
             db.execute("BEGIN IMMEDIATE")
             rows = db.execute(
                 "SELECT client_order_id,status,trade_id,request_json FROM order_intents "
-                "WHERE status IN ('risk_approved','filled','reconciliation_required')"
+                "WHERE status IN ('risk_approved','filled','rejected','expired','reconciliation_required')"
             ).fetchall()
             for row in rows:
                 trade = db.execute(
@@ -667,7 +667,9 @@ class PaperPortfolio:
                 reason = None
                 if trade is not None:
                     request = json.loads(row["request_json"])
-                    if not self._trade_matches_order_intent(dict(trade), request):
+                    if row["status"] in ("rejected", "expired"):
+                        reason = f"Trade exists for terminal {row['status']} order intent"
+                    elif not self._trade_matches_order_intent(dict(trade), request):
                         reason = "Trade ledger row does not match the immutable approved order intent"
                 elif row["status"] == "filled":
                     reason = "Filled intent has no matching trade ledger row"
