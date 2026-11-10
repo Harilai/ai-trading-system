@@ -369,3 +369,34 @@ def test_demo_execution_reconciles_by_client_id_and_cancels_by_exchange_id():
     )
     assert cancelled["status"] == "cancelled"
     assert exchange.cancelled == ["demo-order-123"]
+
+
+def test_demo_execution_preserves_zero_fill_and_missing_remaining_without_inventing_completion():
+    exchange = FakeDemoExecutionExchange()
+    provider = make_demo_execution(exchange)
+    order = provider.normalize_order({
+        "id": "order-zero",
+        "clientOrderId": "client-zero",
+        "status": "open",
+        "filled": "0.00000000",
+        "remaining": None,
+        "average": "0.000000",
+    }, expected_client_order_id="client-zero")
+
+    assert order["status"] == "open"
+    assert order["filled"] == "0"
+    assert order["remaining"] is None
+    assert order["average"] is None
+
+
+def test_demo_execution_fails_closed_on_inconsistent_closed_order_response():
+    exchange = FakeDemoExecutionExchange()
+    provider = make_demo_execution(exchange)
+    order = provider.normalize_order({
+        "id": "order-invalid",
+        "clientOrderId": "client-invalid",
+        "status": "closed",
+        "filled": "0",
+        "remaining": "0.001",
+    }, expected_client_order_id="client-invalid")
+    assert order["status"] == "reconciliation_required"
