@@ -138,7 +138,7 @@ def test_legacy_database_is_migrated_with_protection_and_idempotency_columns(tmp
         position_columns = {row[1] for row in db.execute("PRAGMA table_info(positions)")}
         trade_columns = {row[1] for row in db.execute("PRAGMA table_info(trades)")}
     assert {"provider_id", "instrument_id", "strategy_id", "stop_loss", "take_profit"} <= position_columns
-    assert {"client_order_id", "provider_id", "instrument_id", "quote_currency", "fx_rate_to_eur", "total_eur", "fx_provider_id", "fx_timestamp", "strategy_id", "stop_loss", "take_profit"} <= trade_columns
+    assert {"client_order_id", "provider_id", "instrument_id", "quote_currency", "fx_rate_to_eur", "total_eur", "fx_provider_id", "fx_timestamp", "strategy_id", "stop_loss", "take_profit", "market_timestamp"} <= trade_columns
     with sqlite3.connect(path) as db:
         withdrawal_columns = {row[1] for row in db.execute("PRAGMA table_info(withdrawal_requests)")}
     assert {"profit_component", "non_reserved_component"} <= withdrawal_columns
