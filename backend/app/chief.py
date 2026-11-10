@@ -151,6 +151,7 @@ class ChiefAgent:
             "excluded_missing_price": 0,
             "sniper_no_proposal": 0,
             "risk_rejections": 0,
+            "validation_failure_counts": {"promotion": {}, "experimental": {}},
         }
         for analysed_item in scan.get("analyses", []):
             research_candidates = analysed_item.get("strategy_research", {}).get("candidates", [])
@@ -158,6 +159,14 @@ class ChiefAgent:
                 validated = bool(research_candidate.get("eligible"))
                 experimental_candidate = bool(research_candidate.get("experimental_eligible"))
                 entry_signal = bool(research_candidate.get("current_entry_signal"))
+                for gate, field in (
+                    ("promotion", "validation_failures"),
+                    ("experimental", "experimental_validation_failures"),
+                ):
+                    for failure in research_candidate.get(field) or []:
+                        counts = diagnostics["validation_failure_counts"][gate]
+                        failure_code = str(failure)
+                        counts[failure_code] = counts.get(failure_code, 0) + 1
                 if validated:
                     diagnostics["validated_candidates"] += 1
                     if entry_signal:
