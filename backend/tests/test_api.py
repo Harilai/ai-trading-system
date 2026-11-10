@@ -1697,7 +1697,7 @@ def test_generic_account_position_routes_return_normalized_positions_and_snapsho
                 "account_key_permissions_verified": False,
             }
 
-        def fetch_positions(self):
+        def fetch_positions(self, market_type=None):
             return {
                 "provider_id": "test:broker",
                 "account_alias": "cash-equities",
