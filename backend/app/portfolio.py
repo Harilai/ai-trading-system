@@ -334,6 +334,49 @@ class PaperPortfolio:
         return dict(row) if row else None
 
     @staticmethod
+    def _normalize_order_request(request: dict) -> dict:
+        if not isinstance(request, dict):
+            raise PortfolioError("Order request must be an object")
+        try:
+            symbol = str(request["symbol"]).strip().upper()
+            provider_id = str(request.get("provider_id") or "ccxt:kraken").strip()
+            client_order_id = request.get("client_order_id")
+            if client_order_id is not None:
+                client_order_id = str(client_order_id).strip()
+            quote_currency = str(
+                request.get("quote_currency")
+                or (symbol.rsplit("/", 1)[-1] if "/" in symbol else "EUR")
+            ).strip().upper()
+            instrument_id = request.get("instrument_id") or f"{provider_id}:spot:{symbol}"
+            normalized = {
+                "symbol": symbol,
+                "side": str(request["side"]).strip().lower(),
+                "quantity": float(request["quantity"]),
+                "price": float(request["price"]),
+                "fee_rate": float(request["fee_rate"]),
+                "slippage_rate": float(request["slippage_rate"]),
+                "max_fraction": float(request["max_fraction"]),
+                "minimum": float(request["minimum"]),
+                "client_order_id": client_order_id,
+                "provider_id": provider_id,
+                "instrument_id": str(instrument_id),
+                "strategy_id": request.get("strategy_id"),
+                "stop_loss": float(request["stop_loss"]) if request.get("stop_loss") is not None else None,
+                "take_profit": float(request["take_profit"]) if request.get("take_profit") is not None else None,
+                "quote_currency": quote_currency,
+                "fx_rate_to_eur": float(request.get("fx_rate_to_eur", 1.0)),
+                "fx_provider_id": request.get("fx_provider_id"),
+                "fx_timestamp": request.get("fx_timestamp"),
+            }
+            if quote_currency == "USD" and normalized["fx_timestamp"] is not None:
+                normalized["fx_timestamp"] = int(normalized["fx_timestamp"])
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise PortfolioError("Order request contains missing or invalid fields") from exc
+        if not symbol or not provider_id or not normalized["instrument_id"]:
+            raise PortfolioError("Order request requires symbol, provider and instrument identity")
+        return normalized
+
+    @staticmethod
     def _canonical_json(value: dict) -> str:
         try:
             return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
@@ -349,9 +392,10 @@ class PaperPortfolio:
         """Durably persist a risk-approved paper order before attempting its fill."""
         if not isinstance(client_order_id, str) or not client_order_id.strip():
             raise PortfolioError("Order intent requires a non-blank client_order_id")
-        if not isinstance(request, dict) or request.get("client_order_id") != client_order_id:
+        normalized_request = self._normalize_order_request(request)
+        if normalized_request.get("client_order_id") != client_order_id:
             raise PortfolioError("Order intent request must carry the matching client_order_id")
-        request_json = self._canonical_json(request)
+        request_json = self._canonical_json(normalized_request)
         decision_json = self._canonical_json(decision) if decision is not None else None
         stamp = datetime.now(timezone.utc).isoformat()
         with self.lock, self.connect() as db:
@@ -570,7 +614,7 @@ class PaperPortfolio:
         if gross < minimum:
             raise PortfolioError(f"Minimum order value is {minimum:.2f} {quote_currency}")
 
-        request_payload = {
+        request_payload = self._normalize_order_request({
             "symbol": symbol, "side": side, "quantity": quantity, "price": price,
             "fee_rate": fee_rate, "slippage_rate": slippage_rate,
             "max_fraction": max_fraction, "minimum": minimum,
@@ -579,7 +623,7 @@ class PaperPortfolio:
             "stop_loss": stop_loss, "take_profit": take_profit,
             "quote_currency": quote_currency, "fx_rate_to_eur": fx_rate_to_eur,
             "fx_provider_id": fx_provider_id, "fx_timestamp": fx_timestamp,
-        }
+        })
         request_json = self._canonical_json(request_payload) if client_order_id else None
 
         with self.lock, self.connect() as db:
