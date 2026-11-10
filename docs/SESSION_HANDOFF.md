@@ -263,10 +263,26 @@ Siguiente secuencia:
 7. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** seguir `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md`; configurar las credenciales Demo únicamente en el servidor y verificar respuestas reales, filtros de mercado, precisión, partial fills, cancelación, timeout y reconciliación tras restart. No compartir claves en el chat ni guardarlas en Git. No usar claves de producción. Esta comprobación requiere una cuenta Demo y acceso al servidor del propietario; no se simula como si se hubiera ejecutado.
 8. **Completado — ledger individual de fills/fees (PR #66):** persistencia append-only, IDs de trade, cantidades, precios, costes, comisiones/activos y reconciliación idempotente por order ID. Nuevas órdenes Demo se bloquean mientras falte cobertura de fills o comisiones.
 9. **Completado — reconciliación periódica Binance Demo (PR #68):** worker con leases SQLite y fencing, backoff, polling por clientOrderId y conciliación de fills; corre aunque la estrategia esté pausada y nunca reenvía órdenes.
-10. **Siguiente — generalización de account/portfolio connectors:** contratos normalizados para balances, posiciones, órdenes, permisos y conciliación multi-venue, manteniendo adaptadores específicos y capabilities explícitas.
+10. **En curso — PR #71, contratos normalizados de account providers:** `AccountProviderRegistry` por `provider_id + account_alias`, balances normalizados, capacidades/permisos explícitos y endpoints genéricos autenticados. No añade brokers, posiciones live ni nuevos mercados ejecutables.
 11. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
 12. Completar despliegue persistente 24/7 en VPS y configurar el proveedor externo de backups en el entorno operativo.
 13. Evaluar live limitado por venue/clase solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+
+### PR #68 — conciliación periódica Binance Spot Demo
+
+- PR: https://github.com/Harilai/ai-trading-system/pull/68
+- Head validado: `a5d126395efbc7f2441343be258942422832f96b`.
+- 420 pruebas Python correctas; Compose, build Docker y ejecución non-root correctos.
+- Lease SQLite durable con fencing, polling acotado, backoff y recuperación tras restart.
+- Reconciliación de estados y fills sin reenvío ciego; funciona aunque la estrategia esté pausada o en emergency stop.
+
+### PR #71 — contratos normalizados de cuentas (en revisión)
+
+- Rama: `phase/account-provider-contracts`; PR: https://github.com/Harilai/ai-trading-system/pull/71.
+- Registry por `provider_id + account_alias`; Binance production read-only y Binance Demo permanecen como cuentas separadas.
+- Contratos para capacidades/permisos, balances, posiciones y órdenes; endpoints genéricos para balances y snapshots read-only.
+- No añade broker genérico ni ejecución live. El estado de permisos reales de la API key sigue sin verificarse automáticamente.
+- CI en el head actual: 432 pruebas Python y Docker hardening correctos (pendiente incorporar la documentación más reciente y repetir CI).
 
 ## 6. Límites que no se deben saltar
 
