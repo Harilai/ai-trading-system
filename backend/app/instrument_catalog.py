@@ -341,6 +341,7 @@ class InstrumentCatalog:
             payload = json.loads(row["payload_json"])
             payload.update({
                 "catalogue_id": row["catalogue_id"],
+                "legacy_instrument_id": payload["instrument_id"],
                 "first_seen_at": row["first_seen_at"],
                 "last_seen_at": row["last_seen_at"],
             })
@@ -361,6 +362,7 @@ class InstrumentCatalog:
         payload = json.loads(row["payload_json"])
         payload.update({
             "catalogue_id": row["catalogue_id"],
+            "legacy_instrument_id": payload["instrument_id"],
             "first_seen_at": row["first_seen_at"],
             "last_seen_at": row["last_seen_at"],
         })
