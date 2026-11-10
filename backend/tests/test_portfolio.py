@@ -557,12 +557,58 @@ def test_order_intent_survives_restart_and_fills_exact_approved_request(tmp_path
     assert completed["status"] == "filled"
     assert completed["trade_id"] == fill["id"]
     assert completed["fill"]["client_order_id"] == "task-order-1"
+    assert [event["to_status"] for event in restarted.list_order_intent_events("task-order-1")] == [
+        "risk_approved", "filled",
+    ]
     assert len(restarted.history()) == 1
 
     replay = restarted.execute(**request)
     assert replay["id"] == fill["id"]
     assert replay["idempotent_replay"] is True
     assert len(restarted.history()) == 1
+
+
+def test_order_intent_expires_when_market_evidence_is_stale_and_audits_transition(portfolio):
+    now_ms = 1_800_000_000_000
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "stale-approved-order",
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": None, "stop_loss": None, "take_profit": None,
+        "market_timestamp": now_ms - 120_000,
+    }
+    portfolio.record_order_intent("stale-approved-order", request, {"risk_accepted": True})
+    assert portfolio.order_intent_is_fresh(
+        "stale-approved-order", max_data_age_seconds=30,
+        max_fx_age_seconds=30, now_ms=now_ms,
+    ) is False
+    assert portfolio.expire_order_intent("stale-approved-order", "market observation is stale") is True
+    assert portfolio.get_order_intent("stale-approved-order")["status"] == "expired"
+    assert [event["to_status"] for event in portfolio.list_order_intent_events("stale-approved-order")] == [
+        "risk_approved", "expired",
+    ]
+    with pytest.raises(PortfolioError, match="expired"):
+        portfolio.execute(**portfolio.get_order_intent("stale-approved-order")["request"])
+
+
+def test_usd_order_intent_requires_fresh_fx_to_resume(portfolio):
+    now_ms = 1_800_000_000_000
+    request = {
+        "symbol": "AAPL", "side": "buy", "quantity": 1, "price": 100,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "stale-fx-approved-order",
+        "provider_id": "twelve_data", "instrument_id": "twelve_data:cash_equity:AAPL",
+        "strategy_id": None, "stop_loss": 95, "take_profit": None,
+        "quote_currency": "USD", "fx_rate_to_eur": 0.9,
+        "fx_provider_id": "twelve_data", "fx_timestamp": now_ms - 120_000,
+        "market_timestamp": now_ms - 1_000,
+    }
+    portfolio.record_order_intent("stale-fx-approved-order", request, {"risk_accepted": True})
+    assert portfolio.order_intent_is_fresh(
+        "stale-fx-approved-order", max_data_age_seconds=30,
+        max_fx_age_seconds=30, now_ms=now_ms,
+    ) is False
 
 
 def test_order_intent_rejects_reuse_with_changed_request(portfolio):
