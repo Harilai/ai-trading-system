@@ -290,6 +290,12 @@ def test_dashboard_route_serves_operations_ui():
     assert "AI Trading System" in response.text
     assert "PAPER TRADING" in response.text
     assert "localStorage" not in response.text
+    assert "Mercado · gráfico OHLCV" in response.text
+    assert "Conectores y salud" in response.text
+    assert "Órdenes paper y conciliación" in response.text
+    assert "Backups y restauración" in response.text
+    assert "Retiradas de cartera paper" in response.text
+    assert "No se realizará ninguna transferencia real" in response.text
 
 
 def test_fx_rate_endpoint_returns_fresh_validated_rate(monkeypatch):
