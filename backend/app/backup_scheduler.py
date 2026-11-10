@@ -243,6 +243,10 @@ def run_forever() -> None:
         external_enabled,
     )
     while True:
+        if not any(path.is_file() for path in database_paths):
+            logger.info("Waiting for at least one SQLite database file before starting backups")
+            time.sleep(min(interval, 30))
+            continue
         external_store = None
         external_error = None
         if external_enabled:
