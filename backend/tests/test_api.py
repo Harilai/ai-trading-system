@@ -1678,3 +1678,112 @@ def test_position_snapshot_api_requires_owner_token(monkeypatch):
 
 def test_position_snapshot_api_rejects_provider_without_position_capability(monkeypatch):
     from app.accounts.contracts import AccountProviderRegistry
+    from app.accounts.contracts import UnsupportedAccountCapability
+
+    headers = configure_order_auth(monkeypatch)
+    registry = AccountProviderRegistry()
+    monkeypatch.setattr("app.main.account_provider_registry", registry)
+
+    response = client.post(
+        "/api/accounts/missing:provider/positions/snapshots",
+        headers=headers,
+    )
+    assert response.status_code == 404
+
+
+def test_position_snapshot_api_persists_only_capability_checked_snapshot(monkeypatch, tmp_path):
+    from datetime import datetime, timezone
+    from app.accounts.contracts import AccountProviderRegistry
+    from app.accounts.position_snapshot_store import PositionSnapshotStore
+
+    headers = configure_order_auth(monkeypatch)
+
+    class PositionProvider:
+        def describe(self):
+            return {
+                "provider_id": "test:positions",
+                "account_alias": "account-1",
+                "venue_type": "exchange",
+                "environment": "demo",
+                "market_types": ["spot"],
+                "configured": True,
+                "balances": True,
+                "positions": True,
+                "order_management": False,
+                "order_submission": False,
+                "order_cancellation": False,
+                "reconciliation": False,
+                "read_only_connector": True,
+                "transfers": False,
+                "withdrawals": False,
+                "wallet_signing": False,
+                "account_key_permissions_verified": False,
+            }
+
+        def fetch_balances(self):
+            return {
+                "provider_id": "test:positions",
+                "account_alias": "account-1",
+                "market_type": "spot",
+                "environment": "demo",
+                "read_only": True,
+                "execution_enabled": False,
+                "withdrawals_enabled": False,
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "balances": [],
+            }
+
+        def fetch_positions_snapshot(self):
+            return {
+                "provider_id": "test:positions",
+                "account_alias": "account-1",
+                "environment": "demo",
+                "market_type": "spot",
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "read_only": True,
+                "execution_enabled": False,
+                "withdrawals_enabled": False,
+                "coverage_status": "complete",
+                "positions": [{
+                    "instrument_id": "test:spot:BTC/EUR",
+                    "symbol": "BTC/EUR",
+                    "asset_class": "crypto",
+                    "market_type": "spot",
+                    "quantity": "0.1",
+                    "side": "long",
+                    "quote_currency": "EUR",
+                    "average_entry_price": "60000",
+                    "mark_price": "61000",
+                    "market_value": "6100",
+                    "unrealized_pnl": "100",
+                }],
+            }
+
+    registry = AccountProviderRegistry()
+    registry.register(PositionProvider())
+    monkeypatch.setattr("app.main.account_provider_registry", registry)
+    store = PositionSnapshotStore(str(tmp_path / "position-api.db"))
+    monkeypatch.setattr("app.main.position_snapshot_store", store)
+
+    response = client.post(
+        "/api/accounts/test:positions/positions/snapshots?account_alias=account-1",
+        headers=headers,
+    )
+    assert response.status_code == 201
+    saved = response.json()
+    assert saved["coverage_status"] == "complete"
+    assert saved["positions"][0]["quantity"] == "0.1"
+
+    history = client.get(
+        "/api/accounts/positions/snapshots?provider_id=test%3Apositions",
+        headers=headers,
+    )
+    assert history.status_code == 200
+    assert history.json()["items"][0]["snapshot_id"] == saved["snapshot_id"]
+
+    detail = client.get(
+        f"/api/accounts/positions/snapshots/{saved['snapshot_id']}",
+        headers=headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["positions"][0]["instrument_id"] == "test:spot:BTC/EUR"
