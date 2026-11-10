@@ -33,7 +33,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 17. **Completado — contrato y endpoint de posiciones normalizadas (PR #73):** snapshot tipado por proveedor/cuenta/entorno, validación decimal e identidad de instrumento y capability gate. Los adaptadores actuales siguen declarando `positions=false`; endpoint preparado para proveedores que implementen lectura de posiciones.
 18. **En curso — ledger persistente de posiciones multi-venue (PR #74 abierto, listo para revisión):** snapshots append-only por proveedor/cuenta/instrumento, diferencias sin asumir ausencias como cero, coste/mark/P&L y divisa con procedencia y frescura; pendiente revisión independiente.
 19. **Completado en PR #75 — demo local paper:** Compose aislado con 10.000 EUR virtuales, datos públicos Kraken, clave Twelve Data opcional solo para cotizaciones, sin credenciales de cuenta ni ruta de ejecución. CI: 460 tests Python y validación/build Docker correctos en el SHA `7abd5f527612d0c593e93d8a94852cc29d0a72d8`.
-20. Supervisión paper equity y operación 24/7: stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
+20. Supervisión paper equity y operación 24/7: monitor stop/take equity integrado en paper; VPS real, proveedor de backups externo y drills de restauración siguen pendientes.
 21. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario. Sigue fuera del alcance de esta fase.
 
 
@@ -127,7 +127,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [x] Añadir idempotencia de órdenes paper mediante `client_order_id` vinculado a la tarea.
 - [x] Completar estados legales de órdenes paper (PR #44) y lifecycle limit-order Binance Spot Demo (PR #63), con idempotencia, reconciliación y fail-closed.
 - [x] Añadir reconciliación periódica automática de órdenes Demo abiertas/unknown tras restart, con lease, rate limit y sin reenvío ciego.
-- [x] Añadir monitorización paper de stop-loss/take-profit equity con cotizaciones USD y FX frescas, cierres idempotentes y recuperación tras reinicio (PR #77; CI pendiente en head actual).
+- [x] Añadir monitorización paper de stop-loss/take-profit equity con cotizaciones USD y FX frescas, cierres idempotentes, recuperación tras reinicio y ejecución independiente de la pausa de estrategias (PR #77; CI exacto: 524 tests passed, 1 warning; Docker hardening passed).
 - [x] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
 - [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
 
