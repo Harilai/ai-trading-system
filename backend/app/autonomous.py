@@ -699,11 +699,23 @@ class AutonomousAgent:
             # Reconcile the durable intent against the trade ledger before doing
             # any new research. A retry resumes the exact approved request.
             await asyncio.to_thread(self.portfolio.reconcile_order_intents)
+            existing_intent = await asyncio.to_thread(
+                self.portfolio.get_order_intent,
+                task["id"],
+            )
             previous_order = await asyncio.to_thread(
                 self.portfolio.get_trade_by_client_order_id,
                 task["id"],
             )
+            if existing_intent is not None and existing_intent["status"] == "reconciliation_required":
+                raise RuntimeError(
+                    f"Order intent {task['id']} requires manual reconciliation; no replay is permitted"
+                )
             if previous_order is not None:
+                if existing_intent is not None and existing_intent["status"] != "filled":
+                    raise RuntimeError(
+                        f"Trade exists while order intent is {existing_intent['status']}; manual reconciliation required"
+                    )
                 result = {
                     "execution": "paper_order_replayed",
                     "order": previous_order,
@@ -711,11 +723,6 @@ class AutonomousAgent:
                 }
                 self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
                 return result
-
-            existing_intent = await asyncio.to_thread(
-                self.portfolio.get_order_intent,
-                task["id"],
-            )
             if existing_intent is not None:
                 if existing_intent["status"] == "risk_approved":
                     fresh = await asyncio.to_thread(
