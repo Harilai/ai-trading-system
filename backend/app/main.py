@@ -83,7 +83,7 @@ if _ccxt_key and _ccxt_secret:
             settings.ccxt_readonly_exchange_id,
             _ccxt_key,
             _ccxt_secret,
-            account_alias=settings.ccxt_readonly_account_alias,
+            account_alias=settings.ccxt_readonly_account_alias or None,
         )
         ccxt_readonly_configuration_status = "configured"
     except CcxtReadOnlyAccountError:
@@ -124,7 +124,11 @@ account_provider_registry = AccountProviderRegistry()
 if binance_account_provider is not None:
     account_provider_registry.register(binance_account_provider)
 if ccxt_readonly_account_provider is not None:
-    account_provider_registry.register(ccxt_readonly_account_provider)
+    try:
+        account_provider_registry.register(ccxt_readonly_account_provider)
+    except AccountProviderError:
+        ccxt_readonly_account_provider = None
+        ccxt_readonly_configuration_status = "invalid_configuration"
 if binance_demo_account_provider is not None:
     account_provider_registry.register(binance_demo_account_provider)
 
