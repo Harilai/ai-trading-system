@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 import json
 from pathlib import Path
 import re
@@ -245,14 +245,16 @@ class BinanceDemoOrderStore:
                 """
             ).fetchall()
             for completed_order in completed_orders:
-                expected_filled = Decimal(completed_order["filled"] or "0")
-                if expected_filled <= 0:
-                    continue
-                fill_rows = db.execute(
-                    "SELECT amount FROM binance_demo_order_fills WHERE client_order_id=?",
-                    (completed_order["client_order_id"],),
-                ).fetchall()
-                recorded_filled = sum((Decimal(item["amount"]) for item in fill_rows), Decimal("0"))
+                with localcontext() as context:
+                    context.prec = 120
+                    expected_filled = Decimal(completed_order["filled"] or "0")
+                    if expected_filled <= 0:
+                        continue
+                    fill_rows = db.execute(
+                        "SELECT amount FROM binance_demo_order_fills WHERE client_order_id=?",
+                        (completed_order["client_order_id"],),
+                    ).fetchall()
+                    recorded_filled = sum((Decimal(item["amount"]) for item in fill_rows), Decimal("0"))
                 if recorded_filled != expected_filled:
                     raise DemoOrderConflict(
                         "A previous Demo order has incomplete individual fill/fee evidence"
@@ -507,6 +509,8 @@ class BinanceDemoOrderStore:
                 raise DemoOrderStoreError("Demo order intent not found")
             if not order["exchange_order_id"]:
                 raise DemoOrderConflict("Cannot record fills before the exchange order ID is confirmed")
+            if order["status"] not in ("filled", "partially_filled", "cancelled", "expired"):
+                raise DemoOrderConflict("Trade fills can only be reconciled for filled, partial or cancelled orders")
             for raw_fill in fills:
                 fill = self._canonical_fill(raw_fill, order)
                 payload_json = json.dumps(fill, sort_keys=True, separators=(",", ":"))
@@ -538,15 +542,17 @@ class BinanceDemoOrderStore:
                 "SELECT amount,fee_cost,fee_currency FROM binance_demo_order_fills WHERE client_order_id=?",
                 (client_order_id,),
             ).fetchall()
-            total_filled = sum((Decimal(row["amount"]) for row in rows), Decimal("0"))
-            order_filled = Decimal(order["filled"] or "0")
-            if total_filled > order_filled:
-                raise DemoOrderConflict("Individual trade fills exceed the exchange cumulative filled quantity")
-            fee_totals: dict[str, Decimal] = {}
-            for row in rows:
-                if row["fee_cost"] is not None:
-                    currency = row["fee_currency"]
-                    fee_totals[currency] = fee_totals.get(currency, Decimal("0")) + Decimal(row["fee_cost"])
+            with localcontext() as context:
+                context.prec = 120
+                total_filled = sum((Decimal(row["amount"]) for row in rows), Decimal("0"))
+                order_filled = Decimal(order["filled"] or "0")
+                if total_filled > order_filled:
+                    raise DemoOrderConflict("Individual trade fills exceed the exchange cumulative filled quantity")
+                fee_totals: dict[str, Decimal] = {}
+                for row in rows:
+                    if row["fee_cost"] is not None:
+                        currency = row["fee_currency"]
+                        fee_totals[currency] = fee_totals.get(currency, Decimal("0")) + Decimal(row["fee_cost"])
             self._insert_event(
                 db, client_order_id, order["status"], order["status"],
                 {
