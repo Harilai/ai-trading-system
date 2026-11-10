@@ -97,6 +97,7 @@ def test_order_rejects_stale_market_data(monkeypatch, tmp_path):
             "side": "buy",
             "quantity": 0.0001,
             "stop_loss": 9800,
+            "client_order_id": "stale-crypto-order",
         },
         headers=headers,
     )
@@ -125,6 +126,7 @@ def test_manual_buy_passes_risk_manager_and_persists_protection(monkeypatch, tmp
             "stop_loss": 9800,
             "take_profit": 10500,
             "strategy_id": "manual_test",
+            "client_order_id": "manual-crypto-buy",
         },
         headers=headers,
     )
@@ -154,6 +156,7 @@ def test_manual_buy_is_rejected_when_stop_distance_exceeds_risk_limit(monkeypatc
             "side": "buy",
             "quantity": 0.0004,
             "stop_loss": 9000,
+            "client_order_id": "manual-crypto-risk-rejected",
         },
         headers=headers,
     )
