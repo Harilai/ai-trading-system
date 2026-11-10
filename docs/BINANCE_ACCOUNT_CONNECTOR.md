@@ -22,7 +22,9 @@ The connector does not independently verify the key's exchange-side permission s
 Both endpoints require the owner token in `X-Agent-Token`:
 
 - `GET /api/accounts`: reports connector configuration and declared read-only capabilities, never credentials.
-- `GET /api/accounts/binance/spot/balances`: fetches non-zero free/used/total Spot balances and a UTC retrieval timestamp.
+- `GET /api/accounts/binance/spot/balances`: fetches non-zero free/used/total Spot balances and a UTC retrieval timestamp without persistence.
+- `POST /api/accounts/binance/spot/snapshots`: captures and persists an immutable balance observation.
+- `GET /api/accounts/snapshots` and `GET /api/accounts/snapshots/{snapshot_id}`: browse history and compare an observation with its predecessor.
 
 If credentials are absent, balance retrieval returns HTTP 503. Provider failures are sanitized and do not expose raw CCXT exception text.
 
@@ -32,8 +34,10 @@ If credentials are absent, balance retrieval returns HTTP 503. Provider failures
 - The API does not expose a generic exchange client or arbitrary CCXT method invocation.
 - The connector has no order, cancel, transfer, withdrawal or signing methods.
 - Rate limiting is enabled and request timeout is bounded.
-- Balance responses are owner-authenticated and are not persisted or mixed into the paper portfolio.
+- Live balance responses are owner-authenticated. Explicit snapshots are persisted in separate append-only account tables and never mixed into the paper portfolio.
 - Binance account-level permissions are not inferred from a successful balance call; API-key scope remains an operator responsibility.
+
+Snapshot storage and comparison semantics are specified in `docs/ACCOUNT_SNAPSHOT_RECONCILIATION.md`. Changes between snapshots are observational only; absent assets are not assumed to be zero and no transfer or P&L is inferred.
 
 ## Not implemented
 
