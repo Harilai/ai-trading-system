@@ -317,7 +317,7 @@ def test_scheduler_respects_interval_and_enqueues_again_after_due_time(tmp_path)
     store.set_enabled(True)
     first = store.schedule_decision_cycle(300)
     claimed = store.claim_due_task()
-    store.finish_task(claimed["id"], {"execution": "no_order"})
+    store.finish_task(claimed["id"], {"execution": "no_order"}, claimed["lease_token"])
 
     assert store.schedule_decision_cycle(300) is None
     with store.connect() as db:
@@ -354,7 +354,7 @@ def test_equity_research_scheduler_is_independent_and_low_frequency(tmp_path):
 
     claimed = store.claim_due_task()
     assert claimed["kind"] == "equity_research"
-    store.finish_task(claimed["id"], {"analysed": 2})
+    store.finish_task(claimed["id"], {"analysed": 2}, claimed["lease_token"])
     assert store.schedule_equity_research(21600) is None
     with store.connect() as db:
         db.execute(
