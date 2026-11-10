@@ -1670,7 +1670,7 @@ def test_generic_account_snapshot_route_rejects_trading_enabled_accounts(monkeyp
     assert "read-only" in response.json()["detail"]
 
 
-def test_generic_account_position_routes_return_normalized_positions_and_snapshot(monkeypatch):
+def test_generic_account_position_routes_return_normalized_positions_and_snapshot(monkeypatch, tmp_path):
     from app.accounts.contracts import AccountProviderRegistry
 
     headers = configure_order_auth(monkeypatch)
@@ -1715,6 +1715,11 @@ def test_generic_account_position_routes_return_normalized_positions_and_snapsho
     registry = AccountProviderRegistry()
     registry.register(PositionOnlyProvider())
     monkeypatch.setattr("app.main.account_provider_registry", registry)
+    from app.accounts.snapshot_store import AccountSnapshotStore
+    monkeypatch.setattr(
+        "app.main.account_snapshot_store",
+        AccountSnapshotStore(str(tmp_path / "position-snapshots.db")),
+    )
 
     unauthorized = client.get("/api/accounts/test:broker/positions")
     assert unauthorized.status_code == 401
