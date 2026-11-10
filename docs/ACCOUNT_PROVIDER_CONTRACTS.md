@@ -11,6 +11,7 @@ Provide a venue-independent account boundary without merging accounts, environme
 - `AccountPosition`: normalized instrument identity, quantity/side, quote currency, entry/mark price, market value and unrealized P&L.
 - `AccountOrder`: normalized order observation keyed by provider/account/environment/market, with exchange/client IDs, instrument, side/type/status, requested/filled/remaining quantities, average fill, quote currency and observation timestamp.
 - `AccountOrderFill`: immutable per-trade execution with stable trade/order IDs, exact decimal amount/price/cost, quote currency, timestamp and explicit fee amount/currency.
+- `AccountOrderLedger`: SQLite evidence store for normalized order observations and individual fills. It is idempotent, scope-isolated and append-only for event/fill history; it does not submit or cancel orders.
 - `AccountBalanceProvider`, `PositionProvider` and `OrderReconciliationProvider`: capability-specific protocols. Order reconciliation returns typed `AccountOrder` and `AccountOrderFill` values; a provider must not imply support for methods it does not implement.
 
 ## Registry invariants

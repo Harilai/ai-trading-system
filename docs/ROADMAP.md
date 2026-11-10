@@ -31,11 +31,13 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 15. **Completado — contratos normalizados de cuenta (PR #71):** registry multi-account, permisos y balances normalizados.
 16. **Completado — adaptador genérico CCXT read-only (PR #72):** CEX Spot configurable por exchange ID, Kraken por defecto; consulta balances sin métodos de escritura.
 17. **Completado — contrato y endpoint de posiciones normalizadas (PR #73):** snapshot tipado por proveedor/cuenta/entorno, validación decimal e identidad de instrumento y capability gate. Los adaptadores actuales siguen declarando `positions=false`; endpoint preparado para proveedores que implementen lectura de posiciones.
-18. **En curso — ledger persistente de posiciones multi-venue (PR #74 draft):** snapshots append-only por proveedor/cuenta/instrumento, diferencias sin asumir ausencias como cero, coste/mark/P&L y divisa con procedencia y frescura; rebase contra el `main` actualizado tras PR #75 y completar revisión/CI antes de marcar ready.
+18. **En curso — ledger persistente de posiciones multi-venue (PR #74 abierto, listo para revisión):** snapshots append-only por proveedor/cuenta/instrumento, diferencias sin asumir ausencias como cero, coste/mark/P&L y divisa con procedencia y frescura; pendiente revisión independiente.
 19. **Completado en PR #75 — demo local paper:** Compose aislado con 10.000 EUR virtuales, datos públicos Kraken, clave Twelve Data opcional solo para cotizaciones, sin credenciales de cuenta ni ruta de ejecución. CI: 460 tests Python y validación/build Docker correctos en el SHA `7abd5f527612d0c593e93d8a94852cc29d0a72d8`.
 20. Supervisión paper equity y operación 24/7: stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
 21. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario. Sigue fuera del alcance de esta fase.
 
+
+22. **En curso — ledger común de órdenes y fills (PR #79 listo para revisión, apilado sobre PR #78):** SQLite con observaciones append-only, deduplicación de fills, aislamiento por cuenta/entorno/mercado, cobertura explícita y transacciones fail-closed. No conecta proveedores ni envía órdenes.
 
 ## Estado integrado
 
@@ -144,7 +146,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [ ] Integrar acciones/ETF en decisiones del Chief y Risk Manager solo después de validar estrategia, capital, moneda y reglas de cartera específicas; sin ejecución por ahora.
 - [ ] Implementar y validar un adaptador de broker de acciones/ETF, horarios, permisos, datos, mínimos y comisiones.
 - [x] Generalizar el portfolio a claves `provider_id + instrument_id`, con migración de datos legacy y aislamiento de símbolos duplicados.
-- [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución (PR #78 añade los contratos normalizados; aún faltan adaptadores, ledger compartido y worker de conciliación).
+- [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución (PR #78 añade contratos; PR #79 añade el ledger persistente de evidencia; aún faltan adaptadores y worker de conciliación).
 - [x] Añadir contrato y endpoint autenticado para posiciones normalizadas, exigiendo capacidad explícita y sin sintetizarlas desde balances.
 - [ ] Persistir snapshots append-only de posiciones por cuenta/instrumento y conciliar sus cambios con coste, mark, P&L y divisa trazables.
 - [ ] Implementar adaptadores FX, índices y commodities solo tras validar APIs y elegibilidad.
