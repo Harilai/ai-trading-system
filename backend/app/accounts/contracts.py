@@ -63,6 +63,8 @@ class AccountCapabilities:
     def from_description(cls, description: dict) -> "AccountCapabilities":
         if not isinstance(description, dict):
             raise AccountProviderError("Account provider description must be an object")
+        if description.get("configured") is not True:
+            raise AccountProviderError("Only configured account providers can be registered")
         provider_id = description.get("provider_id")
         account_alias = description.get("account_alias")
         if not isinstance(provider_id, str) or not provider_id.strip() or len(provider_id) > 128:
