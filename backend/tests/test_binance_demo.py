@@ -182,3 +182,189 @@ def test_pinned_ccxt_binance_demo_mode_routes_to_demo_rest_host_without_network(
     assert callable(enable_demo), f"CCXT {ccxt.__version__} lacks Binance Demo Trading support"
     enable_demo(True)
     BinanceSpotDemoAccount._verify_demo_endpoints(exchange)
+
+
+def make_demo_execution(exchange):
+    from app.accounts.binance_demo import BinanceSpotDemoExecution
+    return BinanceSpotDemoExecution(
+        "demo-key", "demo-secret", enabled=True,
+        exchange_factory=lambda _: exchange,
+    )
+
+
+def demo_market(quote="USDT"):
+    return {
+        "spot": True,
+        "active": True,
+        "base": "BTC",
+        "quote": quote,
+        "precision": {"amount": 0.0001, "price": 0.01},
+        "limits": {
+            "amount": {"min": 0.0001, "max": 10},
+            "cost": {"min": 10, "max": 10000},
+        },
+    }
+
+
+class FakeDemoExecutionExchange(FakeBinanceDemoExchange):
+    def __init__(self, *, response=None, markets=None):
+        super().__init__(response=response, markets=markets or {"BTC/USDT": demo_market()})
+        self.created = []
+        self.fetched = []
+        self.cancelled = []
+
+    def amount_to_precision(self, symbol, amount):
+        self.calls.append(("amount_to_precision", symbol, amount))
+        return "0.001"
+
+    def price_to_precision(self, symbol, price):
+        self.calls.append(("price_to_precision", symbol, price))
+        return "20000"
+
+    def create_order(self, symbol, order_type, side, amount, price, params):
+        self.calls.append(("create_order", symbol, order_type, side, amount, price, params))
+        self.created.append(params["newClientOrderId"])
+        return {
+            "id": "demo-order-123",
+            "clientOrderId": params["newClientOrderId"],
+            "status": "open",
+            "amount": amount,
+            "filled": "0",
+            "remaining": amount,
+            "average": None,
+        }
+
+    def fetch_order(self, order_id, symbol, params=None):
+        self.calls.append(("fetch_order", order_id, symbol, params))
+        self.fetched.append((order_id, symbol, params))
+        return {
+            "id": order_id or "demo-order-123",
+            "clientOrderId": (params or {}).get("origClientOrderId", "demo-order-1234"),
+            "status": "closed",
+            "amount": "0.001",
+            "filled": "0.001",
+            "remaining": "0",
+            "average": "20000",
+        }
+
+    def cancel_order(self, order_id, symbol):
+        self.calls.append(("cancel_order", order_id, symbol))
+        self.cancelled.append(order_id)
+        return {
+            "id": order_id,
+            "clientOrderId": "demo-order-1234",
+            "status": "canceled",
+            "amount": "0.001",
+            "filled": "0",
+            "remaining": "0.001",
+            "average": None,
+        }
+
+
+def test_demo_execution_validates_limit_order_precision_limits_and_quote_cap():
+    exchange = FakeDemoExecutionExchange()
+    provider = make_demo_execution(exchange)
+
+    request = provider.validate_limit_order(
+        symbol="BTC/USDT",
+        side="buy",
+        amount="0.001",
+        price="20000",
+        client_order_id="demo-order-1234",
+        max_order_quote="25",
+    )
+    assert request == {
+        "client_order_id": "demo-order-1234",
+        "symbol": "BTC/USDT",
+        "side": "buy",
+        "amount": "0.001",
+        "price": "20000",
+        "quote_asset": "USDT",
+    }
+
+    with pytest.raises(BinanceDemoError, match="quote cap"):
+        provider.validate_limit_order(
+            symbol="BTC/USDT", side="buy", amount="0.001",
+            price="30000", client_order_id="demo-order-over-cap",
+            max_order_quote="25",
+        )
+
+
+def test_demo_execution_rejects_nonstable_quote_markets_and_precision_rounding():
+    exchange = FakeDemoExecutionExchange(markets={
+        "BTC/ETH": demo_market(quote="ETH"),
+        "BTC/USDT": demo_market(),
+    })
+    provider = make_demo_execution(exchange)
+    with pytest.raises(BinanceDemoError, match="stablecoin/EUR"):
+        provider.validate_limit_order(
+            symbol="BTC/ETH", side="buy", amount="0.001",
+            price="20000", client_order_id="demo-eth-quote",
+        )
+
+    exchange.amount_to_precision = lambda symbol, amount: "0.0009"
+    with pytest.raises(BinanceDemoError, match="precision"):
+        provider.validate_limit_order(
+            symbol="BTC/USDT", side="buy", amount="0.001",
+            price="20000", client_order_id="demo-rounded",
+        )
+
+
+def test_demo_execution_submits_only_limit_orders_with_stable_client_order_id():
+    exchange = FakeDemoExecutionExchange()
+    provider = make_demo_execution(exchange)
+    request = {
+        "client_order_id": "demo-order-1234",
+        "symbol": "BTC/USDT",
+        "side": "buy",
+        "amount": "0.001",
+        "price": "20000",
+        "quote_asset": "USDT",
+    }
+
+    result = provider.submit_limit_order(request)
+
+    assert exchange.created == ["demo-order-1234"]
+    call = next(item for item in exchange.calls if item[0] == "create_order")
+    assert call[2] == "limit"
+    assert call[6]["newClientOrderId"] == "demo-order-1234"
+    assert result["status"] == "open"
+    assert result["exchange_order_id"] == "demo-order-123"
+
+
+def test_demo_execution_maps_partial_fills_and_rejects_mismatched_exchange_client_id():
+    exchange = FakeDemoExecutionExchange()
+    provider = make_demo_execution(exchange)
+    partial = provider.normalize_order({
+        "id": "order-1", "clientOrderId": "client-1", "status": "open",
+        "filled": "0.0004", "remaining": "0.0006", "average": "19999",
+    }, expected_client_order_id="client-1")
+    assert partial["status"] == "partially_filled"
+    assert partial["filled"] == "0.0004"
+    assert partial["remaining"] == "0.0006"
+
+    mismatch = provider.normalize_order({
+        "id": "order-2", "clientOrderId": "other-client", "status": "open",
+        "filled": "0", "remaining": "0.001",
+    }, expected_client_order_id="client-1")
+    assert mismatch["status"] == "reconciliation_required"
+
+
+def test_demo_execution_reconciles_by_client_id_and_cancels_by_exchange_id():
+    exchange = FakeDemoExecutionExchange()
+    provider = make_demo_execution(exchange)
+    found = provider.fetch_order_by_client_id(
+        symbol="BTC/USDT",
+        client_order_id="demo-order-1234",
+    )
+    assert found["status"] == "filled"
+    assert exchange.fetched[0][0] is None
+    assert exchange.fetched[0][2] == {"origClientOrderId": "demo-order-1234"}
+
+    cancelled = provider.cancel_limit_order(
+        symbol="BTC/USDT",
+        exchange_order_id="demo-order-123",
+        client_order_id="demo-order-1234",
+    )
+    assert cancelled["status"] == "cancelled"
+    assert exchange.cancelled == ["demo-order-123"]
