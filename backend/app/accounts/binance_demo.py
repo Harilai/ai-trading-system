@@ -432,7 +432,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
                 request["amount"],
                 request["price"],
                 {
-                    "newClientOrderId": request["client_order_id"],
+                    "clientOrderId": request["client_order_id"],
                     "timeInForce": "GTC",
                 },
             )
