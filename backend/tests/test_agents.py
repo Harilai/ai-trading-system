@@ -206,6 +206,8 @@ def test_chief_explains_validated_candidate_without_current_entry_signal():
                         "eligible": True,
                         "score": 0.5,
                         "current_entry_signal": False,
+                        "validation_failures": ["non_positive_oos_return"],
+                        "experimental_validation_failures": ["insufficient_walk_forward_history"],
                     }],
                 },
             }],
@@ -213,6 +215,8 @@ def test_chief_explains_validated_candidate_without_current_entry_signal():
         {"equity": 1000, "cash": 1000, "positions": []},
     )
     assert decision.action == "hold"
+    assert decision.evidence["validation_failure_counts"]["promotion"]["non_positive_oos_return"] == 1
+    assert decision.evidence["validation_failure_counts"]["experimental"]["insufficient_walk_forward_history"] == 1
     assert decision.evidence["markets_analysed"] == 1
     assert decision.evidence["validated_candidates"] == 1
     assert decision.evidence["validated_entry_signals"] == 0
