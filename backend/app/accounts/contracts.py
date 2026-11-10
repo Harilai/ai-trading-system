@@ -506,11 +506,98 @@ class PositionProvider(Protocol):
     def fetch_positions(self) -> list[AccountPosition]: ...
 
 
+@dataclass(frozen=True)
+class AccountFillHistory:
+    """Provider fill response with explicit scope, observation time and completeness."""
+
+    provider_id: str
+    account_alias: str
+    environment: str
+    market_type: str
+    instrument_id: str
+    observed_at: str
+    history_complete: bool
+    fills: tuple[AccountOrderFill, ...]
+    order_id: str | None = None
+    client_order_id: str | None = None
+
+    @classmethod
+    def normalize(cls, raw: Any) -> "AccountFillHistory":
+        if isinstance(raw, AccountFillHistory):
+            raw = raw.to_dict()
+        if not isinstance(raw, dict):
+            raise AccountProviderError("Account fill history must be an object")
+        identity = {
+            field: _required_identifier(raw.get(field), field=f"fill history {field}")
+            for field in ("provider_id", "account_alias", "environment", "market_type", "instrument_id")
+        }
+        identity["environment"] = identity["environment"].lower()
+        identity["market_type"] = identity["market_type"].lower()
+        if not re.fullmatch(r"[A-Za-z0-9._:/-]{1,128}", identity["instrument_id"]):
+            raise AccountProviderError("Account fill history instrument_id is invalid")
+        order_id = raw.get("order_id")
+        client_order_id = raw.get("client_order_id")
+        if order_id is not None:
+            order_id = _required_identifier(order_id, field="fill history exchange order ID")
+        if client_order_id is not None:
+            client_order_id = _required_identifier(client_order_id, field="fill history client order ID")
+        if order_id is None and client_order_id is None:
+            raise AccountProviderError("Account fill history requires an order ID")
+        observed_at = _observed_timestamp(raw.get("observed_at"), field="fill history observed_at")
+        history_complete = raw.get("history_complete")
+        if not isinstance(history_complete, bool):
+            raise AccountProviderError("Account fill history completeness must be an explicit boolean")
+        raw_fills = raw.get("fills")
+        if not isinstance(raw_fills, list):
+            raise AccountProviderError("Account fill history fills must be a list")
+        snapshot_ms = int(datetime.fromisoformat(observed_at).timestamp() * 1000)
+        fills = []
+        seen_trade_ids = set()
+        for raw_fill in raw_fills:
+            fill = AccountOrderFill.normalize(raw_fill)
+            if (fill.provider_id, fill.account_alias, fill.environment, fill.market_type, fill.instrument_id) != (
+                identity["provider_id"], identity["account_alias"], identity["environment"],
+                identity["market_type"], identity["instrument_id"],
+            ):
+                raise AccountProviderError("Account fill history scope conflicts with a fill")
+            if order_id is not None and fill.order_id is not None and fill.order_id != order_id:
+                raise AccountProviderError("Account fill history order ID conflicts with a fill")
+            if client_order_id is not None and fill.client_order_id is not None and fill.client_order_id != client_order_id:
+                raise AccountProviderError("Account fill history client order ID conflicts with a fill")
+            if fill.timestamp_ms > snapshot_ms + 300_000:
+                raise AccountProviderError("Account fill timestamp is later than the history observation")
+            if fill.trade_id in seen_trade_ids:
+                raise AccountProviderError("Account fill history contains duplicate trade IDs")
+            seen_trade_ids.add(fill.trade_id)
+            fills.append(fill)
+        return cls(
+            **identity,
+            observed_at=observed_at,
+            history_complete=history_complete,
+            fills=tuple(fills),
+            order_id=order_id,
+            client_order_id=client_order_id,
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "provider_id": self.provider_id,
+            "account_alias": self.account_alias,
+            "environment": self.environment,
+            "market_type": self.market_type,
+            "instrument_id": self.instrument_id,
+            "observed_at": self.observed_at,
+            "history_complete": self.history_complete,
+            "fills": [fill.to_dict() for fill in self.fills],
+            "order_id": self.order_id,
+            "client_order_id": self.client_order_id,
+        }
+
 @runtime_checkable
 class OrderReconciliationProvider(Protocol):
     def list_open_orders(self) -> list[AccountOrder]: ...
     def fetch_order(self, order_id: str, instrument_id: str) -> AccountOrder | None: ...
-    def fetch_fills(self, order_id: str, instrument_id: str) -> list[AccountOrderFill]: ...
+    def fetch_fills(self, order_id: str, instrument_id: str) -> AccountFillHistory: ...
 
 
 class AccountProviderRegistry:
