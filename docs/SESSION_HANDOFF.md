@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `f971e1ca16d6d012d79959f4534d4d789b9c5f57` — actualización del handoff tras PR #48 y el objetivo multiactivo.  
+> **Último commit observado en `main`:** `353023840da4037a2014ff68833740ef32374c7c` — main revisado antes de la fase dashboard PR #50.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -119,6 +119,20 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - Retención local conserva snapshots cuyo off-host copy no está verificado. No hay borrado remoto desde la aplicación.
 - **Importante:** la función off-host está desactivada por defecto. Debe configurarse el proveedor y crear `.env.backup` a partir de `.env.backup.example`.
 
+### Fase dashboard — PR #50
+
+- PR: https://github.com/Harilai/ai-trading-system/pull/50
+- Rama: `feature/dashboard-operations-v2`.
+- Añade gráfico nativo de velas OHLC, selector de símbolo/proveedor/intervalo y divisa de cotización correcta.
+- Muestra capabilities declaradas y readiness API/worker; no equipara descubrimiento de instrumentos con cuenta autenticada o trading habilitado.
+- Añade consulta manual de investigación equities/ETF y lectura de historial de estrategias.
+- Muestra intents de órdenes paper, estados de conciliación y operaciones recientes.
+- Muestra el estado de backups locales/off-host, snapshots pendientes de verificación y timestamps de comprobación remota.
+- Añade solicitudes y aprobación/cancelación de retiradas paper. Son cambios en el ledger simulado; no hay transferencia bancaria, exchange ni wallet.
+- El token se mantiene en memoria JavaScript, se borra del campo al validarse y las respuestas autenticadas usan `cache: no-store`.
+- Todo el contenido recibido de API se representa mediante text nodes; no se inserta como HTML.
+- CI inicial pasó en un head anterior; la validación final debe comprobarse en el HEAD exacto antes de mergear.
+
 ## 5. Objetivo de producto y siguientes fases
 
 El objetivo final no es un bot exclusivamente crypto. Debe evolucionar a una plataforma multiactivo y multi-venue preparada para capital real: conectar exchanges como Binance, brokers y wallets, y descubrir/operar los instrumentos que cada proveedor y cuenta permita. El universo objetivo incluye crypto CEX/DEX, acciones, ETF, FX, futuros, opciones, bonos, materias primas y otros mercados integrables. La disponibilidad depende del proveedor, país, cuenta, API, liquidez y elegibilidad. Descubrir un símbolo no habilita su trading.
@@ -127,8 +141,8 @@ La arquitectura de referencia está en `docs/MARKET_EXPANSION_ARCHITECTURE.md`.
 
 Siguiente secuencia:
 1. **Completado — backups externos y restauración (PR #48):** replicación S3-compatible verificada, status API y descarga/validación de restore candidate. Falta configurar el proveedor real en el entorno operativo.
-2. **Siguiente fase — dashboard ampliado:** gráficos, investigación, salud de conectores, órdenes/fills, backup status y gestión de retiradas.
-3. Construir abstracción multi-venue y catálogo de instrumentos: capabilities, cuentas, permisos, precisión/ticks, multiplicadores, vencimientos, margen/colateral, settlement, corporate actions, funding y FX.
+2. **Completado en PR #50 — dashboard ampliado:** velas OHLC, salud de conectores/readiness, investigación, historial de estrategias, intents/fills paper, backup status y retiradas paper.
+3. **Siguiente fase — abstracción multi-venue y catálogo de instrumentos:** capabilities, cuentas, permisos, precisión/ticks, multiplicadores, vencimientos, margen/colateral, settlement, corporate actions, funding y FX.
 4. Preparar despliegue persistente 24/7 en VPS: TLS/reverse proxy, secretos, aislamiento, monitorización, alertas, readiness y recuperación.
 5. Añadir supervisión paper de stops/take-profit equity y madurez paper/sandbox por mercado antes de decisiones autónomas o live.
 6. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
