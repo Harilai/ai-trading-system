@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -21,7 +21,7 @@ def test_task_queue_persists_and_completes(tmp_path):
     restarted = AutonomousStore(path)
     claimed = restarted.claim_due_task()
     assert claimed["id"] == task["id"]
-    restarted.finish_task(task["id"], {"ok": True})
+    assert restarted.finish_task(task["id"], {"ok": True}, claimed["lease_token"]) is True
     assert restarted.overview()["tasks"][0]["status"] == "completed"
 
 
@@ -586,3 +586,58 @@ def test_autonomous_crypto_cycle_values_usd_cash_with_fresh_fx(tmp_path):
     assert chief.portfolio_snapshot["valuation_complete"] is True
     assert chief.portfolio_snapshot["equity"] == pytest.approx(100)
     assert chief.portfolio_snapshot["fx_observations"]["USD"]["provider_id"] == "twelve_data"
+
+
+def test_old_worker_cannot_finish_or_fail_after_lease_reclaim(tmp_path):
+    store = AutonomousStore(str(tmp_path / "lease-fencing.db"))
+    task = store.enqueue("health_check", {})
+    old_claim = store.claim_due_task()
+    assert old_claim["lease_token"]
+
+    with store.connect() as db:
+        db.execute(
+            "UPDATE agent_tasks SET lease_until='2000-01-01T00:00:00+00:00' WHERE id=?",
+            (task["id"],),
+        )
+    assert store.recover_expired_tasks() == 1
+    new_claim = store.claim_due_task()
+    assert new_claim["lease_token"] != old_claim["lease_token"]
+
+    assert store.finish_task(task["id"], {"from": "old"}, old_claim["lease_token"]) is False
+    assert store.fail_task(old_claim, "stale worker failure") is False
+    assert store.finish_task(task["id"], {"from": "new"}, new_claim["lease_token"]) is True
+    assert store.overview()["tasks"][0]["status"] == "completed"
+
+
+def test_task_lease_heartbeat_extends_only_the_current_claim(tmp_path):
+    store = AutonomousStore(str(tmp_path / "lease-heartbeat.db"))
+    task = store.enqueue("health_check", {})
+    claimed = store.claim_due_task(lease_seconds=5)
+    assert store.active_task_ids() == {task["id"]}
+    assert store.extend_task_lease(task["id"], claimed["lease_token"], 120) is True
+    assert store.extend_task_lease(task["id"], "wrong-token", 120) is False
+
+    with store.connect() as db:
+        row = db.execute(
+            "SELECT lease_until,lease_token FROM agent_tasks WHERE id=?",
+            (task["id"],),
+        ).fetchone()
+    assert row["lease_token"] == claimed["lease_token"]
+    assert (datetime.fromisoformat(row["lease_until"]) - utcnow()).total_seconds() > 60
+
+
+def test_recovered_task_clears_old_lease_token(tmp_path):
+    store = AutonomousStore(str(tmp_path / "lease-recover.db"))
+    task = store.enqueue("health_check", {})
+    first = store.claim_due_task()
+    with store.connect() as db:
+        db.execute(
+            "UPDATE agent_tasks SET lease_until='2000-01-01T00:00:00+00:00' WHERE id=?",
+            (task["id"],),
+        )
+    assert store.recover_expired_tasks() == 1
+    with store.connect() as db:
+        row = db.execute("SELECT lease_token FROM agent_tasks WHERE id=?", (task["id"],)).fetchone()
+    assert row["lease_token"] is None
+    second = store.claim_due_task()
+    assert second["lease_token"] != first["lease_token"]
