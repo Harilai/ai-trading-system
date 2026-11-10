@@ -305,7 +305,7 @@ def _paper_equity_order(order: OrderRequest):
     previous = portfolio.get_trade_by_client_order_id(order.client_order_id.strip())
     if previous:
         portfolio.reconcile_order_intents(
-            active_task_ids=agent.store.active_task_ids(),
+            active_task_ids=agent_store.active_task_ids(),
             max_data_age_seconds=settings.max_data_age_seconds,
             max_fx_age_seconds=settings.max_fx_data_age_seconds,
         )
@@ -492,7 +492,7 @@ def _paper_equity_order(order: OrderRequest):
         "risk_fx_timestamp": fx["timestamp"],
     }
     portfolio.reconcile_order_intents(
-        active_task_ids=agent.store.active_task_ids(),
+        active_task_ids=agent_store.active_task_ids(),
         max_data_age_seconds=settings.max_data_age_seconds,
         max_fx_age_seconds=settings.max_fx_data_age_seconds,
     )
@@ -543,7 +543,7 @@ def paper_order(
         previous = portfolio.get_trade_by_client_order_id(order.client_order_id.strip())
         if previous:
             portfolio.reconcile_order_intents(
-            active_task_ids=agent.store.active_task_ids(),
+            active_task_ids=agent_store.active_task_ids(),
             max_data_age_seconds=settings.max_data_age_seconds,
             max_fx_age_seconds=settings.max_fx_data_age_seconds,
         )
@@ -633,7 +633,7 @@ def paper_order(
             "risk_fx_timestamp": risk_fx.get("timestamp"),
         }
         portfolio.reconcile_order_intents(
-            active_task_ids=agent.store.active_task_ids(),
+            active_task_ids=agent_store.active_task_ids(),
             max_data_age_seconds=settings.max_data_age_seconds,
             max_fx_age_seconds=settings.max_fx_data_age_seconds,
         )
