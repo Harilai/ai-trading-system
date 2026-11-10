@@ -487,6 +487,9 @@ def _paper_equity_order(order: OrderRequest):
             execution_request,
             {"risk": risk.model_dump(), "instrument": instrument.model_dump()},
         )
+    except PortfolioError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    try:
         return portfolio.execute(**execution_request)
     except PortfolioError as exc:
         current_intent = portfolio.get_order_intent(order.client_order_id.strip())
