@@ -1,8 +1,8 @@
 # AI Trading System
 
-Plataforma modular de trading algorítmico autónomo, construida por fases con prioridad en la validación, la trazabilidad y la protección del capital.
+Plataforma modular de trading algorítmico multiactivo y multi-venue, orientada a investigación, gestión de cartera y eventual ejecución con capital real. Se construye por fases con prioridad en validación, trazabilidad y protección del capital.
 
-**Continuidad entre conversaciones:** consulta [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) para conocer el último estado revisado y el siguiente paso concreto. El método obligatorio de trabajo por roles especializados está en [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md). El diseño de cartera EUR/USD está en [`docs/MULTICURRENCY_DESIGN.md`](docs/MULTICURRENCY_DESIGN.md). Comprueba siempre el estado vivo de `main` y las PR antes de continuar.
+**Continuidad entre conversaciones:** consulta [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) para conocer el último estado revisado y el siguiente paso concreto. El método obligatorio de trabajo por roles especializados está en [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md). El diseño de cartera EUR/USD está en [`docs/MULTICURRENCY_DESIGN.md`](docs/MULTICURRENCY_DESIGN.md). La arquitectura objetivo multiactivo y multi-venue está en [`docs/MARKET_EXPANSION_ARCHITECTURE.md`](docs/MARKET_EXPANSION_ARCHITECTURE.md). Comprueba siempre el estado vivo de `main` y las PR antes de continuar.
 
 ## Estado real de implementación
 
@@ -21,6 +21,8 @@ La rama integrada contiene actualmente:
 - Órdenes paper manuales (solo propietario autenticado) para acciones/ETF cash USD de EE. UU. descubiertas por Twelve Data, con cotización reciente, spread máximo si hay bid/ask, sesión abierta, conversión FX, stop-loss obligatorio en compras y Risk Manager determinista. No hay ejecución mediante broker ni operaciones autónomas de equities.
 - Rechazo de pares no admitidos y datos de mercado obsoletos.
 - Worker asíncrono persistente con cola durable, leases, reintentos, recuperación de tareas expiradas y tolerancia a fallos transitorios del bucle de supervisión.
+- Ciclo de vida paper de órdenes persistido: intentos aprobados inmutables, fills atómicos, eventos de auditoría append-only, conciliación de ledger, caducidad de datos stale y recuperación acotada con fencing de leases (PR #44).
+- Historial autenticado de intentos y eventos disponible en `/api/agent/order-intents`; el token de control se envía por cabecera y no se almacena en el navegador.
 - API de supervisión autenticada: estado, pausa, reanudación, parada de emergencia y encolado de tareas.
 - Scout que descubre mercados spot cotizados en EUR, filtra por liquidez, spread y frescura de ticker.
 - Charts Agent determinista.
