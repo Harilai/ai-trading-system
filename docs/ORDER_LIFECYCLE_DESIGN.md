@@ -32,9 +32,10 @@ There are deliberately no `submitted`, `accepted`, `partial_fill` or broker-pend
 - The canonical intent payload binds symbol, provider/instrument identity, side, quantity, quote currency, strategy, stop/take levels, reference price and relevant FX evidence.
 - Reusing a `client_order_id` with a different payload is a conflict.
 - A paper fill is allowed only from `risk_approved`.
+- Reconciliation compares the complete immutable request with the persisted trade row (instrument, side, quantity, fill price, fees, totals, FX evidence, market timestamp and protective levels); a matching client ID alone is insufficient.
 - The trade insert, position/cash mutation, intent transition to `paper_filled`, and fill event commit in the same SQLite transaction.
 - Replaying a filled intent returns the original trade without a second portfolio mutation.
-- A retry resumes the exact persisted request only while its market and, when applicable, FX timestamps remain within configured freshness limits. If evidence is stale, the intent expires and the next scheduled cycle must obtain fresh data and a new task ID.
+- A retry resumes the exact persisted request only while its market and, when applicable, FX timestamps remain within configured freshness limits. Retries use backoff and a finite six-attempt recovery budget. If evidence is stale, the owning task is lost, or the retry budget is exhausted, the intent expires and the next scheduled cycle must obtain fresh data and a new task ID.
 - A filled intent with no matching trade, or a trade inconsistent with its intent, moves to `reconciliation_required` and blocks new orders.
 
 ## Worker lease fencing
@@ -48,7 +49,7 @@ Expired leases are reclaimed with the token cleared. A failed decision task with
 1. Recover expired task leases.
 2. Reconcile order intents against the trade ledger.
 3. Mark missing/mismatched fills as `reconciliation_required`.
-4. Requeue failed decision tasks that still own a risk-approved intent; require fresh market/FX evidence before resuming.
+4. Requeue failed decision tasks with backoff (maximum six attempts); require fresh market/FX evidence before resuming.
 5. Expire stale approvals and allow new intents only after a fresh decision.
 6. Complete tasks only with the matching lease token.
 
@@ -63,7 +64,7 @@ Equity/ETF stop-loss and take-profit fields are currently stored but not monitor
 - A duplicate intent cannot create a second paper fill.
 - Trade + portfolio mutation + `paper_filled` state are atomic.
 - Crash/restart tests cover intent-created, risk-approved, paper-filled and task-completed boundaries.
-- A missing/mismatched trade moves to `reconciliation_required` and blocks new orders.
+- A missing/mismatched trade moves to `reconciliation_required` and blocks new buys.
 - Stale/future/malformed market or FX evidence fails closed.
 - Expired task leases cannot be completed by an old worker after a new claim.
 - Worker heartbeats prevent healthy long-running work from being reclaimed.
