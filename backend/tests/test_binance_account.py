@@ -1,5 +1,3 @@
-import math
-
 import pytest
 
 from app.accounts.binance_spot import AccountConnectorError, BinanceSpotReadOnlyAccount
@@ -105,3 +103,20 @@ def test_binance_connector_rejects_invalid_asset_codes():
     )
     with pytest.raises(AccountConnectorError, match="invalid asset code"):
         provider.fetch_balances()
+
+
+def test_binance_credentials_are_secret_settings_and_never_appear_in_settings_repr():
+    from app.config import Settings
+
+    api_key = "example-read-only-key"
+    api_secret = "example-read-only-secret"
+    config = Settings(
+        _env_file=None,
+        binance_readonly_api_key=api_key,
+        binance_readonly_api_secret=api_secret,
+    )
+
+    assert config.binance_readonly_api_key.get_secret_value() == api_key
+    assert config.binance_readonly_api_secret.get_secret_value() == api_secret
+    assert api_key not in repr(config)
+    assert api_secret not in repr(config)
