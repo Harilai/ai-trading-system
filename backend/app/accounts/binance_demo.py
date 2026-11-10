@@ -297,6 +297,10 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
         quote_asset = market.get("quote")
         if not isinstance(quote_asset, str) or not quote_asset:
             raise BinanceDemoError("Binance Demo market is missing quote asset metadata")
+        if quote_asset not in {"USDT", "USDC", "FDUSD", "TUSD", "EUR"}:
+            raise BinanceDemoError(
+                "Initial Demo order guard supports only stablecoin/EUR quote markets"
+            )
 
         amount_formatter = getattr(self._exchange, "amount_to_precision", None)
         price_formatter = getattr(self._exchange, "price_to_precision", None)
@@ -357,6 +361,11 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             return {
                 "status": "reconciliation_required",
                 "error": "Exchange order response did not match the immutable client order ID",
+            }
+        if response.get("id") is None or not str(response.get("id")).strip():
+            return {
+                "status": "reconciliation_required",
+                "error": "Exchange response did not contain a durable order ID",
             }
         raw_status = str(response.get("status") or "").lower()
         filled = self._amount_text(self._decimal(response.get("filled") or "0", "filled") if response.get("filled") not in (None, 0, "0") else Decimal("0"))
