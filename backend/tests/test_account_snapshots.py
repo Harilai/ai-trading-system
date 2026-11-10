@@ -12,6 +12,8 @@ def make_snapshot(*, balances=None, fetched_at=None, account_alias="binance-spot
         "account_alias": account_alias,
         "market_type": "spot",
         "read_only": True,
+        "execution_enabled": False,
+        "withdrawals_enabled": False,
         "fetched_at": (fetched_at or datetime.now(timezone.utc)).isoformat(),
         "balances": balances if balances is not None else [
             {"asset": "BTC", "free": "0.1", "used": "0.02", "total": "0.12"},
@@ -154,3 +156,21 @@ def test_account_snapshot_history_filters_and_limits(tmp_path):
     assert len(store.list_snapshots(account_alias="binance-secondary", limit=10)) == 1
     with pytest.raises(AccountSnapshotError, match="limit"):
         store.list_snapshots(limit=0)
+
+
+def test_account_snapshot_store_rejects_non_readonly_or_executable_sources(tmp_path):
+    store = AccountSnapshotStore(str(tmp_path / "accounts.db"))
+    snapshot = make_snapshot()
+    snapshot["read_only"] = False
+    with pytest.raises(AccountSnapshotError, match="read-only"):
+        store.record_snapshot(snapshot)
+
+    snapshot = make_snapshot()
+    snapshot["execution_enabled"] = True
+    with pytest.raises(AccountSnapshotError, match="execution"):
+        store.record_snapshot(snapshot)
+
+    snapshot = make_snapshot()
+    snapshot["withdrawals_enabled"] = True
+    with pytest.raises(AccountSnapshotError, match="withdrawals"):
+        store.record_snapshot(snapshot)
