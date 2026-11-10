@@ -64,6 +64,8 @@ class BinanceSpotDemoAccount:
     def _verify_demo_endpoints(exchange: Any) -> None:
         urls = getattr(exchange, "urls", None)
         api_urls = urls.get("api") if isinstance(urls, dict) else None
+        if not isinstance(api_urls, dict):
+            raise BinanceDemoError("CCXT Binance REST endpoint map is unavailable")
         found: list[str] = []
 
         def visit(value: Any) -> None:
@@ -71,13 +73,19 @@ class BinanceSpotDemoAccount:
                 if value.startswith(("https://", "http://")):
                     found.append(value.lower())
             elif isinstance(value, dict):
-                for nested in value.values():
-                    visit(nested)
+                # Some CCXT versions group endpoints by market type. Only inspect
+                # the Spot routes used by this adapter, never unrelated futures/SAPI URLs.
+                if "spot" in value:
+                    visit(value["spot"])
+                else:
+                    for nested in value.values():
+                        visit(nested)
             elif isinstance(value, (list, tuple)):
                 for nested in value:
                     visit(nested)
 
-        visit(api_urls)
+        visit(api_urls.get("public"))
+        visit(api_urls.get("private"))
         if any("api.binance.com" in url and "demo-api.binance.com" not in url for url in found):
             raise BinanceDemoError("Production Binance REST endpoint detected; refusing to initialize")
         if not found or not any("demo-api.binance.com" in url for url in found):
