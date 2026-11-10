@@ -160,3 +160,21 @@ def test_ccxt_readonly_adapter_rejects_explicit_blank_account_alias():
             "kraken", "key", "secret", account_alias=" ",
             exchange_factory=lambda _: FakeExchange(),
         )
+
+
+def test_ccxt_readonly_adapter_rejects_unknown_exchange_id():
+    with pytest.raises(CcxtReadOnlyAccountError, match="Unsupported CCXT exchange"):
+        CcxtReadOnlyAccount("not_a_real_ccxt_exchange", "key", "secret")
+
+
+def test_ccxt_readonly_adapter_rejects_non_text_asset_codes():
+    exchange = FakeExchange(response={
+        "free": {123: "1"},
+        "used": {123: "0"},
+        "total": {123: "1"},
+    })
+    provider = CcxtReadOnlyAccount(
+        "kraken", "key", "secret", exchange_factory=lambda _: exchange,
+    )
+    with pytest.raises(CcxtReadOnlyAccountError, match="non-text asset"):
+        provider.fetch_balances()
