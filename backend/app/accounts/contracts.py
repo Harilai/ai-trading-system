@@ -290,8 +290,15 @@ class AccountProviderRegistry:
         account_alias: str | None = None,
     ) -> dict:
         provider, capabilities, lock = self._resolve(provider_id, account_alias)
-        with lock:
-            raw = provider.fetch_balances()
+        try:
+            with lock:
+                raw = provider.fetch_balances()
+        except AccountProviderError:
+            raise
+        except Exception as exc:
+            raise AccountProviderError(
+                f"Account balance request failed ({type(exc).__name__})"
+            ) from None
         if not isinstance(raw, dict):
             raise AccountProviderError("Account provider returned an invalid balance snapshot")
         if raw.get("provider_id") != capabilities.provider_id:
