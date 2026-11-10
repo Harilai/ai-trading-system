@@ -1,8 +1,8 @@
 # Session handoff — AI Trading System
 
-> **Última revisión del repositorio:** 2026-11-10
-> **Rama de trabajo:** `feat/local-paper-demo` sobre `main` en `eed5860541867a15e069434908ac046b50c589f9`
-> **Último commit integrado en `main`:** `eed5860541867a15e069434908ac046b50c589f9` — handoff posterior al contrato de posiciones (#73).
+> **Última revisión del repositorio:** 2026-11-10 15:42 Europe/Madrid
+> **Rama base revisada:** `main`
+> **Último commit integrado en `main`:** `7852073f9601bfcfd8b9091ad1eb05f42eb60170` — PR #75, Demo local paper.
 > **Estado de ejecución:** paper trading únicamente; Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
 ## Fase completada — Demo local paper (PR #75)
@@ -16,7 +16,7 @@
 
 ## Siguiente acción
 
-Tras integrar PR #75, continuar la PR #74 para el ledger persistente de snapshots de posiciones multi-venue descrito abajo.
+Continuar PR #74, actualmente en draft (`phase/account-position-snapshots`, head `068a316a14de2f03753dbdefbad364b902bb29d6`): revisar el cambio, actualizar/rebasar contra el `main` nuevo tras PR #75, ejecutar pruebas y revisión independiente, y solo entonces moverla a ready. No hay CI publicado para su head actual.
 
 ## 1. Cómo retomar en una conversación nueva
 
