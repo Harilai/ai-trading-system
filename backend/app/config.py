@@ -41,6 +41,17 @@ class Settings(BaseSettings):
     backup_interval_seconds: int = Field(default=86400, ge=3600)
     backup_retention_days: int = Field(default=14, ge=1, le=365)
     backup_directory: str = str(PROJECT_ROOT / "data" / "backups")
+    backup_external_enabled: bool = False
+    backup_s3_bucket: str = ""
+    backup_s3_region: str = "us-east-1"
+    backup_s3_endpoint_url: str = ""
+    backup_s3_prefix: str = "ai-trading-system"
+    backup_s3_access_key_id: str = ""
+    backup_s3_secret_access_key: str = ""
+    backup_s3_session_token: str = ""
+    backup_s3_server_side_encryption: str = "AES256"
+    backup_s3_kms_key_id: str = ""
+    backup_s3_allow_insecure_endpoint: bool = False
     model_config = SettingsConfigDict(env_file=PROJECT_ROOT / ".env", extra="ignore")
 
 settings = Settings()
