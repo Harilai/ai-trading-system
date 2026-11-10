@@ -27,6 +27,7 @@ from .fx import invert_fx_observation, validate_fx_observation
 from .backup_scheduler import read_backup_status
 from .accounts.binance_spot import AccountConnectorError, BinanceSpotReadOnlyAccount
 from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
+from .accounts.binance_demo import BinanceDemoError, BinanceSpotDemoAccount
 
 WORKER_HEARTBEAT_MAX_AGE_SECONDS = 600
 
@@ -60,6 +61,25 @@ if _binance_key and _binance_secret:
 elif _binance_key or _binance_secret:
     binance_account_configuration_status = "incomplete_configuration"
 del _binance_key, _binance_secret
+
+_demo_key = settings.binance_spot_demo_api_key.get_secret_value().strip()
+_demo_secret = settings.binance_spot_demo_api_secret.get_secret_value().strip()
+binance_demo_configuration_status = "disabled"
+binance_demo_account_provider = None
+if settings.binance_spot_demo_enabled:
+    if _demo_key and _demo_secret:
+        try:
+            binance_demo_account_provider = BinanceSpotDemoAccount(
+                _demo_key,
+                _demo_secret,
+                enabled=True,
+            )
+            binance_demo_configuration_status = "configured"
+        except BinanceDemoError:
+            binance_demo_configuration_status = "invalid_configuration"
+    else:
+        binance_demo_configuration_status = "incomplete_configuration"
+del _demo_key, _demo_secret
 
 class OrderRequest(BaseModel):
     symbol: str = Field(min_length=3)
@@ -96,9 +116,12 @@ def accounts(x_agent_token: str | None = Header(default=None)):
     configured = []
     if binance_account_provider is not None:
         configured.append(binance_account_provider.describe())
+    if binance_demo_account_provider is not None:
+        configured.append(binance_demo_account_provider.describe())
     return {
         "configuration_status": binance_account_configuration_status,
         "accounts": configured,
+        "demo_configuration_status": binance_demo_configuration_status,
     }
 
 
@@ -110,6 +133,31 @@ def binance_spot_balances(x_agent_token: str | None = Header(default=None)):
     try:
         return binance_account_provider.fetch_balances()
     except AccountConnectorError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@app.get("/api/demo/binance/spot/balances")
+def binance_demo_spot_balances(x_agent_token: str | None = Header(default=None)):
+    require_order_control_token(x_agent_token)
+    if binance_demo_account_provider is None:
+        raise HTTPException(503, "Binance Spot Demo Trading connector is not configured")
+    try:
+        return binance_demo_account_provider.fetch_balances()
+    except BinanceDemoError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@app.get("/api/demo/binance/spot/markets")
+def binance_demo_spot_markets(
+    limit: int = Query(100, ge=1, le=500),
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    if binance_demo_account_provider is None:
+        raise HTTPException(503, "Binance Spot Demo Trading connector is not configured")
+    try:
+        return binance_demo_account_provider.discover_spot_markets(limit=limit)
+    except BinanceDemoError as exc:
         raise HTTPException(502, str(exc)) from exc
 
 
