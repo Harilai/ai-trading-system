@@ -16,8 +16,8 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 
 1. **Completado — cartera paper multidivisa para acciones/ETF (PR #41):** efectivo EUR/USD separado, conversión FX explícita y auditable, valoración y riesgo consolidados en EUR. Las órdenes equity siguen siendo manuales y paper-only; el Chief no opera equities autónomamente.
 2. **Completado — ciclo de vida y conciliación paper (PR #44):** intentos persistentes, fills idempotentes, conciliación contra el ledger, recuperación de tareas con leases y caducidad de aprobaciones stale.
-3. **Siguiente — backups externos y restauración:** copia cifrada fuera del volumen/servidor Docker, retención, verificación de integridad y restauración probada.
-4. **Dashboard ampliado:** gráficos, investigación, salud de conectores, órdenes/fills y gestión de retiradas.
+3. **Completado — backups externos y restauración (PR #48):** replicación S3-compatible verificada, status API y descarga/validación de restore candidate. La configuración real del proveedor sigue pendiente en el entorno operativo.
+4. **Siguiente — dashboard ampliado:** gráficos, investigación, salud de conectores, órdenes/fills, backup status y gestión de retiradas.
 5. **Abstracción multi-venue y catálogo de instrumentos:** capabilities explícitas, cuentas, permisos, precisión/ticks, multiplicadores, vencimientos, margen/colateral, settlement, corporate actions, funding y FX.
 6. **Despliegue persistente 24/7:** VPS, secretos, aislamiento, TLS/reverse proxy, monitorización, alertas, readiness y recuperación.
 7. **Madurez por mercado:** paper/backtest y sandbox/testnet para cada venue/clase; implementar supervisión paper de stops/take-profit equity antes de decisiones autónomas equity.
@@ -27,6 +27,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 
 | Área | Estado |
 |---|---|
+| Backups externos S3-compatible y restore candidate verificado | Implementado y fusionado en PR #48 (`ed08cec`); off-host desactivado por defecto hasta configurar `.env.backup`; 304 tests y Docker hardening correctos |
 | Ciclo de vida y conciliación de órdenes paper | Implementado y fusionado en PR #44 (`df76011`); 292 tests y Docker hardening correctos |
 | Cartera paper multidivisa EUR/USD, conversiones FX y manual equity/ETF paper | Implementado y fusionado en PR #41 (`23cfcb5`); 270 tests y Docker hardening correctos |
 | Backend FastAPI y paper portfolio SQLite | Implementado |
