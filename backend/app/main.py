@@ -553,10 +553,10 @@ def paper_order(
         previous = portfolio.get_trade_by_client_order_id(order.client_order_id.strip())
         if previous:
             portfolio.reconcile_order_intents(
-            active_task_ids=agent_store.active_task_ids(),
-            max_data_age_seconds=settings.max_data_age_seconds,
-            max_fx_age_seconds=settings.max_fx_data_age_seconds,
-        )
+                active_task_ids=agent_store.active_task_ids(),
+                max_data_age_seconds=settings.max_data_age_seconds,
+                max_fx_age_seconds=settings.max_fx_data_age_seconds,
+            )
             existing_intent = portfolio.get_order_intent(order.client_order_id.strip())
             if existing_intent and existing_intent["status"] == "reconciliation_required":
                 raise HTTPException(503, "Paper order requires reconciliation; replay is blocked")
