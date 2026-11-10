@@ -189,6 +189,9 @@ def _apply_demo_order_update(client_order_id: str, normalized: dict, *, source: 
             "filled": normalized.get("filled"),
             "remaining": normalized.get("remaining"),
             "average": normalized.get("average"),
+            "observed_client_order_id": normalized.get("observed_client_order_id"),
+            "observed_exchange_order_id": normalized.get("observed_exchange_order_id"),
+            "observed_exchange_status": normalized.get("observed_exchange_status"),
         },
     )
 
@@ -330,6 +333,7 @@ def reconcile_binance_demo_order(
                 exchange_order_id=order["exchange_order_id"],
                 client_order_id=client_order_id,
                 expected_amount=order["amount"],
+                expected_side=order["side"],
             )
         else:
             normalized = binance_demo_account_provider.fetch_order_by_client_id(
@@ -382,6 +386,7 @@ def cancel_binance_demo_order(
             exchange_order_id=order["exchange_order_id"],
             client_order_id=client_order_id,
             expected_amount=order["amount"],
+            expected_side=order["side"],
         )
     except BinanceDemoError as exc:
         current = demo_order_store.transition(
