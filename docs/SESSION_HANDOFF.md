@@ -82,7 +82,7 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 5. [x] Extender contratos de instrumentos y Risk Manager para permitir únicamente cash equities/ETFs USD de Twelve Data en paper, manteniendo bloqueados otros activos, mercados y proveedores sin soporte.
 6. [x] Mantener la investigación read-only para el Chief; permitir solo órdenes manuales paper tras los gates de cartera, FX, sesión bursátil, costes y riesgo. No activar órdenes autónomas de equities.
 7. [x] Añadir pruebas de migración, FX stale/futuro/malformado, falta de cuota, conversiones duplicadas, saldo insuficiente, movimientos entre divisas, valoración parcial, cambios de FX, comisiones y regresión crypto EUR.
-8. [x] Tras completar esta fase, el siguiente trabajo es el ciclo de vida y conciliación de órdenes.
+8. [x] PR #44 completa el ciclo de vida y conciliación paper; la siguiente fase pendiente son backups externos y restauración.
 
 ### Criterios de aceptación
 
@@ -93,6 +93,18 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - Una cotización FX ausente, stale, futura, no finita o no positiva bloquea conversiones y produce valoración incompleta; nunca se inventa un tipo.
 - El Risk Manager sigue siendo obligatorio y no permite shorting, margin, derivados, broker live ni wallets.
 - La suite completa y CI deben pasar en el SHA exacto de la PR antes del merge.
+
+### Resultado integrado — PR #44: ciclo de vida y conciliación paper
+
+- PR: https://github.com/Harilai/ai-trading-system/pull/44
+- Merge commit: `df760119580b56a345d0e7c9ecdc60b45d2365dd`.
+- Head validado: `0c20359375af24be79c5ebd008c8ca9fa32e84d1`.
+- CI: 292 pruebas Python correctas; Compose, build Docker y ejecución non-root correctos.
+- Intentos risk-approved persistidos con request/decision inmutables; fills y cambios de ledger atómicos.
+- Reconciliación de intentos frente a trades, verificación del payload completo, eventos append-only y estado `reconciliation_required`.
+- Recuperación tras restart con market/FX freshness, backoff y presupuesto finito; fencing por lease token y heartbeat.
+- Nuevas compras bloqueadas mientras exista un intento sin resolver; las ventas de reducción de riesgo siguen permitidas.
+- API owner-authenticated `/api/agent/order-intents` para consultar intents y eventos.
 
 ## 5. Objetivo de producto y siguientes fases
 
