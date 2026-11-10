@@ -38,9 +38,14 @@ services:
       api:
         condition: service_healthy
     env_file:
-      - .env
       - path: .env.backup
         required: false
+    environment:
+      DATABASE_PATH: ${DATABASE_PATH:-data/trading.db}
+      TWELVE_DATA_STATE_PATH: ${TWELVE_DATA_STATE_PATH:-/app/data/twelve_data_state.sqlite3}
+      BACKUP_DIRECTORY: ${BACKUP_DIRECTORY:-/app/data/backups}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
     volumes:
       - trading_data:/app/data
     networks:
