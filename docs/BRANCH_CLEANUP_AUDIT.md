@@ -4,7 +4,9 @@ Fecha: 2026-11-10. Repositorio: `Harilai/ai-trading-system`.
 
 Se compararon las puntas de las 86 referencias remotas con `main` (`35b894800ebf24324aebb2f09c363bdda8d1fca8`) y con las ramas fuente de PRs fusionadas. Una rama se considera candidata segura si su punta ya es ancestro de `main` o coincide con el head de una PR fusionada. Esto demuestra que su código ya está integrado; no borra la rama.
 
-## Candidatas con evidencia de integración (66)
+## Eliminadas tras aprobación del propietario (66)
+
+Las 66 ramas de esta lista se eliminaron de GitHub el 2026-11-10, después de verificar que cada punta estaba integrada en `main` o correspondía exactamente al head de una PR fusionada. La autorización se recibió tras presentar la lista completa. Los commits siguen accesibles desde `main`/el historial de PRs.
 
 ```text
 docs/binance-demo-smoke-runbook
@@ -104,4 +106,4 @@ phase/order-lifecycle-reconciliation
 - `demo`: apunta a `35b894800ebf24324aebb2f09c363bdda8d1fca8`, versión local de paper demo.
 - `phase/account-position-snapshots`: rama de la PR #74, abierta y lista para revisión.
 
-No se borró ninguna rama remota durante esta auditoría.
+Se mantuvieron `main`, `demo` y `phase/account-position-snapshots`; las 16 ramas divergentes no se eliminaron.
