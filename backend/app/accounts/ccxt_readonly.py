@@ -86,12 +86,14 @@ class CcxtReadOnlyAccount:
             raise CcxtReadOnlyAccountError(f"Exchange returned invalid {field} balance for {asset}")
         if len(amount.as_tuple().digits) > 80 or abs(amount.as_tuple().exponent) > 80:
             raise CcxtReadOnlyAccountError(f"Exchange returned unsupported {field} precision for {asset}")
-        return amount
+        return Decimal("0") if amount == 0 else amount
 
     @staticmethod
     def _amount_text(value: Decimal | None) -> str | None:
         if value is None:
             return None
+        if value == 0:
+            return "0"
         normalized = format(value, "f")
         if "." in normalized:
             normalized = normalized.rstrip("0").rstrip(".")
@@ -150,7 +152,9 @@ class CcxtReadOnlyAccount:
         balances = []
         seen_assets = set()
         for raw_asset in sorted(assets, key=lambda value: str(value).upper()):
-            asset = str(raw_asset).strip().upper()
+            if not isinstance(raw_asset, str):
+                raise CcxtReadOnlyAccountError("Exchange returned a non-text asset code")
+            asset = raw_asset.strip().upper()
             if not re.fullmatch(r"[A-Z0-9._-]{1,24}", asset):
                 raise CcxtReadOnlyAccountError("Exchange returned an invalid asset code")
             if asset in seen_assets:
