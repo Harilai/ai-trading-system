@@ -290,7 +290,7 @@ class BinanceDemoOrderStore:
                 "lease_until=NULL,last_completed_at=?,last_status=?,last_result_json=?,last_error=?,updated_at=? "
                 "WHERE id=1 AND lease_token=?",
                 (
-                    next_run, stamp, "failed" if failed else "completed",
+                    next_run, attempts if failed else 0, stamp, "failed" if failed else "completed",
                     json.dumps(result, sort_keys=True, ensure_ascii=False),
                     str(error)[:1000] if error else None, stamp, lease_token,
                 ),
