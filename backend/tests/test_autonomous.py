@@ -99,6 +99,9 @@ def test_decision_cycle_persists_proposal_only_result(tmp_path):
         def get_order_intent(self, client_order_id):
             return None
 
+        def list_order_intents(self, limit=100):
+            return []
+
         def get_trade_by_client_order_id(self, client_order_id):
             return None
 
@@ -162,6 +165,9 @@ def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
 
         def get_order_intent(self, client_order_id):
             return self.intent
+
+        def list_order_intents(self, limit=100):
+            return [self.intent] if self.intent else []
 
         def record_order_intent(self, client_order_id, request, decision):
             self.intent = {
