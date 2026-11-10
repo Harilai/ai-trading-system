@@ -27,6 +27,7 @@ from .portfolio import PaperPortfolio, PortfolioError
 from .fx import invert_fx_observation, validate_fx_observation
 from .backup_scheduler import read_backup_status
 from .accounts.binance_spot import AccountConnectorError, BinanceSpotReadOnlyAccount
+from .accounts.ccxt_readonly import CcxtReadOnlyAccount, CcxtReadOnlyAccountError
 from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
 from .accounts.contracts import (
     AccountProviderError, AccountProviderNotFound, AccountProviderRegistry,
@@ -72,6 +73,25 @@ elif _binance_key or _binance_secret:
     binance_account_configuration_status = "incomplete_configuration"
 del _binance_key, _binance_secret
 
+_ccxt_key = settings.ccxt_readonly_api_key.get_secret_value().strip()
+_ccxt_secret = settings.ccxt_readonly_api_secret.get_secret_value().strip()
+ccxt_readonly_configuration_status = "not_configured"
+ccxt_readonly_account_provider = None
+if _ccxt_key and _ccxt_secret:
+    try:
+        ccxt_readonly_account_provider = CcxtReadOnlyAccount(
+            settings.ccxt_readonly_exchange_id,
+            _ccxt_key,
+            _ccxt_secret,
+            account_alias=settings.ccxt_readonly_account_alias,
+        )
+        ccxt_readonly_configuration_status = "configured"
+    except CcxtReadOnlyAccountError:
+        ccxt_readonly_configuration_status = "invalid_configuration"
+elif _ccxt_key or _ccxt_secret:
+    ccxt_readonly_configuration_status = "incomplete_configuration"
+del _ccxt_key, _ccxt_secret
+
 _demo_key = settings.binance_spot_demo_api_key.get_secret_value().strip()
 _demo_secret = settings.binance_spot_demo_api_secret.get_secret_value().strip()
 binance_demo_configuration_status = "disabled"
@@ -103,6 +123,8 @@ demo_order_reconciler = (
 account_provider_registry = AccountProviderRegistry()
 if binance_account_provider is not None:
     account_provider_registry.register(binance_account_provider)
+if ccxt_readonly_account_provider is not None:
+    account_provider_registry.register(ccxt_readonly_account_provider)
 if binance_demo_account_provider is not None:
     account_provider_registry.register(binance_demo_account_provider)
 
@@ -148,6 +170,8 @@ def accounts(x_agent_token: str | None = Header(default=None)):
     configured = []
     if binance_account_provider is not None:
         configured.append(binance_account_provider.describe())
+    if ccxt_readonly_account_provider is not None:
+        configured.append(ccxt_readonly_account_provider.describe())
     if binance_demo_account_provider is not None:
         configured.append(binance_demo_account_provider.describe())
     return {
@@ -155,6 +179,7 @@ def accounts(x_agent_token: str | None = Header(default=None)):
         "accounts": configured,
         "normalized_accounts": account_provider_registry.list_accounts(),
         "demo_configuration_status": binance_demo_configuration_status,
+        "ccxt_readonly_configuration_status": ccxt_readonly_configuration_status,
     }
 
 
