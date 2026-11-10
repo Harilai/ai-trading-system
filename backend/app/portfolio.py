@@ -787,6 +787,10 @@ class PaperPortfolio:
         risk_fx_timestamp: int | None = None,
         require_order_intent: bool = False,
     ):
+        if require_order_intent and (
+            not isinstance(client_order_id, str) or not client_order_id.strip()
+        ):
+            raise PortfolioError("Application paper execution requires client_order_id")
         if not isinstance(symbol, str) or not isinstance(provider_id, str):
             raise PortfolioError("Symbol and provider identity must be text")
         symbol = symbol.strip().upper()
