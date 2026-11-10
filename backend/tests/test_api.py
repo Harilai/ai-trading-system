@@ -1040,3 +1040,97 @@ def test_binance_account_endpoint_sanitizes_connector_failures(monkeypatch):
     assert response.status_code == 502
     assert "NetworkError" in response.json()["detail"]
     assert "secret" not in response.text.lower()
+
+
+def test_binance_account_snapshot_api_persists_and_reconciles_balances(monkeypatch, tmp_path):
+    from datetime import datetime, timedelta, timezone
+    from app.accounts.snapshot_store import AccountSnapshotStore
+
+    headers = configure_order_auth(monkeypatch)
+    store = AccountSnapshotStore(str(tmp_path / "account-snapshots.db"))
+    monkeypatch.setattr("app.main.account_snapshot_store", store)
+
+    class FakeReadOnlyAccount:
+        def __init__(self):
+            self.calls = 0
+
+        def fetch_balances(self):
+            self.calls += 1
+            fetched = datetime.now(timezone.utc) + timedelta(milliseconds=self.calls)
+            btc = "0.1" if self.calls == 1 else "0.15"
+            return {
+                "provider_id": "ccxt:binance",
+                "account_alias": "binance-spot-readonly",
+                "market_type": "spot",
+                "read_only": True,
+                "fetched_at": fetched.isoformat(),
+                "balances": [
+                    {"asset": "BTC", "free": btc, "used": "0", "total": btc},
+                    {"asset": "EUR", "free": "20", "used": "0", "total": "20"},
+                ],
+                "balance_count": 2,
+                "execution_enabled": False,
+                "withdrawals_enabled": False,
+            }
+
+    provider = FakeReadOnlyAccount()
+    monkeypatch.setattr("app.main.binance_account_provider", provider)
+
+    unauthorized = client.post("/api/accounts/binance/spot/snapshots")
+    assert unauthorized.status_code == 401
+
+    first = client.post("/api/accounts/binance/spot/snapshots", headers=headers)
+    second = client.post("/api/accounts/binance/spot/snapshots", headers=headers)
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["reconciliation_status"] == "initial"
+    assert second.json()["reconciliation_status"] == "changed"
+    assert second.json()["previous_snapshot_id"] == first.json()["snapshot_id"]
+    btc_change = next(item for item in second.json()["changes"] if item["asset"] == "BTC")
+    assert btc_change["delta_total"] == "0.05"
+
+    unauthorized_history = client.get("/api/accounts/snapshots")
+    assert unauthorized_history.status_code == 401
+    history = client.get("/api/accounts/snapshots?provider_id=ccxt%3Abinance", headers=headers)
+    assert history.status_code == 200
+    assert len(history.json()["items"]) == 2
+
+    detail = client.get(
+        f"/api/accounts/snapshots/{second.json()['snapshot_id']}",
+        headers=headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["balances"][0]["asset"] == "BTC"
+    assert detail.json()["changes"]
+
+
+def test_binance_account_snapshot_api_rejects_invalid_provider_snapshot(monkeypatch, tmp_path):
+    from app.accounts.snapshot_store import AccountSnapshotStore
+
+    headers = configure_order_auth(monkeypatch)
+    monkeypatch.setattr(
+        "app.main.account_snapshot_store",
+        AccountSnapshotStore(str(tmp_path / "invalid-snapshot.db")),
+    )
+
+    class InvalidReadOnlyAccount:
+        def fetch_balances(self):
+            return {
+                "provider_id": "ccxt:binance",
+                "account_alias": "binance-spot-readonly",
+                "market_type": "spot",
+                "fetched_at": "2026-11-10T10:00:00+00:00",
+                "balances": [{"asset": "BTC", "free": 0.1, "used": "0", "total": "0.1"}],
+            }
+
+    monkeypatch.setattr("app.main.binance_account_provider", InvalidReadOnlyAccount())
+    response = client.post("/api/accounts/binance/spot/snapshots", headers=headers)
+    assert response.status_code == 502
+    assert "invalid account snapshot" in response.json()["detail"]
+    assert AccountSnapshotStore(str(tmp_path / "invalid-snapshot.db")).list_snapshots() == []
+
+
+def test_binance_account_snapshot_api_returns_404_for_unknown_snapshot(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    response = client.get("/api/accounts/snapshots/unknown", headers=headers)
+    assert response.status_code == 404
