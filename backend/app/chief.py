@@ -162,14 +162,12 @@ class ChiefAgent:
                     diagnostics["validated_candidates"] += 1
                     if entry_signal:
                         diagnostics["validated_entry_signals"] += 1
-                    else:
-                        diagnostics["candidates_without_entry_signal"] += 1
                 if experimental_candidate:
                     diagnostics["experimental_candidates"] += 1
                     if entry_signal:
                         diagnostics["experimental_entry_signals"] += 1
-                    else:
-                        diagnostics["candidates_without_entry_signal"] += 1
+                if (validated or experimental_candidate) and not entry_signal:
+                    diagnostics["candidates_without_entry_signal"] += 1
 
         # Manage existing positions before considering new entries.
         for identity, position in portfolio_positions.items():
