@@ -7,13 +7,13 @@
 
 ## En curso — trazabilidad de investigación experimental y decisiones Chief
 
-- Rama: `fix/experimental-research-diagnostics`; PR aún no abierta.
+- Rama: `fix/experimental-research-diagnostics`; PR #89 abierta contra `demo` (https://github.com/Harilai/ai-trading-system/pull/89).
 - Se está corrigiendo la persistencia de aptitud experimental y señales actuales en `strategy_research_history.result`, sin añadir columnas ni migración.
 - Los registros anteriores deben exponer `experimental_eligible=null` y `experimental_status=legacy`; nunca convertir un campo ausente en `false`.
 - Dashboard: distinguir validación de promoción y elegibilidad paper experimental, mostrando los motivos de cada una y advirtiendo que aptitud experimental no equivale a rentabilidad.
 - Chief: registrar contadores concretos de candidatos, señales, exclusiones por símbolo/posición/precio y propuestas rechazadas por Sniper/Risk Manager.
 - Se añadieron pruebas para persistencia, compatibilidad legacy y decisiones hold sin señal de entrada.
-- CI y revisión independiente pendientes; no considerar completado hasta verificar el SHA exacto y mergear a `demo`.
+- CI de los primeros commits de implementación ha pasado; tras los últimos ajustes, CI y revisión independiente siguen pendientes sobre el head actualizado. No considerar completado hasta verificar el SHA exacto y mergear a `demo`.
 - Seguridad: paper-only; no se amplían permisos, límites ni rutas de ejecución real.
 
 ## Fase completada — timestamps Kraken (PR #81)
