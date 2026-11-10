@@ -1668,3 +1668,13 @@ def test_generic_account_snapshot_route_rejects_trading_enabled_accounts(monkeyp
     response = client.post("/api/accounts/test:demo/snapshots", headers=headers)
     assert response.status_code == 409
     assert "read-only" in response.json()["detail"]
+
+
+def test_position_snapshot_api_requires_owner_token(monkeypatch):
+    monkeypatch.setattr("app.main.settings.agent_control_token", "test-control-token")
+    response = client.get("/api/accounts/positions/snapshots")
+    assert response.status_code == 401
+
+
+def test_position_snapshot_api_rejects_provider_without_position_capability(monkeypatch):
+    from app.accounts.contracts import AccountProviderRegistry
