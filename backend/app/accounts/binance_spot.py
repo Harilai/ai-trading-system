@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-import math
+from decimal import Decimal, InvalidOperation, localcontext
 import re
 from typing import Any, Callable
 
@@ -67,20 +67,24 @@ class BinanceSpotReadOnlyAccount:
         }
 
     @staticmethod
-    def _amount(value: Any, *, asset: str, field: str) -> float | None:
+    def _amount(value: Any, *, asset: str, field: str) -> Decimal | None:
         if value is None:
             return None
         if isinstance(value, bool):
             raise AccountConnectorError(f"Binance returned malformed {field} balance for {asset}")
         try:
-            amount = float(value)
-        except (TypeError, ValueError, OverflowError) as exc:
+            amount = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError) as exc:
             raise AccountConnectorError(
                 f"Binance returned malformed {field} balance for {asset}"
-            ) from exc
-        if not math.isfinite(amount) or amount < 0:
+            ) from None
+        if not amount.is_finite() or amount < 0:
             raise AccountConnectorError(f"Binance returned invalid {field} balance for {asset}")
         return amount
+
+    @staticmethod
+    def _amount_text(value: Decimal | None) -> str | None:
+        return format(value, "f") if value is not None else None
 
     def fetch_balances(self) -> dict:
         """Fetch spot balances only; no order, transfer or withdrawal API is called."""
@@ -113,15 +117,17 @@ class BinanceSpotReadOnlyAccount:
             used = self._amount(used_map.get(raw_asset), asset=asset, field="used")
             total = self._amount(total_map.get(raw_asset), asset=asset, field="total")
             if total is None and free is not None and used is not None:
-                total = free + used
+                with localcontext() as context:
+                    context.prec = 50
+                    total = free + used
             if total is None and free is None and used is None:
                 continue
             if any(value is not None and value > 0 for value in (free, used, total)):
                 balances.append({
                     "asset": asset,
-                    "free": free,
-                    "used": used,
-                    "total": total,
+                    "free": self._amount_text(free),
+                    "used": self._amount_text(used),
+                    "total": self._amount_text(total),
                 })
 
         return {
