@@ -183,6 +183,13 @@ class InstrumentCatalog:
     ) -> dict:
         completed_dt = discovered_at or datetime.now(timezone.utc)
         started_dt = started_at or completed_dt
+        if (
+            completed_dt.tzinfo is None or completed_dt.utcoffset() is None
+            or started_dt.tzinfo is None or started_dt.utcoffset() is None
+        ):
+            raise InstrumentCatalogError("Discovery timestamps must be timezone-aware")
+        if started_dt > completed_dt:
+            raise InstrumentCatalogError("Discovery start time cannot be after completion time")
         stamp = completed_dt.astimezone(timezone.utc).isoformat()
         started = started_dt.astimezone(timezone.utc).isoformat()
         run_id = str(uuid4())
