@@ -776,6 +776,7 @@ def test_decision_cycle_blocks_new_scan_when_another_intent_needs_reconciliation
         "minimum": 1, "client_order_id": "older-unresolved-intent",
         "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
         "strategy_id": None, "stop_loss": None, "take_profit": None,
+        "market_timestamp": int(utcnow().timestamp() * 1000),
     }
     portfolio.record_order_intent(
         "older-unresolved-intent", request, {"risk_accepted": True},
