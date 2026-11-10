@@ -14,8 +14,8 @@ Persist each order under its immutable `client_order_id` in an `order_intents` t
 |---|---|---|
 | `risk_approved` | Deterministic Risk Manager approved and the exact normalized paper request and decision evidence are persisted | No |
 | `filled` | Paper trade and portfolio mutation committed atomically with this state | Yes |
-| `rejected` | Deterministic execution/risk validation rejected the intent | Yes |
-| `expired` | Unfilled approval was abandoned because its market/FX evidence became stale | Yes |
+| `rejected` | Deterministic execution/risk validation rejected the intent | Yes, unless a contradictory trade row exists |
+| `expired` | Unfilled approval was abandoned because its market/FX evidence became stale | Yes, unless a contradictory trade row exists |
 | `reconciliation_required` | Intent and trade ledger disagree; new buys fail closed | No, operator/recovery action required |
 
 The current implementation creates an intent only after the deterministic Risk Manager approves it; it does not persist a separate `intent_created` state.
@@ -23,6 +23,7 @@ The current implementation creates an intent only after the deterministic Risk M
 Legal transitions:
 - `risk_approved -> filled | rejected | expired | reconciliation_required`
 - `filled -> reconciliation_required` only when the referenced trade is missing or inconsistent.
+- `rejected | expired -> reconciliation_required` only if a contradictory trade row exists for that terminal intent.
 - `reconciliation_required -> filled` only when reconciliation later finds the matching trade.
 
 There are deliberately no `submitted`, `accepted`, `partial_fill` or broker-pending states because no broker order exists.
