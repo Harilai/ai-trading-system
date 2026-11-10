@@ -182,7 +182,7 @@
       <div class="panel">
         <div class="section-head"><h2>Investigación y estrategias</h2><span id="research-count" class="badge">Token requerido</span></div>
         <div class="actions">
-          <button id="run-equity-research" disabled>Analizar acciones/ETF</button>
+          <button id="run-equity-research" disabled>Ver último análisis equities/ETF</button>
           <button id="load-strategy-history" disabled>Historial de estrategias</button>
         </div>
         <div id="research-message" class="message" role="status"></div>
@@ -338,10 +338,14 @@
         catch(error){$("chart-status").textContent="Sin datos";setMessage("chart-message","No se pudo cargar el gráfico: "+error.message,"error");}
         finally{$("load-chart").disabled=false;}
       }
-      async function loadResearch(){
-        $("run-equity-research").disabled=true;setMessage("research-message","Consultando universo de acciones/ETF…");
-        try{const data=await api("/api/research/equities?max_instruments=5&max_quote_candidates=10&timeframe=1day");renderEquityResearch(data);setMessage("research-message","Investigación de solo lectura completada.","success");}
-        catch(error){setMessage("research-message","Investigación no disponible: "+error.message,"error");}
+      async function loadEquityResearchMemory(){
+        $("run-equity-research").disabled=true;setMessage("research-message","Consultando el último análisis guardado…");
+        try{
+          const status=await api("/api/agent/status",{},true);
+          const record=(status.memory||[]).find(item=>item.category==="equity_etf_research");
+          if(!record){empty($("research-results"),"Todavía no hay análisis guardado. Usa «Investigar acciones/ETF» en Encolar análisis para iniciar uno.");$("research-count").textContent="Sin resultados";setMessage("research-message","No hay investigación previa guardada.","");return;}
+          renderEquityResearch(record.content||{});setMessage("research-message","Última investigación guardada · "+date(record.created_at),"success");
+        }catch(error){setMessage("research-message","No se pudo cargar la investigación: "+error.message,"error");}
         finally{$("run-equity-research").disabled=!controlToken;}
       }
       async function loadStrategyHistory(){
@@ -404,7 +408,7 @@
       $("refresh").addEventListener("click",refresh);$("pause").addEventListener("click",()=>control("pause"));$("resume").addEventListener("click",()=>control("resume"));
       $("stop").addEventListener("click",()=>{if(window.confirm("¿Activar la parada de emergencia?"))control("emergency-stop");});$("reset-stop").addEventListener("click",()=>control("reset-emergency-stop"));
       document.querySelectorAll("[data-task]").forEach(button=>button.addEventListener("click",()=>enqueue(button.dataset.task)));
-      $("load-chart").addEventListener("click",loadChart);$("run-equity-research").addEventListener("click",loadResearch);$("load-strategy-history").addEventListener("click",loadStrategyHistory);$("request-withdrawal").addEventListener("click",requestWithdrawal);
+      $("load-chart").addEventListener("click",loadChart);$("run-equity-research").addEventListener("click",loadEquityResearchMemory);$("load-strategy-history").addEventListener("click",loadStrategyHistory);$("request-withdrawal").addEventListener("click",requestWithdrawal);
       refresh();loadChart();window.setInterval(refresh,30000);
     })();
   </script>
