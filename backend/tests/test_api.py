@@ -29,7 +29,7 @@ def test_order_rejects_non_eur_pair_before_market_request(monkeypatch):
     monkeypatch.setattr("app.main.market.ticker", unexpected_ticker)
     response = client.post(
         "/api/orders",
-        json={"symbol": "BTC/USDT", "side": "buy", "quantity": 0.001},
+        json={"symbol": "BTC/USDT", "side": "buy", "quantity": 0.001, "client_order_id": "unsupported-quote-order"},
     )
     assert response.status_code == 422
 
