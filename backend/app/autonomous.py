@@ -687,6 +687,7 @@ class AutonomousAgent:
                         resumed_order = await asyncio.to_thread(
                             self.portfolio.execute,
                             **existing_intent["request"],
+                            require_order_intent=True,
                         )
                     except PortfolioError as exc:
                         await asyncio.to_thread(
@@ -861,6 +862,7 @@ class AutonomousAgent:
                     order = await asyncio.to_thread(
                         self.portfolio.execute,
                         **execution_request,
+                        require_order_intent=True,
                     )
                 except PortfolioError as exc:
                     await asyncio.to_thread(
