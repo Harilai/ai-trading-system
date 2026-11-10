@@ -411,9 +411,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
 
         raw_status = str(response.get("status") or "").lower()
         raw_filled = response.get("filled")
-        filled = self._nonnegative_decimal_text(
-            "0" if raw_filled is None else raw_filled, "filled",
-        )
+        filled = self._nonnegative_decimal_text(raw_filled, "filled")
         remaining = self._nonnegative_decimal_text(response.get("remaining"), "remaining")
         average_value = self._nonnegative_decimal_text(response.get("average"), "average")
         average = average_value if average_value not in (None, "0") else None
@@ -440,7 +438,8 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             status = "reconciliation_required"
         elif raw_status == "closed":
             if (
-                filled_value <= 0
+                filled is None
+                or filled_value <= 0
                 or remaining_value != 0
                 or amount_value is None
                 or filled_value != amount_value
@@ -449,7 +448,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             else:
                 status = "filled"
         elif raw_status in ("canceled", "cancelled", "expired"):
-            if filled_value > 0 and remaining_value is None:
+            if filled is None or remaining_value is None:
                 status = "reconciliation_required"
             elif amount_value is not None and filled_value == amount_value and remaining_value == 0:
                 # The final fill may race with a cancel/expiry response.
