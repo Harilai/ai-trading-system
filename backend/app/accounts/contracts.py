@@ -295,7 +295,7 @@ class AccountBalanceProvider(Protocol):
 
 @runtime_checkable
 class PositionProvider(Protocol):
-    def fetch_positions(self) -> dict: ...
+    def fetch_positions(self, market_type: str | None = None) -> dict: ...
 
 
 @runtime_checkable
@@ -457,7 +457,7 @@ class AccountProviderRegistry:
             raise UnsupportedAccountCapability("Account provider does not declare position support")
         try:
             with lock:
-                raw = provider.fetch_positions()
+                raw = provider.fetch_positions(market_type=market_type)
         except AccountProviderError:
             raise
         except Exception as exc:
