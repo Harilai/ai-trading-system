@@ -814,3 +814,6 @@ def test_manual_crypto_order_replay_returns_original_fill_without_new_quote(monk
     assert replay.json()["idempotent_replay"] is True
     assert len(calls) == 1
     assert len(paper.history()) == 1
+    assert [event["to_status"] for event in paper.list_order_intent_events("crypto-manual-replay")] == [
+        "risk_approved", "filled",
+    ]
