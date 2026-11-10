@@ -49,6 +49,12 @@ class PaperPortfolio:
                 "created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
             )
             db.execute(
+                "CREATE TABLE IF NOT EXISTS order_intent_events ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, client_order_id TEXT NOT NULL, "
+                "from_status TEXT, to_status TEXT NOT NULL, details_json TEXT, "
+                "created_at TEXT NOT NULL)"
+            )
+            db.execute(
                 "CREATE TABLE IF NOT EXISTS currency_balances ("
                 "currency TEXT PRIMARY KEY, balance REAL NOT NULL CHECK(balance >= 0), "
                 "updated_at TEXT NOT NULL)"
@@ -85,6 +91,7 @@ class PaperPortfolio:
             self._ensure_column(db, "trades", "strategy_id", "TEXT")
             self._ensure_column(db, "trades", "stop_loss", "REAL")
             self._ensure_column(db, "trades", "take_profit", "REAL")
+            self._ensure_column(db, "trades", "market_timestamp", "INTEGER")
             self._ensure_column(db, "currency_conversions", "fee_eur", "REAL NOT NULL DEFAULT 0")
             self._ensure_column(
                 db, "withdrawal_requests", "non_reserved_component", "REAL NOT NULL DEFAULT 0"
