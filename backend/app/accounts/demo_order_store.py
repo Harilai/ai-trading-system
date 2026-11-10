@@ -445,7 +445,7 @@ class BinanceDemoOrderStore:
         exchange_order_id = fill.get("exchange_order_id")
         symbol = fill.get("symbol")
         side = fill.get("side")
-        if not isinstance(trade_id, str) or not trade_id.strip() or len(trade_id) > 128:
+        if not isinstance(trade_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", trade_id):
             raise DemoOrderStoreError("Exchange trade ID is missing or invalid")
         if str(exchange_order_id) != str(order["exchange_order_id"]):
             raise DemoOrderConflict("Trade belongs to a different exchange order")
@@ -454,8 +454,8 @@ class BinanceDemoOrderStore:
         normalized = {"trade_id": trade_id.strip()}
         for field in ("amount", "price", "cost"):
             value = fill.get(field)
-            if not isinstance(value, str):
-                raise DemoOrderStoreError(f"Exchange trade {field} must be a decimal string")
+            if not isinstance(value, str) or not re.fullmatch(r"\d+(?:\.\d+)?", value) or len(value) > 100:
+                raise DemoOrderStoreError(f"Exchange trade {field} must be a plain decimal string")
             try:
                 parsed = Decimal(value)
             except (InvalidOperation, ValueError):
@@ -468,8 +468,8 @@ class BinanceDemoOrderStore:
         if fee_cost is None:
             raise DemoOrderStoreError("Exchange trade commission evidence is missing")
         if fee_cost is not None:
-            if not isinstance(fee_cost, str):
-                raise DemoOrderStoreError("Exchange trade fee must be a decimal string")
+            if not isinstance(fee_cost, str) or not re.fullmatch(r"\d+(?:\.\d+)?", fee_cost) or len(fee_cost) > 100:
+                raise DemoOrderStoreError("Exchange trade fee must be a plain decimal string")
             try:
                 fee_value = Decimal(fee_cost)
             except (InvalidOperation, ValueError):
@@ -477,7 +477,7 @@ class BinanceDemoOrderStore:
             if not fee_value.is_finite() or fee_value < 0:
                 raise DemoOrderStoreError("Exchange trade fee must be finite and non-negative")
             normalized["fee_cost"] = format(fee_value, "f")
-            if not isinstance(fee_currency, str) or not fee_currency.strip():
+            if not isinstance(fee_currency, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,24}", fee_currency):
                 raise DemoOrderStoreError("Exchange trade fee currency is required when fee is present")
             normalized["fee_currency"] = fee_currency.strip().upper()
         else:
