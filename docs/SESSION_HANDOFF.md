@@ -276,14 +276,23 @@ Siguiente secuencia:
 - Lease SQLite durable con fencing, polling acotado, backoff y recuperación tras restart.
 - Reconciliación de estados y fills sin reenvío ciego; funciona aunque la estrategia esté pausada o en emergency stop.
 
-### PR #71 — contratos normalizados de cuentas (en revisión)
+### PR #71 — contratos normalizados de cuentas
 
-- Rama: `phase/account-provider-contracts`; PR: https://github.com/Harilai/ai-trading-system/pull/71.
+- PR: https://github.com/Harilai/ai-trading-system/pull/71.
+- Merge commit: `a7a9bb8487e7935f791cc6034dee8fd10e24ec6d`.
+- Head validado: `aa8b8673bec7f6bab8eb7dab25107d8b7ccd525e`.
+- CI: **433 pruebas Python correctas**; Compose, build Docker y ejecución non-root correctos.
 - Registry por `provider_id + account_alias`; Binance production read-only y Binance Demo permanecen como cuentas separadas.
 - Contratos para capacidades/permisos, balances, posiciones y órdenes; endpoints genéricos para balances y snapshots read-only.
-- No añade broker genérico ni ejecución live. El estado de permisos reales de la API key sigue sin verificarse automáticamente.
-- Head final validado: `f6dd4affe0e824e0af21610e6cced440b6ea3fff`.
-- CI sobre ese SHA: **433 pruebas Python correctas**; Compose, build Docker y ejecución non-root correctos.
+- No añade broker genérico ni ejecución live.
+
+### PR #72 — adaptador genérico CCXT read-only (en revisión)
+
+- Rama: `phase/ccxt-readonly-account-adapter`.
+- Añade un adaptador CCXT configurable por exchange ID, alias y credenciales de solo lectura; Kraken es el valor por defecto.
+- Solo invoca `fetch_balance()` Spot. No contiene submit/cancel/transfer/withdraw/signing.
+- Las credenciales se leen del entorno del servidor; el software no puede verificar los scopes reales de la API key.
+- No se ha conectado una cuenta real ni se afirma que el smoke test operativo haya sido ejecutado.
 
 ## 6. Límites que no se deben saltar
 
