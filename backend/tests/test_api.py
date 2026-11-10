@@ -989,7 +989,7 @@ def test_binance_account_endpoints_require_owner_auth_and_expose_only_read_capab
                 "account_alias": "binance-spot-readonly",
                 "market_type": "spot",
                 "read_only": True,
-                "fetched_at": "2026-11-10T10:00:00+00:00",
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
                 "balances": [{"asset": "BTC", "free": 0.1, "used": 0.0, "total": 0.1}],
                 "balance_count": 1,
                 "execution_enabled": False,
@@ -1105,6 +1105,7 @@ def test_binance_account_snapshot_api_persists_and_reconciles_balances(monkeypat
 
 
 def test_binance_account_snapshot_api_rejects_invalid_provider_snapshot(monkeypatch, tmp_path):
+    from datetime import datetime, timezone
     from app.accounts.snapshot_store import AccountSnapshotStore
 
     headers = configure_order_auth(monkeypatch)
