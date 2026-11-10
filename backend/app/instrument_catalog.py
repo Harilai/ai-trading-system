@@ -90,7 +90,28 @@ class InstrumentCatalog:
         return "inst_" + hashlib.sha256(material.encode("utf-8")).hexdigest()
 
     @staticmethod
+    def _sanitize_metadata(value):
+        sensitive_keys = {
+            "api_key", "apikey", "secret", "secret_key", "private_key",
+            "authorization", "password", "seed_phrase", "access_token", "refresh_token",
+        }
+        if isinstance(value, dict):
+            sanitized = {}
+            for key, item in value.items():
+                normalized_key = str(key).strip().lower().replace("-", "_")
+                if normalized_key in sensitive_keys:
+                    sanitized[str(key)] = "[REDACTED]"
+                else:
+                    sanitized[str(key)] = InstrumentCatalog._sanitize_metadata(item)
+            return sanitized
+        if isinstance(value, (list, tuple)):
+            return [InstrumentCatalog._sanitize_metadata(item) for item in value]
+        return value
+
+    @staticmethod
     def _serialize(instrument: MarketInstrument) -> dict:
+        if not isinstance(instrument.metadata, dict):
+            raise ValueError("Instrument metadata must be a mapping")
         return {
             "instrument_id": instrument.instrument_id,
             "provider_id": instrument.provider_id,
@@ -122,7 +143,7 @@ class InstrumentCatalog:
             "option_type": instrument.option_type,
             "underlying": instrument.underlying,
             "session_timezone": instrument.session_timezone,
-            "metadata": instrument.metadata,
+            "metadata": InstrumentCatalog._sanitize_metadata(instrument.metadata),
         }
 
     @staticmethod
@@ -257,6 +278,7 @@ class InstrumentCatalog:
         provider_id: str | None = None,
         asset_class: str | None = None,
         market_type: str | None = None,
+        venue_id: str | None = None,
         active: bool | None = None,
         limit: int = 100,
         offset: int = 0,
@@ -284,6 +306,9 @@ class InstrumentCatalog:
                 raise InstrumentCatalogError("Unknown market type filter") from exc
             clauses.append("market_type=?")
             params.append(normalized)
+        if venue_id:
+            clauses.append("venue_id=?")
+            params.append(venue_id)
         if active is not None:
             clauses.append("active=?")
             params.append(int(active))
