@@ -692,6 +692,17 @@ class AutonomousAgent:
                     f"Order intent {task['id']} is in {existing_intent['status']} state; manual reconciliation required"
                 )
 
+            unresolved_intents = [
+                item for item in await asyncio.to_thread(self.portfolio.list_order_intents, 1000)
+                if item["client_order_id"] != task["id"]
+                and item["status"] in ("risk_approved", "reconciliation_required")
+            ]
+            if unresolved_intents:
+                raise RuntimeError(
+                    "New decision cycle blocked by unresolved paper order intent "
+                    + unresolved_intents[0]["client_order_id"]
+                )
+
             unvalued_portfolio = await asyncio.to_thread(self.portfolio.snapshot)
             held_positions = [
                 {
