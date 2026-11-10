@@ -182,7 +182,14 @@ def _apply_demo_order_update(client_order_id: str, normalized: dict, *, source: 
         remaining=normalized.get("remaining"),
         average=normalized.get("average"),
         error=normalized.get("error"),
-        payload={"source": source, "exchange_status": normalized.get("exchange_status")},
+        payload={
+            "source": source,
+            "exchange_order_id": normalized.get("exchange_order_id"),
+            "exchange_status": normalized.get("exchange_status"),
+            "filled": normalized.get("filled"),
+            "remaining": normalized.get("remaining"),
+            "average": normalized.get("average"),
+        },
     )
 
 
@@ -322,11 +329,13 @@ def reconcile_binance_demo_order(
                 symbol=order["symbol"],
                 exchange_order_id=order["exchange_order_id"],
                 client_order_id=client_order_id,
+                expected_amount=order["amount"],
             )
         else:
             normalized = binance_demo_account_provider.fetch_order_by_client_id(
                 symbol=order["symbol"],
                 client_order_id=client_order_id,
+                expected_amount=order["amount"],
             )
     except BinanceDemoError as exc:
         raise HTTPException(502, str(exc)) from exc
@@ -372,6 +381,7 @@ def cancel_binance_demo_order(
             symbol=order["symbol"],
             exchange_order_id=order["exchange_order_id"],
             client_order_id=client_order_id,
+            expected_amount=order["amount"],
         )
     except BinanceDemoError as exc:
         current = demo_order_store.transition(
