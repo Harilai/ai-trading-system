@@ -320,7 +320,11 @@ def paper_fx_conversion(
 def _paper_equity_order(order: OrderRequest):
     if not order.client_order_id or not order.client_order_id.strip():
         raise HTTPException(422, "USD equity/ETF paper orders require client_order_id for idempotency")
+    portfolio.reconcile_order_intents()
     previous = portfolio.get_trade_by_client_order_id(order.client_order_id.strip())
+    intent = portfolio.get_order_intent(order.client_order_id.strip())
+    if intent and intent["status"] != "filled" and previous:
+        raise HTTPException(409, "Order intent and trade ledger require reconciliation")
     if previous:
         same_intent = (
             previous["symbol"] == order.symbol.strip().upper()
@@ -507,6 +511,8 @@ def paper_order(
     x_agent_token: str | None = Header(default=None),
 ):
     symbol = order.symbol.strip().upper()
+    if order.client_order_id is not None and not order.client_order_id.strip():
+        raise HTTPException(422, "client_order_id must not be blank")
     if order.side == "buy" and order.stop_loss is None:
         raise HTTPException(422, "A buy order requires an explicit stop_loss")
     require_order_control_token(x_agent_token)
@@ -524,6 +530,30 @@ def paper_order(
             422,
             "Only EUR-quoted crypto spot or supported Twelve Data USD cash equities/ETFs are enabled",
         )
+
+    if order.client_order_id:
+        portfolio.reconcile_order_intents()
+        previous = portfolio.get_trade_by_client_order_id(order.client_order_id.strip())
+        intent = portfolio.get_order_intent(order.client_order_id.strip())
+        if intent and intent["status"] != "filled" and previous:
+            raise HTTPException(409, "Order intent and trade ledger require reconciliation")
+        if previous:
+            same_intent = (
+                previous["symbol"] == symbol
+                and previous["side"] == order.side
+                and previous["provider_id"] == order.provider_id
+                and (not order.instrument_id or previous["instrument_id"] == order.instrument_id)
+                and previous.get("strategy_id") == order.strategy_id
+                and math.isclose(float(previous["quantity"]), order.quantity, rel_tol=1e-12, abs_tol=1e-12)
+                and previous.get("stop_loss") == order.stop_loss
+                and previous.get("take_profit") == order.take_profit
+            )
+            if not same_intent:
+                raise HTTPException(409, "client_order_id was already used for a different paper order")
+            previous["idempotent_replay"] = True
+            return previous
+        if intent is not None:
+            raise HTTPException(409, f"Order intent is {intent['status']} and cannot be replayed by the manual API")
 
     try:
         quote = market.ticker(symbol, order.provider_id)
