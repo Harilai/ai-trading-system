@@ -174,3 +174,10 @@ def test_account_snapshot_store_rejects_non_readonly_or_executable_sources(tmp_p
     snapshot["withdrawals_enabled"] = True
     with pytest.raises(AccountSnapshotError, match="withdrawals"):
         store.record_snapshot(snapshot)
+
+
+def test_account_snapshot_store_rejects_stale_observations(tmp_path):
+    store = AccountSnapshotStore(str(tmp_path / "accounts.db"))
+    stale = datetime.now(timezone.utc) - timedelta(minutes=10)
+    with pytest.raises(AccountSnapshotError, match="stale"):
+        store.record_snapshot(make_snapshot(fetched_at=stale.isoformat()))
