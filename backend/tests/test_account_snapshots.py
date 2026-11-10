@@ -127,7 +127,7 @@ def test_account_snapshot_store_rejects_out_of_order_observations(tmp_path):
     now = datetime.now(timezone.utc)
     store.record_snapshot(make_snapshot(fetched_at=now.isoformat()))
     with pytest.raises(AccountSnapshotError, match="older"):
-        store.record_snapshot(make_snapshot(fetched_at=(now - timedelta(minutes=1)).isoformat()))
+        store.record_snapshot(make_snapshot(fetched_at=(now - timedelta(seconds=1)).isoformat()))
 
 
 def test_account_snapshot_records_and_balances_are_append_only(tmp_path):
