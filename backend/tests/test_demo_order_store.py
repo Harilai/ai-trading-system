@@ -210,3 +210,120 @@ def test_demo_order_store_quarantines_exchange_order_id_changes(tmp_path):
     assert quarantined["status"] == "reconciliation_required"
     assert quarantined["exchange_order_id"] == "exchange-1"
     assert "ID changed" in quarantined["error"]
+
+
+def test_demo_order_store_records_individual_fills_and_commissions_idempotently(tmp_path):
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-fill-ledger.db"))
+    store.prepare_intent(request())
+    store.transition("demo-order-1", "submission_unknown")
+    store.transition(
+        "demo-order-1", "partially_filled",
+        exchange_order_id="exchange-1",
+        exchange_status="PARTIALLY_FILLED",
+        filled="0.0004",
+        remaining="0.0006",
+        average="19999",
+    )
+    fills = [{
+        "trade_id": "trade-100",
+        "exchange_order_id": "exchange-1",
+        "symbol": "BTC/USDT",
+        "side": "buy",
+        "amount": "0.0004",
+        "price": "19999",
+        "cost": "7.9996",
+        "fee_cost": "0.000004",
+        "fee_currency": "BNB",
+        "timestamp_ms": 1794312000000,
+    }]
+
+    first = store.record_fills("demo-order-1", fills)
+    replay = store.record_fills("demo-order-1", fills)
+
+    assert first["inserted_fills"] == 1
+    assert replay["inserted_fills"] == 0
+    assert first["fill_coverage_complete"] is True
+    assert first["fees_by_currency"] == {"BNB": "0.000004"}
+    assert len(store.list_fills("demo-order-1")) == 1
+    events = store.list_events("demo-order-1")
+    assert events[-1]["payload"]["source"] == "individual_trade_fill_reconciliation"
+
+
+def test_demo_order_store_rejects_fill_identity_mismatch_and_trade_id_payload_reuse(tmp_path):
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-fill-conflict.db"))
+    store.prepare_intent(request())
+    store.transition("demo-order-1", "submission_unknown")
+    store.transition(
+        "demo-order-1", "filled",
+        exchange_order_id="exchange-1",
+        exchange_status="FILLED",
+        filled="0.001",
+        remaining="0",
+        average="20000",
+    )
+    fill = {
+        "trade_id": "trade-1", "exchange_order_id": "exchange-1",
+        "symbol": "BTC/USDT", "side": "buy", "amount": "0.001",
+        "price": "20000", "cost": "20", "fee_cost": "0.01",
+        "fee_currency": "USDT", "timestamp_ms": 1794312000000,
+    }
+    store.record_fills("demo-order-1", [fill])
+    changed = {**fill, "cost": "19.99"}
+    with pytest.raises(DemoOrderConflict, match="different fill evidence"):
+        store.record_fills("demo-order-1", [changed])
+
+    wrong_order = {**fill, "exchange_order_id": "another-order", "trade_id": "trade-2"}
+    with pytest.raises(DemoOrderConflict, match="different exchange order"):
+        store.record_fills("demo-order-1", [wrong_order])
+
+
+def test_demo_order_store_requires_commission_evidence_and_blocks_next_order_until_covered(tmp_path):
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-fill-coverage.db"))
+    store.prepare_intent(request())
+    store.transition("demo-order-1", "submission_unknown")
+    store.transition(
+        "demo-order-1", "filled",
+        exchange_order_id="exchange-1",
+        exchange_status="FILLED",
+        filled="0.001",
+        remaining="0",
+        average="20000",
+    )
+    with pytest.raises(DemoOrderConflict, match="incomplete individual fill"):
+        store.prepare_intent(request(client_order_id="demo-order-2"))
+
+    missing_fee = {
+        "trade_id": "trade-no-fee", "exchange_order_id": "exchange-1",
+        "symbol": "BTC/USDT", "side": "buy", "amount": "0.001",
+        "price": "20000", "cost": "20", "fee_cost": None,
+        "fee_currency": None, "timestamp_ms": 1794312000000,
+    }
+    with pytest.raises(DemoOrderStoreError, match="commission evidence"):
+        store.record_fills("demo-order-1", [missing_fee])
+
+    fill = {**missing_fee, "trade_id": "trade-with-fee", "fee_cost": "0", "fee_currency": "USDT"}
+    store.record_fills("demo-order-1", [fill])
+    second, created = store.prepare_intent(request(client_order_id="demo-order-2"))
+    assert created is True
+    assert second["status"] == "intent_created"
+
+
+def test_demo_order_store_allows_same_trade_id_on_different_symbols(tmp_path):
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-symbol-scoped-trades.db"))
+    store.prepare_intent(request())
+    store.transition("demo-order-1", "submission_unknown")
+    store.transition(
+        "demo-order-1", "filled", exchange_order_id="exchange-1",
+        filled="0.001", remaining="0", average="20000",
+    )
+    fill = {
+        "trade_id": "42", "exchange_order_id": "exchange-1",
+        "symbol": "BTC/USDT", "side": "buy", "amount": "0.001",
+        "price": "20000", "cost": "20", "fee_cost": "0",
+        "fee_currency": "USDT", "timestamp_ms": 1794312000000,
+    }
+    store.record_fills("demo-order-1", [fill])
+    store.prepare_intent({
+        **request(client_order_id="demo-order-2"),
+        "symbol": "ETH/USDT",
+    })
