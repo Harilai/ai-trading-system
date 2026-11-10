@@ -314,14 +314,18 @@ class AccountProviderRegistry:
         self._locks: dict[tuple[str, str], RLock] = {}
         self._lock = RLock()
 
-    def register(self, provider: AccountBalanceProvider) -> AccountCapabilities:
-        if not callable(getattr(provider, "describe", None)) or not callable(
-            getattr(provider, "fetch_balances", None)
-        ):
-            raise AccountProviderError("Account provider must expose describe and fetch_balances")
+    def register(self, provider: Any) -> AccountCapabilities:
+        if not callable(getattr(provider, "describe", None)):
+            raise AccountProviderError("Account provider must expose describe")
         capabilities = AccountCapabilities.from_description(provider.describe())
-        if not capabilities.balances:
-            raise UnsupportedAccountCapability("Provider does not declare balance support")
+        has_balance_method = callable(getattr(provider, "fetch_balances", None))
+        has_position_method = callable(getattr(provider, "fetch_positions", None))
+        if capabilities.balances and not has_balance_method:
+            raise AccountProviderError("Provider declares balances but has no fetch_balances method")
+        if capabilities.positions and not has_position_method:
+            raise AccountProviderError("Provider declares positions but has no fetch_positions method")
+        if not capabilities.balances and not capabilities.positions:
+            raise UnsupportedAccountCapability("Provider must declare balance or position support")
         key = (capabilities.provider_id, capabilities.account_alias)
         with self._lock:
             if key in self._providers:
@@ -361,6 +365,8 @@ class AccountProviderRegistry:
         account_alias: str | None = None,
     ) -> dict:
         provider, capabilities, lock = self._resolve(provider_id, account_alias)
+        if not capabilities.balances:
+            raise UnsupportedAccountCapability("Account provider does not declare balance support")
         try:
             with lock:
                 raw = provider.fetch_balances()
