@@ -250,6 +250,20 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             text = text.rstrip("0").rstrip(".")
         return "0" if text in ("", "-0") else text
 
+    @classmethod
+    def _nonnegative_decimal_text(cls, value: Any, field: str) -> str | None:
+        if value is None:
+            return None
+        try:
+            parsed = Decimal(str(value))
+        except (InvalidOperation, TypeError, ValueError):
+            raise BinanceDemoError(f"Exchange returned malformed {field} quantity") from None
+        if not parsed.is_finite() or parsed < 0:
+            raise BinanceDemoError(f"Exchange returned invalid {field} quantity")
+        if len(parsed.as_tuple().digits) > 80 or abs(parsed.as_tuple().exponent) > 80:
+            raise BinanceDemoError(f"Exchange returned unsupported {field} precision")
+        return cls._canonical_decimal(parsed)
+
     @staticmethod
     def _market_limit(value: Any) -> Decimal | None:
         if value is None:
@@ -368,17 +382,10 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
                 "error": "Exchange response did not contain a durable order ID",
             }
         raw_status = str(response.get("status") or "").lower()
-        filled = self._amount_text(self._decimal(response.get("filled") or "0", "filled") if response.get("filled") not in (None, 0, "0") else Decimal("0"))
-        remaining_value = response.get("remaining")
-        remaining = (
-            self._amount_text(self._decimal(remaining_value, "remaining"))
-            if remaining_value not in (None, 0, "0")
-            else ("0" if remaining_value in (0, "0") else None)
-        )
-        average_value = response.get("average")
-        average = self._amount_text(
-            self._decimal(average_value, "average") if average_value not in (None, 0, "0") else None
-        )
+        filled = self._nonnegative_decimal_text(response.get("filled") or "0", "filled")
+        remaining = self._nonnegative_decimal_text(response.get("remaining"), "remaining")
+        average_value = self._nonnegative_decimal_text(response.get("average"), "average")
+        average = average_value if average_value not in (None, "0") else None
         if raw_status == "closed":
             status = "filled"
         elif raw_status in ("canceled", "cancelled"):
