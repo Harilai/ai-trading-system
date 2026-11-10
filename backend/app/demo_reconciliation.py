@@ -148,20 +148,35 @@ class BinanceDemoOrderReconciler:
             candidates = self.store.list_reconciliation_candidates(
                 limit=self.max_orders_per_cycle,
             )
-            results = [
-                self._reconcile_one(order, token)
-                for order in candidates
-            ]
+            results = []
+            failures = []
+            for order in candidates:
+                try:
+                    results.append(self._reconcile_one(order, token))
+                except Exception as exc:
+                    failures.append({
+                        "client_order_id": order["client_order_id"],
+                        "error": str(exc)[:300],
+                    })
+                    results.append({
+                        "client_order_id": order["client_order_id"],
+                        "status": order["status"],
+                        "failed": True,
+                        "error": str(exc)[:300],
+                    })
             completed = self.store.complete_reconciliation_lease(
                 token,
-                success=True,
+                success=not failures,
                 interval_seconds=self.interval_seconds,
+                retry_base_seconds=self.interval_seconds,
             )
             if not completed:
                 raise DemoOrderConflict("Demo reconciliation lease expired before cycle completion")
             return {
                 "claimed": True,
                 "processed": len(results),
+                "failed_orders": failures,
+                "failed": bool(failures),
                 "results": results,
                 "next_interval_seconds": self.interval_seconds,
             }
