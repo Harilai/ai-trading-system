@@ -313,8 +313,12 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             raise BinanceDemoError("Order amount or price exceeds the market precision")
 
         limits = market.get("limits") or {}
+        if not isinstance(limits, dict):
+            raise BinanceDemoError("Binance Demo returned malformed market limits")
         amount_limits = limits.get("amount") or {}
         cost_limits = limits.get("cost") or {}
+        if not isinstance(amount_limits, dict) or not isinstance(cost_limits, dict):
+            raise BinanceDemoError("Binance Demo returned malformed amount/cost limits")
         minimum_amount = self._market_limit(amount_limits.get("min"))
         maximum_amount = self._market_limit(amount_limits.get("max"))
         minimum_cost = self._market_limit(cost_limits.get("min"))
@@ -373,7 +377,14 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
         elif raw_status == "rejected":
             status = "rejected"
         elif raw_status == "open":
-            status = "partially_filled" if Decimal(filled or "0") > 0 else "open"
+            filled_value = Decimal(filled or "0")
+            remaining_decimal = Decimal(remaining or "0")
+            if filled_value > 0 and remaining_decimal == 0:
+                status = "filled"
+            elif filled_value > 0:
+                status = "partially_filled"
+            else:
+                status = "open"
         else:
             status = "reconciliation_required"
         return {
@@ -392,8 +403,8 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
                 request["symbol"],
                 "limit",
                 request["side"],
-                float(Decimal(request["amount"])),
-                float(Decimal(request["price"])),
+                request["amount"],
+                request["price"],
                 {
                     "newClientOrderId": request["client_order_id"],
                     "timeInForce": "GTC",
