@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `1d6ad47d36927f5ec77d4eb0ffac5132e744a68a` — merge de PR #52, contrato normalizado de instrumentos v2.  
+> **Último commit observado en `main`:** `a3fd39472e3d1aa6cbcbfc033ca1c3778da91a07` — merge de PR #53, handoff actualizado tras PR #52.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -151,6 +151,20 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - **No habilita** futuros, opciones, margin, authenticated CEX trading, broker execution, wallets ni live trading. Los registros de derivados son metadatos, no un adaptador implementado.
 - Los campos nuevos todavía no están conectados a la validación de órdenes existente; la ejecución paper mantiene el alcance previo.
 
+### Fase actual — catálogo persistente de instrumentos
+
+- Rama: `feature/persistent-instrument-catalog`, creada desde main `a3fd39472e3d1aa6cbcbfc033ca1c3778da91a07`.
+- Añade tablas SQLite `instrument_catalog` e `instrument_discovery_runs` en la base persistente existente.
+- Mantiene `instrument_id = provider_id:market_type:symbol` sin cambios para no romper trades, posiciones ni historial.
+- Añade `catalogue_id` determinista venue-aware a partir de provider, venue, asset class, market type, native symbol, base y quote.
+- Persiste payload normalizado, first_seen_at, last_seen_at, estado activo y metadatos.
+- No elimina instrumentos ausentes de una ejecución de discovery: un fallo o una respuesta parcial no debe borrar catálogo previo.
+- Registra runs, contadores y fallos de proveedor sanitizados.
+- API prevista: listado filtrable/paginado, detalle por catalogue_id, historial de discovery y refresh autenticado.
+- Diseño: `docs/INSTRUMENT_CATALOG_DESIGN.md`.
+- No añade ejecución, trading de derivados, conexión privada a exchanges, wallet ni live trading.
+- Validación CI pendiente en el HEAD final de la rama.
+
 ## 5. Objetivo de producto y siguientes fases
 
 El objetivo final no es un bot exclusivamente crypto. Debe evolucionar a una plataforma multiactivo y multi-venue preparada para capital real: conectar exchanges como Binance, brokers y wallets, y descubrir/operar los instrumentos que cada proveedor y cuenta permita. El universo objetivo incluye crypto CEX/DEX, acciones, ETF, FX, futuros, opciones, bonos, materias primas y otros mercados integrables. La disponibilidad depende del proveedor, país, cuenta, API, liquidez y elegibilidad. Descubrir un símbolo no habilita su trading.
@@ -161,7 +175,7 @@ Siguiente secuencia:
 1. **Completado — backups externos y restauración (PR #48):** replicación S3-compatible verificada, status API y descarga/validación de restore candidate. Falta configurar el proveedor real en el entorno operativo.
 2. **Completado en PR #50 — dashboard ampliado:** velas OHLC, salud de conectores/readiness, investigación, historial de estrategias, intents/fills paper, backup status y retiradas paper.
 3. **Completado — contrato normalizado de instrumentos v2 (PR #52):** precision mode, ticks/steps, límites, venue y metadatos de contratos con validación estricta.
-4. **Siguiente fase — catálogo persistente venue-aware:** snapshots de discovery, first/last seen, restricciones y fallos; diseñar migración de identidad sin romper posiciones históricas.
+4. **En curso — catálogo persistente venue-aware:** snapshots de discovery, first/last seen, restricciones y fallos; mantener IDs históricos y añadir catalogue_id paralelo.
 5. Preparar despliegue persistente 24/7 en VPS: TLS/reverse proxy, secretos, aislamiento, monitorización, alertas, readiness y recuperación.
 6. Añadir supervisión paper de stops/take-profit equity y madurez paper/sandbox por mercado antes de decisiones autónomas o live.
 7. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.

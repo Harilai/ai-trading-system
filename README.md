@@ -2,7 +2,7 @@
 
 Plataforma modular de trading algorítmico multiactivo y multi-venue, orientada a investigación, gestión de cartera y eventual ejecución con capital real. Se construye por fases con prioridad en validación, trazabilidad y protección del capital.
 
-**Continuidad entre conversaciones:** consulta [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) para conocer el último estado revisado y el siguiente paso concreto. El método obligatorio de trabajo por roles especializados está en [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md). El diseño de cartera EUR/USD está en [`docs/MULTICURRENCY_DESIGN.md`](docs/MULTICURRENCY_DESIGN.md). La arquitectura objetivo multiactivo y multi-venue está en [`docs/MARKET_EXPANSION_ARCHITECTURE.md`](docs/MARKET_EXPANSION_ARCHITECTURE.md). El contrato normalizado de instrumentos está definido en [`docs/INSTRUMENT_CONTRACT_V2.md`](docs/INSTRUMENT_CONTRACT_V2.md). Comprueba siempre el estado vivo de `main` y las PR antes de continuar.
+**Continuidad entre conversaciones:** consulta [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) para conocer el último estado revisado y el siguiente paso concreto. El método obligatorio de trabajo por roles especializados está en [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md). El diseño de cartera EUR/USD está en [`docs/MULTICURRENCY_DESIGN.md`](docs/MULTICURRENCY_DESIGN.md). La arquitectura objetivo multiactivo y multi-venue está en [`docs/MARKET_EXPANSION_ARCHITECTURE.md`](docs/MARKET_EXPANSION_ARCHITECTURE.md). El contrato normalizado de instrumentos está definido en [`docs/INSTRUMENT_CONTRACT_V2.md`](docs/INSTRUMENT_CONTRACT_V2.md). El catálogo persistente y su identidad venue-aware se describen en [`docs/INSTRUMENT_CATALOG_DESIGN.md`](docs/INSTRUMENT_CATALOG_DESIGN.md). Comprueba siempre el estado vivo de `main` y las PR antes de continuar.
 
 ## Estado real de implementación
 
@@ -157,9 +157,12 @@ El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y contr
 ## Endpoints principales
 
 - `GET /api/providers` — proveedores configurados y capability matrix. Twelve Data aparece si `TWELVE_DATA_API_KEY` está configurada.
-- `GET /api/markets` — puede incluir el catálogo de acciones/ETF de EE. UU. de Twelve Data.
 - `GET /api/research/equities?max_instruments=5&max_quote_candidates=10&timeframe=1day` — investigación manual de acciones/ETF; requiere `TWELVE_DATA_API_KEY`, limita las cotizaciones examinadas (1–100) y el histórico descargado (1–10), y nunca ejecuta operaciones. El muestreo de cotizaciones se distribuye por todo el catálogo y la clasificación preliminar prioriza volumen (60%), frescura (25%) y spread (15%); la ausencia de volumen penaliza la posición, pero no elimina por sí sola la investigación histórica.
-- `GET /api/markets` — instrumentos detectados y restricciones conocidas.
+- `GET /api/markets` — discovery en vivo; persiste el snapshot y devuelve la identidad de catálogo.
+- `GET /api/instruments` — catálogo persistido con filtros `provider_id`, `venue_id`, `asset_class`, `market_type`, `active` y paginación.
+- `GET /api/instruments/{catalogue_id}` — detalle del instrumento y timestamps first/last seen.
+- `GET /api/instrument-discovery/runs` — historial de ejecuciones de discovery y fallos sanitizados.
+- `POST /api/instruments/refresh` — refresco explícito autenticado con `X-Agent-Token`; solo consulta metadatos, no ejecuta órdenes.
 - `GET /api/risk-profiles` — perfiles de riesgo y estado habilitado/deshabilitado.
 - `GET /api/health` — liveness del proceso.\n- `GET /api/health/ready` — comprueba SQLite y heartbeat reciente del worker; es el healthcheck de Docker.
 - `GET /api/market/{symbol}/ticker`

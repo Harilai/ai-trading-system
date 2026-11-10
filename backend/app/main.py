@@ -13,6 +13,7 @@ from .market_data import MarketDataError
 from .providers.ccxt_spot import CcxtSpotProvider
 from .providers.twelve_data import TwelveDataProvider
 from .providers.base import AssetClass
+from .instrument_catalog import InstrumentCatalog, InstrumentCatalogError
 from .equity_research import EquityEtfResearchAgent
 from .providers.registry import ProviderRegistry
 from .scout import ScoutAgent
@@ -40,6 +41,7 @@ if settings.twelve_data_api_key:
         min_request_interval_seconds=settings.twelve_data_min_request_interval_seconds,
     ))
 portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
+instrument_catalog = InstrumentCatalog(settings.database_path)
 
 class OrderRequest(BaseModel):
     symbol: str = Field(min_length=3)
@@ -82,10 +84,16 @@ def risk_profiles():
 @app.get("/api/markets")
 def markets():
     instruments, failures = market.discover_markets()
+    try:
+        catalogue_sync = instrument_catalog.record_discovery(instruments, failures)
+    except InstrumentCatalogError as exc:
+        raise HTTPException(503, "Unable to persist the instrument discovery snapshot") from exc
     return {
         "discovered": len(instruments),
+        "catalogue_sync": catalogue_sync,
         "instruments": [
             {
+                "catalogue_id": instrument_catalog.catalogue_id(item),
                 "instrument_id": item.instrument_id,
                 "provider_id": item.provider_id,
                 "symbol": item.symbol,
@@ -119,8 +127,61 @@ def markets():
             }
             for item in instruments
         ],
-        "provider_failures": failures,
+        "provider_failures": catalogue_sync["failures"],
     }
+
+
+@app.get("/api/instruments")
+def instrument_catalogue(
+    provider_id: str | None = None,
+    asset_class: str | None = None,
+    market_type: str | None = None,
+    venue_id: str | None = None,
+    active: bool | None = None,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+):
+    try:
+        items = instrument_catalog.list_instruments(
+            provider_id=provider_id,
+            asset_class=asset_class,
+            market_type=market_type,
+            venue_id=venue_id,
+            active=active,
+            limit=limit,
+            offset=offset,
+        )
+    except InstrumentCatalogError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"items": items, "limit": limit, "offset": offset}
+
+
+@app.get("/api/instruments/{catalogue_id}")
+def instrument_catalogue_item(catalogue_id: str):
+    item = instrument_catalog.get_instrument(catalogue_id)
+    if item is None:
+        raise HTTPException(404, "Instrument catalogue entry not found")
+    return item
+
+
+@app.get("/api/instrument-discovery/runs")
+def instrument_discovery_runs(limit: int = Query(50, ge=1, le=200)):
+    try:
+        return {"items": instrument_catalog.discovery_runs(limit)}
+    except InstrumentCatalogError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.post("/api/instruments/refresh")
+def refresh_instrument_catalogue(x_agent_token: str | None = Header(default=None)):
+    require_order_control_token(x_agent_token)
+    started_at = datetime.now(timezone.utc)
+    instruments, failures = market.discover_markets()
+    return instrument_catalog.record_discovery(
+        instruments,
+        failures,
+        started_at=started_at,
+    )
 
 
 
