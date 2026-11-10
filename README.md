@@ -87,7 +87,7 @@ docker compose up --build -d
 docker compose logs -f api
 ```
 
-El contenedor API se ejecuta como usuario no privilegiado, con sistema de archivos raíz de solo lectura, capacidades Linux eliminadas y volumen persistente para SQLite. Un servicio independiente `backup` ejecuta copias diarias de ambas bases SQLite en el mismo volumen, con retención de 14 días por defecto; también usa usuario no privilegiado, filesystem read-only, sin capacidades y sin acceso de red. El puerto se publica solo en `127.0.0.1`; no queda expuesto directamente a Internet. Para administrar una instancia remota, usa un túnel SSH (`ssh -L 8000:127.0.0.1:8000 usuario@servidor`) o configura un reverse proxy TLS independiente y restringido.
+El contenedor API se ejecuta como usuario no privilegiado, con sistema de archivos raíz de solo lectura, capacidades Linux eliminadas y volumen persistente para SQLite. Un servicio independiente `backup` ejecuta copias diarias de ambas bases SQLite y, si se configura, las replica a un almacén S3-compatible por una red de egreso dedicada. El contenedor no publica puertos, usa usuario no privilegiado, filesystem read-only y capacidades eliminadas. Las credenciales de almacenamiento se cargan únicamente desde `.env.backup` en el servicio `backup`; no se inyectan en el contenedor API. El puerto se publica solo en `127.0.0.1`; no queda expuesto directamente a Internet. Para administrar una instancia remota, usa un túnel SSH (`ssh -L 8000:127.0.0.1:8000 usuario@servidor`) o configura un reverse proxy TLS independiente y restringido.
 
 
 ## Copias de seguridad y restauración SQLite
@@ -117,7 +117,39 @@ docker compose run --rm --no-deps api python -m app.backup restore --source /app
 docker compose up -d api
 ```
 
-El servicio `backup` ejecuta este mismo mecanismo automáticamente cada 24 horas (`BACKUP_INTERVAL_SECONDS`) y elimina copias locales con más de 14 días (`BACKUP_RETENTION_DAYS`). Consulta su actividad con `docker compose logs -f backup`. Las copias siguen dentro del mismo volumen/servidor: no protegen frente a pérdida del servidor o del volumen. Conserva también una copia externa y comprueba periódicamente que puedes restaurarla.
+El servicio `backup` ejecuta este mismo mecanismo automáticamente cada 24 horas (`BACKUP_INTERVAL_SECONDS`). La retención local por defecto es de 14 días (`BACKUP_RETENTION_DAYS`); si off-host está activado, no elimina un snapshot local hasta que su objeto remoto esté verificado.
+
+### Activar copias externas S3
+
+1. Copia `.env.backup.example` a `.env.backup`.
+2. Configura un bucket privado S3 o compatible (R2, B2, MinIO), región, prefijo y modo de cifrado.
+3. Usa un IAM/workload role cuando sea posible; si necesitas claves estáticas, guárdalas solo en `.env.backup`. No las copies a `.env` ni al navegador.
+4. Configura versioning, bloqueo de acceso público y lifecycle/retención en el proveedor. El sistema no elimina objetos remotos ni necesita permiso de borrado.
+5. Arranca/actualiza con `docker compose up --build -d`.
+
+El modo externo está desactivado por defecto. Se requiere HTTPS y cifrado server-side `AES256` o `aws:kms`; `provider-managed` solo cuando el proveedor garantiza cifrado en reposo. Cada upload se verifica con HEAD, tamaño, metadatos SHA-256 y lectura de vuelta. Si falla la copia externa, la copia local continúa y el estado muestra el fallo; los snapshots no verificados se conservan.
+
+Consulta estado con `GET /api/agent/backup-status` y el token de control en la cabecera `X-Agent-Token`. Los logs están en `docker compose logs -f backup`.
+
+### Inspeccionar y restaurar una copia externa
+
+Lista los objetos remotos y descarga uno a un fichero candidato; el comando verifica SHA-256 y la integridad SQLite y no sobrescribe un candidato existente:
+
+```bash
+docker compose run --rm --no-deps backup python -m app.backup_remote list
+docker compose run --rm --no-deps backup python -m app.backup_remote download --key "ai-trading-system/2026/11/10/trading-...sqlite3" --destination /app/data/restore-candidate-trading.sqlite3
+```
+
+Para restaurar, detén API y scheduler antes de sustituir cualquier base activa. Restaura cada candidato por separado; `app.backup restore` conserva una copia de seguridad pre-restauración:
+
+```bash
+docker compose stop api backup
+docker compose run --rm --no-deps backup python -m app.backup restore --source /app/data/restore-candidate-trading.sqlite3 --destination /app/data/trading.db
+docker compose run --rm --no-deps backup python -m app.backup restore --source /app/data/restore-candidate-twelve-data.sqlite3 --destination /app/data/twelve_data_state.sqlite3
+docker compose up -d api backup
+```
+
+Practica restauraciones periódicas en un entorno aislado.
 
 El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y controles del worker. Para pausar, reanudar, activar emergencia o encolar tareas, introduce `AGENT_CONTROL_TOKEN`; el token solo se mantiene en memoria de esa página y no se guarda en `localStorage`. La UI aún no incluye un formulario de conversión FX ni de órdenes manuales de equities; esas operaciones están disponibles por API autenticada. No hay conexión de wallets.
 
