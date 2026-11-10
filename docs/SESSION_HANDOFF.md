@@ -1,17 +1,56 @@
 # Session handoff — AI Trading System
 
-> **Última revisión del repositorio:** 2026-11-10 22:30 Europe/Madrid
+> **Última revisión del repositorio:** 2026-11-10
 > **Rama base revisada:** `main`
-> **Último commit integrado en `main`:** `ede62ebfd64dc9364b2465cc70d932226d912e17` — PR #82, independent reviewer workflow.
-> **Estado de ejecución:** paper trading únicamente; Binance Spot Demo aislado; live trading no implementado ni habilitado.
+> **Último feature merge:** `a9378266626aca81be46f854f8d11011ee4804ca` — PR #83, experimental paper demo.
+> **Estado de ejecución:** paper trading únicamente; demo local aislada con 10.000 EUR virtuales; Binance Spot Demo no se usa en esta demo; live trading no implementado ni habilitado.
 
-## Fase activa — Kraken y operaciones paper (PR #81)
+## Fase completada — timestamps Kraken (PR #81)
 
-- PR #81 `fix/kraken-retrieved-timestamp-paper`, basado en `main`, corrige que el ticker público de Kraken no siempre aporta timestamp de exchange. Las respuestas válidas se marcan con hora local de recepción `retrieved_at`; la procedencia se conserva hasta el ledger paper y la frescura sigue limitada.
-- Tests locales registrados antes del sync: suite completa **512 passed, 1 warning**; tests dirigidos **118 passed**; `git diff --check` correcto. GitHub Actions pasó `Python tests` y `Docker build and runtime hardening` en el SHA `8880829be7b8b4c37730cf85dcda4f621ab58dd7` (run 42907071675). Se añadieron tests para persistencia de `retrieved_at`, idempotencia de intent y migración legacy. La rama se sincronizó con el nuevo `main` mediante merge commit `f3fe252f4a19d7b28eb125a38d0edd99481f03d6`; CI debe repetirse sobre este head exacto antes de integrar.
-- Demo local reconstruida desde el checkout de trabajo y healthy: `mode=paper`, `live_trading_enabled=false`; cotización BTC/EUR fresca con fuente `retrieved_at`.
-- Escaneo/ciclo: cinco pares descubiertos y analizados, pero cero oportunidades elegibles. Todas las estrategias fallaron gates de muestra fuera de entrenamiento, walk-forward y costes; Chief mantuvo `hold`, sin orden.
-- No se relajaron límites, no se crearon órdenes para aparentar actividad, no se usaron claves de trading ni se conectaron fondos reales.
+- Merge commit `5bbb8800dfab86405bb798f51e749609923ca852`.
+- Las cotizaciones Kraken sin timestamp del exchange usan hora local de recepción `retrieved_at`, nunca etiquetada como hora de evento.
+- La procedencia se conserva hasta el ledger paper; se rechazan observaciones stale/future o sin evidencia de recepción.
+- CI y revisión independiente pasaron sobre el head exacto `4862851717ad414777f5b160b48417aaf3e75a5d`.
+- Se añadieron pruebas para persistencia de procedencia, replay idempotente y migración legacy.
+
+## Fase completada — Independent Reviewer Worker (PR #82)
+
+- Merge commit `ede62ebfd64dc9364b2465cc70d932226d912e17`.
+- Añadido `docs/agents/INDEPENDENT_REVIEWER.md` y actualizado `docs/AGENT_WORKFLOW.md`.
+- Cada PR requiere una pasada independiente del diff, veredicto, severidad de hallazgos y CI verde sobre el SHA exacto.
+- Los merges rutinarios están delegados al Engineering Lead y no requieren confirmación del usuario si todos los gates pasan.
+- No existe un segundo modelo persistente en este runtime: si no hay runtime de subagentes, el Orchestrator debe invocar explícitamente el rol de reviewer y no afirmar que un proceso en background está activo.
+
+## Fase completada — demo paper experimental (PR #83)
+
+- Merge commit `a9378266626aca81be46f854f8d11011ee4804ca`.
+- El Compose local mantiene 10.000 EUR virtuales, base SQLite/volumen separado y datos públicos Kraken.
+- Añadido modo experimental paper-only, activado solo por `PAPER_DEMO_MODE=true` y `PAPER_EXPERIMENTAL_STRATEGIES_ENABLED=true`; ambos default-off fuera del Compose demo.
+- Las estrategias experimentales deben tener tres ventanas walk-forward completas, historia suficiente y drawdown OOS/walk-forward no superior al 25%, pero **no se consideran rentables ni promocionadas**.
+- Cada entrada experimental se etiqueta con `experimental:`; el dashboard muestra el modo y la columna de estrategia.
+- Límites demo: 0,25% de equity como presupuesto de riesgo por operación, 5% de notional máximo por orden y 3% de stop máximo. Risk Manager, frescura, idempotencia y ledger paper siguen obligatorios.
+- CI en el head exacto `ea9dfa7982cfec49871d3f2815adeedcb74a6b44`: **470 tests passed, 1 warning**; Docker Compose validation, build y non-root runtime correctos.
+- No se activa Binance Demo, broker, wallet, transferencias, retiradas ni live execution.
+
+## Acción operativa pendiente
+
+La instancia que el usuario ya tiene arrancada fue creada antes de PR #83; necesita reconstruirse para cargar las variables y el código nuevos. Desde la raíz del repositorio:
+
+```bash
+docker compose -f docker-compose.demo.yml up --build -d
+```
+
+No usar `down -v`: el volumen `paper_demo_data` contiene la cartera ficticia y debe conservarse. Después:
+1. Consultar `GET /api/health/ready` y confirmar `status=ready`, `mode=paper`, `experimental_paper_enabled=true` y `live_trading_enabled=false`.
+2. Abrir `/dashboard`; debe mostrar `EXPERIMENTAL PAPER`.
+3. Conectar controles con el token local de demo y pulsar Reanudar.
+4. Observar ciclos y operaciones etiquetadas `experimental:`. Si no hay señal, datos frescos o aprobación de riesgo, el resultado correcto sigue siendo `hold`.
+
+## Siguiente fase
+
+- Verificar el comportamiento de la demo reconstruida durante varios ciclos; revisar fills paper, stops, comisiones, slippage y drawdown.
+- Diseñar investigación de copy trading como fuente de señales: solo track records verificables, timestamps, P&L neto, drawdown, leverage, costes y latencia; primero shadow/paper, nunca copia ciega.
+- Mantener como backlog el ledger append-only de posiciones multi-venue y sus adaptadores, sin mezclar snapshots externos con la cartera paper.
 
 ## Fase completada — Demo local paper (PR #75)
 
@@ -84,10 +123,10 @@ Después del ledger, implementar adaptadores específicos de posiciones para exc
 
 - PR #71: https://github.com/Harilai/ai-trading-system/pull/71
 - PR #72: https://github.com/Harilai/ai-trading-system/pull/72
-- PR #73: https://github.com/Harilai/ai-trading-system/pull/73
+- PR #73: https://github.com/Harilai/ai-trading-system/pull/73\n- PR #81: https://github.com/Harilai/ai-trading-system/pull/81\n- PR #82: https://github.com/Harilai/ai-trading-system/pull/82\n- PR #83: https://github.com/Harilai/ai-trading-system/pull/83
 - Arquitectura multiactivo: `docs/MARKET_EXPANSION_ARCHITECTURE.md`
 - Contratos de cuenta: `docs/ACCOUNT_PROVIDER_CONTRACTS.md`
 - Contrato de instrumentos: `docs/INSTRUMENT_CONTRACT_V2.md`
 - Workflow de agentes: `docs/AGENT_WORKFLOW.md`
 
-**Regla de continuidad:** la siguiente conversación debe comenzar comprobando el estado vivo de GitHub y continuar el ledger persistente de snapshots de posiciones, no reimplementar PR #71–#73.
+**Regla de continuidad:** la siguiente conversación debe comprobar el estado vivo de GitHub y el resultado operativo de la demo reconstruida. No reimplementar PR #81–#83. Después continuar el diseño de copy-trading research y el backlog del ledger de posiciones multi-venue.
