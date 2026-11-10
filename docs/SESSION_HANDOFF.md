@@ -4,21 +4,24 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `773425bd22388f9bed9666075e6d47e4f91cf5e1` — dashboard responsive (#38).  
+> **Último commit observado en `main`:** `e9ba320e6f196bec5c28e1f1508bddae8685d342` — handoff persistente (#39).  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
 
 Antes de modificar código:
 
-1. Leer este documento (`docs/SESSION_HANDOFF.md`).
+1. Leer este documento (`docs/SESSION_HANDOFF.md`) y el método de trabajo obligatorio (`docs/AGENT_WORKFLOW.md`).
 2. Leer `docs/ROADMAP.md` y las restricciones de seguridad de `README.md`.
 3. Consultar el estado actual de `main`, los últimos commits y las PR abiertas. Este documento es una guía de continuidad, no sustituye la comprobación del repositorio vivo.
 4. Comparar el HEAD actual con el commit indicado arriba. Si `main` ha avanzado, revisar qué se integró y actualizar este handoff antes de continuar.
 5. Continuar por **la siguiente fase pendiente** de este documento. No repetir tareas marcadas como integradas.
-6. Trabajar en una rama por cambio lógico, añadir pruebas, revisar el diff y exigir CI verde antes de fusionar.
+6. Aplicar los roles y las puertas de calidad descritos en `docs/AGENT_WORKFLOW.md`: planificación, arquitectura, investigación cuantitativa, desarrollo, riesgo/seguridad, QA, revisión independiente y release/documentación.
+7. Trabajar en una rama por cambio lógico, añadir pruebas, revisar el diff y exigir CI verde antes de fusionar.
 
 No asumir que una conversación anterior dejó cambios sin subir. El repositorio y sus PR son la fuente de verdad.
+
+La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md` define los roles especializados, las fases, los criterios de revisión y el protocolo de cierre.
 
 ## 2. Trabajo ya completado que motivó esta continuación
 
