@@ -148,3 +148,28 @@ def test_s3_backup_requires_kms_key_for_kms_encryption():
             FakeS3(), "private-backups",
             server_side_encryption="aws:kms",
         )
+
+
+def test_s3_backup_rejects_embedded_endpoint_credentials_and_orphan_session_token():
+    from types import SimpleNamespace
+
+    config = {
+        "backup_external_enabled": True,
+        "backup_s3_bucket": "private-backups",
+        "backup_s3_endpoint_url": "https://user:password@object-store.example",
+        "backup_s3_allow_insecure_endpoint": False,
+        "backup_s3_access_key_id": "",
+        "backup_s3_secret_access_key": "",
+        "backup_s3_session_token": "",
+        "backup_s3_region": "us-east-1",
+        "backup_s3_prefix": "ai-trading",
+        "backup_s3_server_side_encryption": "AES256",
+        "backup_s3_kms_key_id": "",
+    }
+    with pytest.raises(BackupError, match="must not embed credentials"):
+        S3BackupStore.from_settings(SimpleNamespace(**config))
+
+    config["backup_s3_endpoint_url"] = ""
+    config["backup_s3_session_token"] = "orphan-session-token"
+    with pytest.raises(BackupError, match="requires a static access key pair"):
+        S3BackupStore.from_settings(SimpleNamespace(**config))
