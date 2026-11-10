@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, localcontext
 import json
 from pathlib import Path
@@ -337,12 +337,14 @@ class BinanceDemoOrderStore:
         average: str | None = None,
         error: str | None = None,
         payload: dict | None = None,
+        lease_token: str | None = None,
     ) -> dict:
         if to_status not in _ALLOWED_TRANSITIONS:
             raise DemoOrderStoreError("Unknown Demo order status")
         stamp = datetime.now(timezone.utc).isoformat()
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            self._assert_reconciliation_lease(db, lease_token)
             row = db.execute(
                 "SELECT * FROM binance_demo_orders WHERE client_order_id=?",
                 (client_order_id,),
@@ -696,13 +698,20 @@ class BinanceDemoOrderStore:
         normalized["side"] = side
         return normalized
 
-    def record_fills(self, client_order_id: str, fills: list[dict]) -> dict:
+    def record_fills(
+        self,
+        client_order_id: str,
+        fills: list[dict],
+        *,
+        lease_token: str | None = None,
+    ) -> dict:
         if not isinstance(fills, list):
             raise DemoOrderStoreError("Exchange fills must be a list")
         inserted = 0
         stamp = datetime.now(timezone.utc).isoformat()
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            self._assert_reconciliation_lease(db, lease_token)
             order = db.execute(
                 "SELECT * FROM binance_demo_orders WHERE client_order_id=?",
                 (client_order_id,),
