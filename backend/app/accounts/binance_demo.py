@@ -360,6 +360,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             "amount": self._canonical_decimal(formatted_amount),
             "price": self._canonical_decimal(formatted_price),
             "quote_asset": quote_asset,
+            "max_order_quote": self._canonical_decimal(max_quote_value),
         }
 
     def normalize_order(self, response: Any, *, expected_client_order_id: str) -> dict:
