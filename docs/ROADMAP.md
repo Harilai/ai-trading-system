@@ -38,7 +38,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 | Preparación operativa 24/7 | Implementada en PR #56 (`c892ff3`); 330 tests y Docker hardening correctos; VPS pendiente |
 | Binance Spot account connector (read-only) | Implementado en PR #57 (`8773d75`); 345 tests y Docker hardening correctos; API key no configurada |
 | Snapshots y conciliación read-only de cuentas | Implementado en PR #59 (`b3cca3d`); 360 tests y Docker hardening correctos; no altera cartera paper |
-| Binance Spot Demo Trading | Implementado en PR #61 (`6fb6350`); 372 tests y Docker hardening correctos; desactivado por defecto y sin órdenes |
+| Binance Spot Demo Trading | Implementado en PR #61; balances virtuales y discovery Spot. PR #63 añade limit orders Demo con lifecycle persistente; desactivado por defecto y sin ruta de producción |
 | Binance Spot Demo order lifecycle | Implementado y fusionado en PR #63 (`013f44f`); 400 tests y Docker hardening correctos; Demo-only, limit orders y cap 25 quote por defecto |
 
 
