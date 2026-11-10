@@ -114,6 +114,19 @@ class BinanceDemoOrderStore:
                 );
                 CREATE INDEX IF NOT EXISTS idx_binance_demo_order_fills_order
                     ON binance_demo_order_fills(client_order_id,timestamp_ms,exchange_trade_id);
+                CREATE TABLE IF NOT EXISTS binance_demo_reconciliation_state (
+                    id INTEGER PRIMARY KEY CHECK(id=1),
+                    next_run_at TEXT NOT NULL,
+                    lease_token TEXT,
+                    lease_until TEXT,
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    last_started_at TEXT,
+                    last_completed_at TEXT,
+                    last_status TEXT NOT NULL DEFAULT 'idle',
+                    last_result_json TEXT,
+                    last_error TEXT,
+                    updated_at TEXT NOT NULL
+                );
                 CREATE TRIGGER IF NOT EXISTS binance_demo_order_fills_no_update
                     BEFORE UPDATE ON binance_demo_order_fills
                     BEGIN SELECT RAISE(ABORT,'demo order fills are append-only'); END;
@@ -134,6 +147,12 @@ class BinanceDemoOrderStore:
                     BEFORE DELETE ON binance_demo_order_events
                     BEGIN SELECT RAISE(ABORT,'demo order events are append-only'); END;
                 """
+            )
+            stamp = datetime.now(timezone.utc).isoformat()
+            db.execute(
+                "INSERT OR IGNORE INTO binance_demo_reconciliation_state("
+                "id,next_run_at,attempts,last_status,updated_at) VALUES(1,?,0,'idle',?)",
+                (stamp, stamp),
             )
 
     @staticmethod
@@ -208,6 +227,122 @@ class BinanceDemoOrderStore:
         result = dict(row)
         result["request"] = json.loads(result.pop("request_json"))
         return result
+
+    def claim_reconciliation_lease(
+        self,
+        *,
+        lease_seconds: int = 180,
+        now: datetime | None = None,
+    ) -> dict | None:
+        if not isinstance(lease_seconds, int) or not 30 <= lease_seconds <= 900:
+            raise DemoOrderStoreError("Reconciliation lease must be between 30 and 900 seconds")
+        current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        stamp = current.isoformat()
+        lease_until = (current + timedelta(seconds=lease_seconds)).isoformat()
+        token = str(uuid4())
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            row = db.execute(
+                "SELECT * FROM binance_demo_reconciliation_state WHERE id=1"
+            ).fetchone()
+            if row is None:
+                raise DemoOrderStoreError("Demo reconciliation state is missing")
+            if row["lease_token"] and row["lease_until"] and row["lease_until"] > stamp:
+                return None
+            if row["next_run_at"] > stamp:
+                return None
+            attempts = int(row["attempts"]) + 1
+            db.execute(
+                "UPDATE binance_demo_reconciliation_state SET lease_token=?,lease_until=?,"
+                "attempts=?,last_started_at=?,last_status='running',last_error=NULL,updated_at=? "
+                "WHERE id=1",
+                (token, lease_until, attempts, stamp, stamp),
+            )
+        return {"lease_token": token, "lease_until": lease_until, "attempts": attempts}
+
+    def finish_reconciliation_lease(
+        self,
+        lease_token: str,
+        result: dict,
+        *,
+        interval_seconds: int = 60,
+        failed: bool = False,
+        now: datetime | None = None,
+    ) -> bool:
+        if not isinstance(interval_seconds, int) or not 30 <= interval_seconds <= 3600:
+            raise DemoOrderStoreError("Reconciliation interval must be between 30 and 3600 seconds")
+        current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        stamp = current.isoformat()
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT attempts,lease_until FROM binance_demo_reconciliation_state "
+                "WHERE id=1 AND lease_token=?",
+                (lease_token,),
+            ).fetchone()
+            if row is None or not row["lease_until"] or row["lease_until"] < stamp:
+                return False
+            attempts = int(row["attempts"])
+            delay = min(900, interval_seconds * (2 ** min(max(attempts - 1, 0), 4))) if failed else interval_seconds
+            next_run = (current + timedelta(seconds=delay)).isoformat()
+            error = result.get("error") if failed else None
+            changed = db.execute(
+                "UPDATE binance_demo_reconciliation_state SET next_run_at=?,lease_token=NULL,"
+                "lease_until=NULL,last_completed_at=?,last_status=?,last_result_json=?,last_error=?,updated_at=? "
+                "WHERE id=1 AND lease_token=?",
+                (
+                    next_run, stamp, "failed" if failed else "completed",
+                    json.dumps(result, sort_keys=True, ensure_ascii=False),
+                    str(error)[:1000] if error else None, stamp, lease_token,
+                ),
+            ).rowcount
+        return changed == 1
+
+    def reconciliation_status(self) -> dict:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM binance_demo_reconciliation_state WHERE id=1"
+            ).fetchone()
+        if row is None:
+            return {"status": "not_initialized"}
+        result = dict(row)
+        raw = result.pop("last_result_json")
+        result["last_result"] = json.loads(raw) if raw else None
+        return result
+
+    def list_reconcilable_orders(self, *, limit: int = 10) -> list[dict]:
+        if not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise DemoOrderStoreError("Reconciliation batch limit must be between 1 and 100")
+        active = {"intent_created", "submission_unknown", "open", "partially_filled"}
+        terminal = {"filled", "cancelled", "expired"}
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM binance_demo_orders WHERE status IN "
+                "('intent_created','submission_unknown','open','partially_filled','filled','cancelled','expired') "
+                "ORDER BY updated_at ASC,client_order_id ASC"
+            ).fetchall()
+            candidates = []
+            for row in rows:
+                order = self._row_dict(row)
+                if order["status"] in active:
+                    candidates.append(order)
+                    continue
+                if order["status"] not in terminal or Decimal(order.get("filled") or "0") <= 0:
+                    continue
+                fills = db.execute(
+                    "SELECT amount,fee_cost,fee_currency FROM binance_demo_order_fills "
+                    "WHERE client_order_id=?",
+                    (order["client_order_id"],),
+                ).fetchall()
+                covered = sum((Decimal(item["amount"]) for item in fills), Decimal("0"))
+                expected = Decimal(order.get("filled") or "0")
+                fees_complete = all(
+                    item["fee_cost"] is not None and item["fee_currency"] for item in fills
+                )
+                if covered != expected or not fees_complete:
+                    candidates.append(order)
+                if len(candidates) >= limit:
+                    break
+        return candidates[:limit]
 
     def prepare_intent(self, request: dict) -> tuple[dict, bool]:
         normalized = self._canonical_request(request)
