@@ -78,6 +78,33 @@ def test_demo_experimental_mode_can_execute_only_paper_tagged_strategy():
     assert decision.proposal.quantity * decision.proposal.reference_price <= 500.0
 
 
+def test_experimental_mode_selects_best_candidate_with_a_current_entry_signal():
+    scan = _experimental_scan(entry=False)
+    research = scan["analyses"][0]["strategy_research"]
+    research["recommended_experimental_strategy"] = "ema_12_26"
+    research["candidates"].append({
+        "strategy_id": "rsi_14_reversion",
+        "eligible": False,
+        "experimental_eligible": True,
+        "experimental_score": -0.01,
+        "current_entry_signal": True,
+        "current_hold_signal": True,
+        "out_of_sample": {"net_return": -0.005, "max_drawdown": 0.04, "trades": 1},
+        "validation_failures": ["insufficient_oos_trades"],
+    })
+
+    chief = ChiefAgent(
+        max_order_fraction=0.05,
+        max_stop_distance_fraction=0.03,
+        risk_per_trade_fraction=0.0025,
+        allow_experimental_strategies=True,
+    )
+    decision = chief.decide(scan, _portfolio())
+
+    assert decision.action == "buy"
+    assert decision.strategy_id == "experimental:rsi_14_reversion"
+
+
 def test_experimental_paper_mode_still_obeys_tighter_risk_limits():
     chief = ChiefAgent(
         max_order_fraction=0.05,
