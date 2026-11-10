@@ -720,6 +720,10 @@ def test_decision_cycle_resumes_persisted_risk_approved_intent_without_rescannin
         "minimum": 1, "client_order_id": task_id,
         "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
         "strategy_id": "ema_12_26", "stop_loss": 9800, "take_profit": 10400,
+        "quote_currency": "EUR", "fx_rate_to_eur": 1.0,
+        "fx_provider_id": None, "fx_timestamp": None,
+        "market_timestamp": int(utcnow().timestamp() * 1000),
+        "risk_fx_rate_to_eur": 1.0, "risk_fx_provider_id": None, "risk_fx_timestamp": None,
     }
     portfolio = PaperPortfolio(path, 20)
     portfolio.record_order_intent(
