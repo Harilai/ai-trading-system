@@ -179,7 +179,73 @@ class AccountSnapshotStore:
         return parsed.astimezone(timezone.utc)
 
     @classmethod
-    def _normalize(cls, snapshot: dict) -> tuple[dict, list[dict]]:
+    def _signed_decimal_text(cls, value: Any, *, field: str, allow_zero: bool = True) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise AccountSnapshotError(f"Position {field} must be a decimal string")
+        try:
+            amount = Decimal(value)
+        except (InvalidOperation, ValueError):
+            raise AccountSnapshotError(f"Position {field} is malformed") from None
+        if not amount.is_finite() or (not allow_zero and amount == 0):
+            raise AccountSnapshotError(f"Position {field} is invalid")
+        if len(amount.as_tuple().digits) > 80 or abs(amount.as_tuple().exponent) > 80:
+            raise AccountSnapshotError(f"Position {field} exceeds supported precision")
+        return cls._format_decimal(amount)
+
+    @classmethod
+    def _normalize_position(cls, item: Any, *, snapshot_market_type: str) -> dict:
+        if not isinstance(item, dict):
+            raise AccountSnapshotError("Account snapshot contains a malformed position")
+        instrument_id = item.get("instrument_id")
+        symbol = item.get("symbol")
+        asset_class = item.get("asset_class")
+        market_type = item.get("market_type")
+        side = item.get("side")
+        quote_currency = item.get("quote_currency")
+        if not isinstance(instrument_id, str) or not instrument_id.strip() or len(instrument_id) > 256:
+            raise AccountSnapshotError("Position instrument_id is invalid")
+        if not isinstance(symbol, str) or not symbol.strip() or len(symbol) > 128:
+            raise AccountSnapshotError("Position symbol is invalid")
+        if asset_class not in {"crypto", "forex", "equity", "etf", "index", "commodity", "future", "option", "defi", "tokenized"}:
+            raise AccountSnapshotError("Position asset_class is unsupported")
+        if market_type != snapshot_market_type:
+            raise AccountSnapshotError("Position market_type must match its account snapshot")
+        if side not in ("long", "short"):
+            raise AccountSnapshotError("Position side must be long or short")
+        if not isinstance(quote_currency, str) or not re.fullmatch(r"[A-Z0-9._-]{1,24}", quote_currency):
+            raise AccountSnapshotError("Position quote_currency is invalid")
+        quantity = cls._decimal_text(item.get("quantity"), asset=symbol, field="quantity")
+        if quantity is None or Decimal(quantity) <= 0:
+            raise AccountSnapshotError("Position quantity must be positive")
+        average_entry_price = cls._decimal_text(
+            item.get("average_entry_price"), asset=symbol, field="average_entry_price",
+        )
+        mark_price = cls._decimal_text(item.get("mark_price"), asset=symbol, field="mark_price")
+        market_value = cls._decimal_text(item.get("market_value"), asset=symbol, field="market_value")
+        unrealized_pnl = cls._signed_decimal_text(
+            item.get("unrealized_pnl"), field="unrealized_pnl",
+        )
+        for field, value in (("average_entry_price", average_entry_price), ("mark_price", mark_price)):
+            if value is not None and Decimal(value) <= 0:
+                raise AccountSnapshotError(f"Position {field} must be positive")
+        return {
+            "instrument_id": instrument_id.strip(),
+            "symbol": symbol.strip(),
+            "asset_class": asset_class,
+            "market_type": market_type,
+            "quantity": quantity,
+            "side": side,
+            "quote_currency": quote_currency,
+            "average_entry_price": average_entry_price,
+            "mark_price": mark_price,
+            "market_value": market_value,
+            "unrealized_pnl": unrealized_pnl,
+        }
+
+    @classmethod
+    def _normalize(cls, snapshot: dict) -> tuple[dict, list[dict], list[dict]]:
         if not isinstance(snapshot, dict):
             raise AccountSnapshotError("Account snapshot must be an object")
         provider_id = snapshot.get("provider_id")
@@ -189,14 +255,32 @@ class AccountSnapshotStore:
             raise AccountSnapshotError("Account snapshot provider_id is invalid")
         if not isinstance(account_alias, str) or not account_alias.strip() or len(account_alias) > 128:
             raise AccountSnapshotError("Account snapshot account_alias is invalid")
-        if market_type != "spot":
-            raise AccountSnapshotError("Only explicitly supported spot account snapshots are accepted")
+        if market_type not in cls.SUPPORTED_MARKET_TYPES:
+            raise AccountSnapshotError("Account snapshot market_type is unsupported")
         if snapshot.get("read_only") is not True:
             raise AccountSnapshotError("Account snapshot must originate from a read-only connector")
-        if snapshot.get("execution_enabled") is not False:
-            raise AccountSnapshotError("Account snapshot cannot enable execution")
-        if snapshot.get("withdrawals_enabled") is not False:
-            raise AccountSnapshotError("Account snapshot cannot enable withdrawals")
+
+        permission_flags = {
+            "execution_enabled": snapshot.get("execution_enabled"),
+            "withdrawals_enabled": snapshot.get("withdrawals_enabled"),
+            "transfers_enabled": snapshot.get("transfers_enabled", False),
+            "wallet_signing_enabled": snapshot.get("wallet_signing_enabled", False),
+            "permissions_verified": snapshot.get("permissions_verified", False),
+        }
+        if any(not isinstance(value, bool) for value in permission_flags.values()):
+            raise AccountSnapshotError("Account snapshot permission flags must be booleans")
+        if any(permission_flags[key] for key in (
+            "execution_enabled", "withdrawals_enabled", "transfers_enabled", "wallet_signing_enabled",
+        )):
+            raise AccountSnapshotError("Account snapshot cannot include write, transfer, withdrawal or signing permissions")
+
+        environment = snapshot.get("environment", "unspecified")
+        venue_type = snapshot.get("venue_type", "unknown")
+        if not isinstance(environment, str) or not environment.strip() or len(environment) > 32:
+            raise AccountSnapshotError("Account snapshot environment is invalid")
+        if not isinstance(venue_type, str) or not venue_type.strip() or len(venue_type) > 32:
+            raise AccountSnapshotError("Account snapshot venue_type is invalid")
+
         fetched_at = cls._parse_time(snapshot.get("fetched_at"), "fetched_at")
         now = datetime.now(timezone.utc)
         age_seconds = (now - fetched_at).total_seconds()
@@ -204,21 +288,21 @@ class AccountSnapshotStore:
             raise AccountSnapshotError("Account snapshot timestamp is in the future")
         if age_seconds > 300:
             raise AccountSnapshotError("Account snapshot timestamp is stale")
-        raw_balances = snapshot.get("balances")
+
+        raw_balances = snapshot.get("balances", [])
         if not isinstance(raw_balances, list):
             raise AccountSnapshotError("Account snapshot balances must be a list")
-
         balances = []
-        seen = set()
+        seen_assets = set()
         for item in raw_balances:
             if not isinstance(item, dict):
                 raise AccountSnapshotError("Account snapshot contains a malformed balance")
             asset = item.get("asset")
             if not isinstance(asset, str) or not re.fullmatch(r"[A-Z0-9._-]{1,24}", asset):
                 raise AccountSnapshotError("Account snapshot contains an invalid asset code")
-            if asset in seen:
+            if asset in seen_assets:
                 raise AccountSnapshotError(f"Duplicate asset balance in snapshot: {asset}")
-            seen.add(asset)
+            seen_assets.add(asset)
             free = cls._decimal_text(item.get("free"), asset=asset, field="free")
             used = cls._decimal_text(item.get("used"), asset=asset, field="used")
             total = cls._decimal_text(item.get("total"), asset=asset, field="total")
@@ -228,22 +312,36 @@ class AccountSnapshotStore:
                     total = cls._format_decimal(Decimal(free) + Decimal(used))
             if free is None and used is None and total is None:
                 raise AccountSnapshotError(f"Balance for {asset} has no amount fields")
-            balances.append({
-                "asset": asset,
-                "free": free,
-                "used": used,
-                "total": total,
-            })
-
+            balances.append({"asset": asset, "free": free, "used": used, "total": total})
         balances.sort(key=lambda item: item["asset"])
+
+        raw_positions = snapshot.get("positions", [])
+        if not isinstance(raw_positions, list):
+            raise AccountSnapshotError("Account snapshot positions must be a list")
+        positions = []
+        seen_positions = set()
+        for raw_position in raw_positions:
+            position = cls._normalize_position(raw_position, snapshot_market_type=market_type)
+            key = (position["instrument_id"], position["side"])
+            if key in seen_positions:
+                raise AccountSnapshotError("Duplicate instrument/side position in snapshot")
+            seen_positions.add(key)
+            positions.append(position)
+        positions.sort(key=lambda item: (item["instrument_id"], item["side"]))
+
         normalized = {
             "provider_id": provider_id.strip(),
             "account_alias": account_alias.strip(),
             "market_type": market_type,
+            "environment": environment.strip().lower(),
+            "venue_type": venue_type.strip().lower(),
+            "read_only": True,
+            **permission_flags,
             "fetched_at": fetched_at.isoformat(),
             "balances": balances,
+            "positions": positions,
         }
-        return normalized, balances
+        return normalized, balances, positions
 
     @staticmethod
     def _diff(previous: dict[str, dict], current: dict[str, dict]) -> list[dict]:
