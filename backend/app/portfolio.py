@@ -102,6 +102,7 @@ class PaperPortfolio:
             self._ensure_column(db, "trades", "stop_loss", "REAL")
             self._ensure_column(db, "trades", "take_profit", "REAL")
             self._ensure_column(db, "trades", "market_timestamp", "INTEGER")
+            self._ensure_column(db, "trades", "market_timestamp_source", "TEXT NOT NULL DEFAULT 'unknown'")
             self._ensure_column(db, "currency_conversions", "fee_eur", "REAL NOT NULL DEFAULT 0")
             self._ensure_column(
                 db, "withdrawal_requests", "non_reserved_component", "REAL NOT NULL DEFAULT 0"
@@ -388,6 +389,10 @@ class PaperPortfolio:
                     int(request["market_timestamp"])
                     if request.get("market_timestamp") is not None else None
                 ),
+                "market_timestamp_source": str(
+                    request.get("market_timestamp_source")
+                    or ("provider" if request.get("market_timestamp") is not None else "unknown")
+                ).strip().lower(),
             }
             if quote_currency == "USD" and normalized["fx_timestamp"] is not None:
                 normalized["fx_timestamp"] = int(normalized["fx_timestamp"])
@@ -395,6 +400,10 @@ class PaperPortfolio:
             raise PortfolioError("Order request contains missing or invalid fields") from exc
         if not symbol or not provider_id or not normalized["instrument_id"]:
             raise PortfolioError("Order request requires symbol, provider and instrument identity")
+        if normalized["market_timestamp_source"] not in {"provider", "exchange", "retrieved_at", "unknown"}:
+            raise PortfolioError("Order market timestamp source is invalid")
+        if normalized["market_timestamp"] is None and normalized["market_timestamp_source"] != "unknown":
+            raise PortfolioError("Order market timestamp source requires a timestamp")
         return normalized
 
     @staticmethod
@@ -628,6 +637,7 @@ class PaperPortfolio:
                 "fx_provider_id": request.get("fx_provider_id"),
                 "fx_timestamp": request.get("fx_timestamp"),
                 "market_timestamp": request.get("market_timestamp"),
+                "market_timestamp_source": request.get("market_timestamp_source", "unknown"),
                 "stop_loss": request.get("stop_loss"),
                 "take_profit": request.get("take_profit"),
             }
@@ -723,6 +733,7 @@ class PaperPortfolio:
         fx_provider_id: str | None = None,
         fx_timestamp: int | None = None,
         market_timestamp: int | None = None,
+        market_timestamp_source: str | None = None,
     ):
         if not isinstance(symbol, str) or not isinstance(provider_id, str):
             raise PortfolioError("Symbol and provider identity must be text")
@@ -811,6 +822,7 @@ class PaperPortfolio:
             "quote_currency": quote_currency, "fx_rate_to_eur": fx_rate_to_eur,
             "fx_provider_id": fx_provider_id, "fx_timestamp": fx_timestamp,
             "market_timestamp": market_timestamp,
+            "market_timestamp_source": market_timestamp_source,
         })
         request_json = self._canonical_json(request_payload) if client_order_id else None
 
@@ -1002,9 +1014,9 @@ class PaperPortfolio:
 
             stamp = datetime.now(timezone.utc).isoformat()
             cursor = db.execute(
-                "INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at,client_order_id,provider_id,instrument_id,quote_currency,fx_rate_to_eur,total_eur,fx_provider_id,fx_timestamp,strategy_id,stop_loss,take_profit,market_timestamp) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (symbol, side, quantity, fill, fee, total, stamp, client_order_id, provider_id, instrument_id, quote_currency, fx_rate_to_eur, total_eur, fx_provider_id, fx_timestamp, strategy_id, stop_loss, take_profit, market_timestamp),
+                "INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at,client_order_id,provider_id,instrument_id,quote_currency,fx_rate_to_eur,total_eur,fx_provider_id,fx_timestamp,strategy_id,stop_loss,take_profit,market_timestamp,market_timestamp_source) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (symbol, side, quantity, fill, fee, total, stamp, client_order_id, provider_id, instrument_id, quote_currency, fx_rate_to_eur, total_eur, fx_provider_id, fx_timestamp, strategy_id, stop_loss, take_profit, market_timestamp, request_payload["market_timestamp_source"]),
             )
             result = {
                 "id": cursor.lastrowid,
@@ -1022,6 +1034,7 @@ class PaperPortfolio:
                 "fx_provider_id": fx_provider_id,
                 "fx_timestamp": fx_timestamp,
                 "market_timestamp": market_timestamp,
+                "market_timestamp_source": request_payload["market_timestamp_source"],
                 "strategy_id": strategy_id,
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
@@ -1291,3 +1304,4 @@ class PaperPortfolio:
                     (limit,),
                 )
             ]
+
