@@ -2,6 +2,8 @@
 
 Plataforma modular de trading algorítmico autónomo, construida por fases con prioridad en la validación, la trazabilidad y la protección del capital.
 
+**Continuidad entre conversaciones:** consulta [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) para conocer el último estado revisado, el trabajo ya integrado y el siguiente paso concreto. Comprueba siempre el estado vivo de `main` y las PR antes de continuar.
+
 ## Estado real de implementación
 
 La rama integrada contiene actualmente:
