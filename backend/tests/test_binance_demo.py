@@ -481,3 +481,25 @@ def test_demo_execution_balance_response_advertises_demo_execution_but_no_withdr
     assert balances["withdrawals_enabled"] is False
     assert description["order_submission"] is True
     assert description["withdrawals"] is False
+
+
+def test_demo_execution_does_not_infer_missing_fills_from_order_status():
+    provider = make_demo_execution(FakeDemoExecutionExchange())
+    open_without_fill_field = provider.normalize_order({
+        "id": "order-open-no-fill",
+        "clientOrderId": "client-open-no-fill",
+        "status": "open",
+        "amount": "0.001",
+        "remaining": "0.001",
+    }, expected_client_order_id="client-open-no-fill", expected_amount="0.001")
+    cancelled_without_fill_field = provider.normalize_order({
+        "id": "order-cancel-no-fill",
+        "clientOrderId": "client-cancel-no-fill",
+        "status": "canceled",
+        "amount": "0.001",
+        "remaining": "0.001",
+    }, expected_client_order_id="client-cancel-no-fill", expected_amount="0.001")
+
+    assert open_without_fill_field["status"] == "open"
+    assert open_without_fill_field["filled"] is None
+    assert cancelled_without_fill_field["status"] == "reconciliation_required"
