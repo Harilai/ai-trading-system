@@ -606,6 +606,47 @@ class PaperPortfolio:
             elif current["status"] != "rejected":
                 raise PortfolioError("Order intent cannot transition to rejected from its current state")
 
+    @staticmethod
+    def _trade_matches_order_intent(trade, request: dict) -> bool:
+        try:
+            side = str(request["side"]).lower()
+            quantity = float(request["quantity"])
+            reference_price = float(request["price"])
+            fee_rate = float(request["fee_rate"])
+            slippage_rate = float(request["slippage_rate"])
+            fill_price = reference_price * (1 + slippage_rate if side == "buy" else 1 - slippage_rate)
+            gross = quantity * fill_price
+            fee = gross * fee_rate
+            total = gross + fee if side == "buy" else gross - fee
+            expected = {
+                "symbol": str(request["symbol"]).upper(),
+                "side": side,
+                "provider_id": request["provider_id"],
+                "instrument_id": request["instrument_id"],
+                "quote_currency": request["quote_currency"],
+                "strategy_id": request.get("strategy_id"),
+                "fx_provider_id": request.get("fx_provider_id"),
+                "fx_timestamp": request.get("fx_timestamp"),
+                "market_timestamp": request.get("market_timestamp"),
+                "stop_loss": request.get("stop_loss"),
+                "take_profit": request.get("take_profit"),
+            }
+            if any(trade.get(key) != value for key, value in expected.items()):
+                return False
+            numeric = (
+                ("quantity", quantity),
+                ("price", fill_price),
+                ("fee", fee),
+                ("total", total),
+                ("fx_rate_to_eur", float(request.get("fx_rate_to_eur", 1.0))),
+            )
+            return all(
+                math.isclose(float(trade[key]), value, rel_tol=1e-12, abs_tol=1e-12)
+                for key, value in numeric
+            )
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return False
+
     def reconcile_order_intents(self) -> dict:
         """Reconcile persisted paper intents against the atomic trade ledger."""
         now = datetime.now(timezone.utc).isoformat()
@@ -614,38 +655,47 @@ class PaperPortfolio:
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             rows = db.execute(
-                "SELECT client_order_id,status,trade_id FROM order_intents "
+                "SELECT client_order_id,status,trade_id,request_json FROM order_intents "
                 "WHERE status IN ('risk_approved','filled','reconciliation_required')"
             ).fetchall()
             for row in rows:
                 trade = db.execute(
-                    "SELECT id FROM trades WHERE client_order_id=?",
+                    "SELECT * FROM trades WHERE client_order_id=?",
                     (row["client_order_id"],),
                 ).fetchone()
-                if trade:
-                    if row["status"] != "filled" or row["trade_id"] != trade["id"]:
+                reason = None
+                if trade is not None:
+                    request = json.loads(row["request_json"])
+                    if not self._trade_matches_order_intent(dict(trade), request):
+                        reason = "Trade ledger row does not match the immutable approved order intent"
+                elif row["status"] == "filled":
+                    reason = "Filled intent has no matching trade ledger row"
+
+                if reason:
+                    if row["status"] != "reconciliation_required":
                         db.execute(
-                            "UPDATE order_intents SET status='filled',trade_id=?,rejection_reason=NULL,updated_at=? "
-                            "WHERE client_order_id=?",
-                            (trade["id"], now, row["client_order_id"]),
+                            "UPDATE order_intents SET status='reconciliation_required',"
+                            "rejection_reason=?,updated_at=? WHERE client_order_id=?",
+                            (reason, now, row["client_order_id"]),
                         )
                         self._insert_order_intent_event(
-                            db, row["client_order_id"], row["status"], "filled",
-                            {"trade_id": trade["id"], "reconciled": True}, now,
+                            db, row["client_order_id"], row["status"], "reconciliation_required",
+                            {"reason": reason, "trade_id": trade["id"] if trade is not None else None}, now,
                         )
-                        filled += 1
-                elif row["status"] == "filled":
+                    uncertain += 1
+                elif trade is not None and (
+                    row["status"] != "filled" or row["trade_id"] != trade["id"]
+                ):
                     db.execute(
-                        "UPDATE order_intents SET status='reconciliation_required',"
-                        "rejection_reason='Filled intent has no matching trade ledger row',updated_at=? "
+                        "UPDATE order_intents SET status='filled',trade_id=?,rejection_reason=NULL,updated_at=? "
                         "WHERE client_order_id=?",
-                        (now, row["client_order_id"]),
+                        (trade["id"], now, row["client_order_id"]),
                     )
                     self._insert_order_intent_event(
-                        db, row["client_order_id"], "filled", "reconciliation_required",
-                        {"reason": "Filled intent has no matching trade ledger row"}, now,
+                        db, row["client_order_id"], row["status"], "filled",
+                        {"trade_id": trade["id"], "reconciled": True}, now,
                     )
-                    uncertain += 1
+                    filled += 1
         return {"reconciled_filled": filled, "reconciliation_required": uncertain}
 
     def execute(
