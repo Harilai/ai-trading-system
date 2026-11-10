@@ -4,6 +4,7 @@ from typing import get_type_hints
 import pytest
 
 from app.accounts.contracts import (
+    AccountFillHistory,
     AccountOrder,
     AccountOrderFill,
     AccountProviderError,
@@ -137,4 +138,50 @@ def test_reconciliation_protocol_resolves_normalized_order_and_fill_types():
     fill_hints = get_type_hints(OrderReconciliationProvider.fetch_fills)
 
     assert order_hints["return"] == AccountOrder | None
-    assert fill_hints["return"] == list[AccountOrderFill]
+    assert fill_hints["return"] == AccountFillHistory
+
+
+def _fill_history(**updates):
+    result = {
+        "provider_id": "ccxt:binance-demo",
+        "account_alias": "demo-main",
+        "environment": "demo",
+        "market_type": "spot",
+        "instrument_id": "ccxt:binance-demo:spot:BTC/USDT",
+        "order_id": "exchange-123",
+        "client_order_id": "client-123",
+        "observed_at": datetime.now(timezone.utc).isoformat(),
+        "history_complete": False,
+        "fills": [_fill()],
+    }
+    result.update(updates)
+    return result
+
+
+def test_fill_history_keeps_provider_completeness_explicit():
+    history = AccountFillHistory.normalize(_fill_history())
+    assert history.history_complete is False
+    assert len(history.fills) == 1
+    assert AccountFillHistory.normalize(history) == history
+
+    complete_empty = AccountFillHistory.normalize(_fill_history(
+        fills=[], history_complete=True,
+    ))
+    assert complete_empty.history_complete is True
+    assert complete_empty.fills == ()
+
+
+@pytest.mark.parametrize("updates", [
+    {"history_complete": None},
+    {"history_complete": 1},
+    {"observed_at": "2026-01-01T10:00:00"},
+    {"order_id": None, "client_order_id": None},
+    {"fills": [_fill(), _fill()]},
+    {"fills": [_fill(environment="production")]},
+    {"fills": [_fill(order_id="other-order")]},
+    {"fills": "not-a-list"},
+])
+def test_fill_history_rejects_missing_or_conflicting_evidence(updates):
+    with pytest.raises(AccountProviderError):
+        AccountFillHistory.normalize(_fill_history(**updates))
+

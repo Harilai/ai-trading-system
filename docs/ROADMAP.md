@@ -39,6 +39,8 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 
 22. **En curso — ledger común de órdenes y fills (PR #79 listo para revisión, apilado sobre PR #78):** SQLite con observaciones append-only, deduplicación de fills, aislamiento por cuenta/entorno/mercado, cobertura explícita y transacciones fail-closed. No conecta proveedores ni envía órdenes.
 
+23. **En curso — cobertura explícita e ingestión read-only de órdenes (PR #80, apilado sobre #79):** `AccountFillHistory` declara ámbito, timestamp y completitud; el servicio actualiza una orden conocida y persiste fills verificados. No añade adaptadores, scheduler ni envío de órdenes.
+
 ## Estado integrado
 
 | Área | Estado |
@@ -146,7 +148,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [ ] Integrar acciones/ETF en decisiones del Chief y Risk Manager solo después de validar estrategia, capital, moneda y reglas de cartera específicas; sin ejecución por ahora.
 - [ ] Implementar y validar un adaptador de broker de acciones/ETF, horarios, permisos, datos, mínimos y comisiones.
 - [x] Generalizar el portfolio a claves `provider_id + instrument_id`, con migración de datos legacy y aislamiento de símbolos duplicados.
-- [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución (PR #78 añade contratos; PR #79 añade el ledger persistente de evidencia; aún faltan adaptadores y worker de conciliación).
+- [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución (PR #78 normaliza órdenes/fills; PR #79 añade el ledger; PR #80 explicita la completitud de historial; aún faltan adaptadores y worker de conciliación).
 - [x] Añadir contrato y endpoint autenticado para posiciones normalizadas, exigiendo capacidad explícita y sin sintetizarlas desde balances.
 - [ ] Persistir snapshots append-only de posiciones por cuenta/instrumento y conciliar sus cambios con coste, mark, P&L y divisa trazables.
 - [ ] Implementar adaptadores FX, índices y commodities solo tras validar APIs y elegibilidad.
