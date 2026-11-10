@@ -77,23 +77,37 @@ class BinanceDemoOrderReconciler:
                 )
                 return {"client_order_id": client_order_id, "status": current["status"], "fills": None}
 
-            current = self.store.transition(
-                client_order_id,
-                normalized["status"],
-                exchange_order_id=normalized.get("exchange_order_id"),
-                exchange_status=normalized.get("exchange_status"),
-                filled=normalized.get("filled"),
-                remaining=normalized.get("remaining"),
-                average=normalized.get("average"),
-                error=normalized.get("error"),
-                payload={
-                    "source": "periodic_exchange_order_reconciliation",
-                    "exchange_status": normalized.get("exchange_status"),
-                    "observed_client_order_id": normalized.get("observed_client_order_id"),
-                    "observed_exchange_order_id": normalized.get("observed_exchange_order_id"),
-                },
-                lease_token=lease_token,
-            )
+            transition_payload = {
+                "source": "periodic_exchange_order_reconciliation",
+                "exchange_status": normalized.get("exchange_status"),
+                "observed_client_order_id": normalized.get("observed_client_order_id"),
+                "observed_exchange_order_id": normalized.get("observed_exchange_order_id"),
+            }
+            try:
+                current = self.store.transition(
+                    client_order_id,
+                    normalized["status"],
+                    exchange_order_id=normalized.get("exchange_order_id"),
+                    exchange_status=normalized.get("exchange_status"),
+                    filled=normalized.get("filled"),
+                    remaining=normalized.get("remaining"),
+                    average=normalized.get("average"),
+                    error=normalized.get("error"),
+                    payload=transition_payload,
+                    lease_token=lease_token,
+                )
+            except DemoOrderConflict:
+                raise
+            except DemoOrderStoreError as exc:
+                # A surprising exchange state must be quarantined, not retried
+                # forever as an ordinary worker error.
+                current = self.store.transition(
+                    client_order_id,
+                    "reconciliation_required",
+                    error=f"Unexpected exchange order state ({type(exc).__name__})",
+                    payload={**transition_payload, "observed_status": normalized.get("status")},
+                    lease_token=lease_token,
+                )
 
         fill_summary = None
         filled = Decimal(current.get("filled") or "0")
