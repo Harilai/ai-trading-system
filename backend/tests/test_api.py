@@ -290,6 +290,12 @@ def test_dashboard_route_serves_operations_ui():
     assert "AI Trading System" in response.text
     assert "PAPER TRADING" in response.text
     assert "localStorage" not in response.text
+    assert "Mercado · velas OHLCV" in response.text
+    assert "Proveedores y readiness" in response.text
+    assert "Órdenes paper y conciliación" in response.text
+    assert "Backups y restauración" in response.text
+    assert "Retiradas de cartera paper" in response.text
+    assert "No se realizará ninguna transferencia real" in response.text
 
 
 def test_fx_rate_endpoint_returns_fresh_validated_rate(monkeypatch):
@@ -842,3 +848,20 @@ def test_backup_status_endpoint_requires_owner_token_and_reports_offsite_state(m
     response = client.get("/api/agent/backup-status", headers=headers)
     assert response.status_code == 200
     assert response.json()["external"]["status"] == "verified"
+
+
+def test_dashboard_chart_ohlcv_route_accepts_encoded_slash_symbol(monkeypatch):
+    calls = []
+
+    def fake_ohlcv(symbol, timeframe="1h", limit=100, provider_id=None):
+        calls.append((symbol, timeframe, limit, provider_id))
+        return [[1731234567000, 100, 105, 98, 103, 12.5]]
+
+    monkeypatch.setattr("app.main.market.ohlcv", fake_ohlcv)
+    response = client.get(
+        "/api/market/BTC%2FEUR/ohlcv?timeframe=1h&limit=120&provider_id=ccxt%3Akraken"
+    )
+
+    assert response.status_code == 200, response.text
+    assert calls == [("BTC/EUR", "1h", 120, "ccxt:kraken")]
+    assert response.json()["candles"][0]["close"] == 103
