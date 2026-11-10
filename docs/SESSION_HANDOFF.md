@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `a7a9bb8487e7935f791cc6034dee8fd10e24ec6d` — merge de PR #71, contratos normalizados multi-venue para cuentas y balances.  
+> **Último commit observado en `main`:** `c44bc9741ecc9856625133b938548192a25f8eb9` — merge de PR #72, adaptador genérico CCXT read-only para cuentas CEX Spot.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -264,9 +264,9 @@ Siguiente secuencia:
 8. **Completado — ledger individual de fills/fees (PR #66):** persistencia append-only, IDs de trade, cantidades, precios, costes, comisiones/activos y reconciliación idempotente por order ID. Nuevas órdenes Demo se bloquean mientras falte cobertura de fills o comisiones.
 9. **Completado — reconciliación periódica Binance Demo (PR #68):** worker con leases SQLite y fencing, backoff, polling por clientOrderId y conciliación de fills; corre aunque la estrategia esté pausada y nunca reenvía órdenes.
 10. **Completado — PR #71, contratos normalizados de account providers:** `AccountProviderRegistry` por `provider_id + account_alias`, balances normalizados, capacidades/permisos explícitos y endpoints genéricos autenticados.
-11. **En curso — PR #72, adaptador CCXT read-only:** CEX Spot configurable por exchange ID (Kraken por defecto), API key/secret, sin métodos de escritura y con permisos reales de la key no verificados.
-12. **Siguiente — snapshots de posiciones y ledger de cuenta multi-venue:** ampliar el almacenamiento inmutable para posiciones por instrumento, coste/mark/P&L/moneda, con separación por cuenta y venue.
-13. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
+11. **Completado — PR #72, adaptador CCXT read-only:** CEX Spot configurable por exchange ID (Kraken por defecto), API key/secret, sin métodos de escritura y con permisos reales de la key no verificados.
+12. **En curso — PR #73, snapshots de posiciones y ledger multi-market:** almacenamiento append-only de posiciones por instrumento, market type y entorno, con deltas exactos; todavía no hay un broker adapter conectado que publique posiciones.
+13. Añadir adaptadores específicos de broker/posiciones y supervisión paper de stops/take-profit equity antes de decisiones autónomas o live.
 14. Completar despliegue persistente 24/7 en VPS y configurar el proveedor externo de backups en el entorno operativo.
 15. Evaluar live limitado por venue/clase solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
@@ -288,13 +288,22 @@ Siguiente secuencia:
 - Contratos para capacidades/permisos, balances, posiciones y órdenes; endpoints genéricos para balances y snapshots read-only.
 - No añade broker genérico ni ejecución live.
 
-### PR #72 — adaptador genérico CCXT read-only (en revisión)
+### PR #72 — adaptador genérico CCXT read-only
 
-- Rama: `phase/ccxt-readonly-account-adapter`.
-- Añade un adaptador CCXT configurable por exchange ID, alias y credenciales de solo lectura; Kraken es el valor por defecto.
-- Solo invoca `fetch_balance()` Spot. No contiene submit/cancel/transfer/withdraw/signing.
-- Las credenciales se leen del entorno del servidor; el software no puede verificar los scopes reales de la API key.
-- No se ha conectado una cuenta real ni se afirma que el smoke test operativo haya sido ejecutado.
+- PR: https://github.com/Harilai/ai-trading-system/pull/72.
+- Merge commit: `c44bc9741ecc9856625133b938548192a25f8eb9`.
+- Head validado: `5839ba303af343134b2c235a446d092db6fd6560`.
+- CI: **446 pruebas Python correctas**; Compose, build Docker y ejecución non-root correctos.
+- Solo invoca `fetch_balance()` Spot; no contiene submit/cancel/transfer/withdraw/signing.
+- Kraken es el exchange por defecto, opcional por credenciales; scopes reales no verificados por software.
+
+### PR #73 — ledger de posiciones multi-market (en revisión)
+
+- Rama: `phase/account-position-snapshots`.
+- Amplía snapshots append-only con posiciones, environment, venue, permisos, quantities, prices, market value y unrealized P&L.
+- Detecta posiciones añadidas, modificadas y ausentes por instrumento/side; mantiene cuentas, market types y entornos separados.
+- El registry admite providers position-only y snapshots combinados; la API genérica expone posiciones y snapshots read-only.
+- No incorpora todavía un broker adapter real ni cambia la cartera paper.
 
 ## 6. Límites que no se deben saltar
 
