@@ -92,6 +92,7 @@ class PaperPortfolio:
             self._ensure_column(db, "trades", "stop_loss", "REAL")
             self._ensure_column(db, "trades", "take_profit", "REAL")
             self._ensure_column(db, "trades", "market_timestamp", "INTEGER")
+            self._ensure_column(db, "trades", "market_timestamp", "INTEGER")
             self._ensure_column(db, "currency_conversions", "fee_eur", "REAL NOT NULL DEFAULT 0")
             self._ensure_column(
                 db, "withdrawal_requests", "non_reserved_component", "REAL NOT NULL DEFAULT 0"
@@ -374,6 +375,10 @@ class PaperPortfolio:
                 "fx_rate_to_eur": float(request.get("fx_rate_to_eur", 1.0)),
                 "fx_provider_id": request.get("fx_provider_id"),
                 "fx_timestamp": request.get("fx_timestamp"),
+                "market_timestamp": (
+                    int(request["market_timestamp"])
+                    if request.get("market_timestamp") is not None else None
+                ),
             }
             if quote_currency == "USD" and normalized["fx_timestamp"] is not None:
                 normalized["fx_timestamp"] = int(normalized["fx_timestamp"])
@@ -647,6 +652,7 @@ class PaperPortfolio:
         fx_rate_to_eur: float = 1.0,
         fx_provider_id: str | None = None,
         fx_timestamp: int | None = None,
+        market_timestamp: int | None = None,
     ):
         if not isinstance(symbol, str) or not isinstance(provider_id, str):
             raise PortfolioError("Symbol and provider identity must be text")
@@ -681,6 +687,8 @@ class PaperPortfolio:
                 stop_loss = float(stop_loss)
             if take_profit is not None:
                 take_profit = float(take_profit)
+            if market_timestamp is not None:
+                market_timestamp = int(market_timestamp)
         except (TypeError, ValueError, OverflowError) as exc:
             raise PortfolioError("Execution values must be finite numbers") from exc
         numeric_values = [quantity, price, fee_rate, slippage_rate, max_fraction, minimum, fx_rate_to_eur]
@@ -732,6 +740,7 @@ class PaperPortfolio:
             "stop_loss": stop_loss, "take_profit": take_profit,
             "quote_currency": quote_currency, "fx_rate_to_eur": fx_rate_to_eur,
             "fx_provider_id": fx_provider_id, "fx_timestamp": fx_timestamp,
+            "market_timestamp": market_timestamp,
         })
         request_json = self._canonical_json(request_payload) if client_order_id else None
 
@@ -782,6 +791,7 @@ class PaperPortfolio:
                         and math.isclose(float(prior["fx_rate_to_eur"]), fx_rate_to_eur, rel_tol=1e-12, abs_tol=1e-12)
                         and prior.get("fx_provider_id") == fx_provider_id
                         and prior.get("fx_timestamp") == fx_timestamp
+                        and prior.get("market_timestamp") == market_timestamp
                         and prior.get("stop_loss") == stop_loss
                         and prior.get("take_profit") == take_profit
                     )
@@ -907,9 +917,9 @@ class PaperPortfolio:
 
             stamp = datetime.now(timezone.utc).isoformat()
             cursor = db.execute(
-                "INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at,client_order_id,provider_id,instrument_id,quote_currency,fx_rate_to_eur,total_eur,fx_provider_id,fx_timestamp,strategy_id,stop_loss,take_profit) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (symbol, side, quantity, fill, fee, total, stamp, client_order_id, provider_id, instrument_id, quote_currency, fx_rate_to_eur, total_eur, fx_provider_id, fx_timestamp, strategy_id, stop_loss, take_profit),
+                "INSERT INTO trades(symbol,side,quantity,price,fee,total,created_at,client_order_id,provider_id,instrument_id,quote_currency,fx_rate_to_eur,total_eur,fx_provider_id,fx_timestamp,strategy_id,stop_loss,take_profit,market_timestamp) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (symbol, side, quantity, fill, fee, total, stamp, client_order_id, provider_id, instrument_id, quote_currency, fx_rate_to_eur, total_eur, fx_provider_id, fx_timestamp, strategy_id, stop_loss, take_profit, market_timestamp),
             )
             result = {
                 "id": cursor.lastrowid,
@@ -926,6 +936,7 @@ class PaperPortfolio:
                 "total_eur": total_eur,
                 "fx_provider_id": fx_provider_id,
                 "fx_timestamp": fx_timestamp,
+                "market_timestamp": market_timestamp,
                 "strategy_id": strategy_id,
                 "stop_loss": stop_loss,
                 "take_profit": take_profit,
