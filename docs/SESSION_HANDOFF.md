@@ -70,7 +70,7 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - El dashboard muestra saldos por divisa y moneda nativa de precios. El formulario de conversión/órdenes no está integrado en la UI; solo existe API autenticada.
 - CI del head integrado: 270 pruebas Python correctas; Docker Compose, build de imagen y verificación de ejecución no-root correctos.
 - **Limitación importante:** el stop-loss de una posición equity se almacena como nivel protector, pero el worker todavía no lo monitoriza/ejecuta automáticamente. La venta paper debe ser manual hasta que se implemente la supervisión de equities; no presentar ese stop como una orden activa.
-- Se han añadido pruebas unitarias e integración; el CI del último head está en cola/ejecución. No fusionar hasta confirmar suite completa, Docker hardening y revisión independiente en el SHA exacto.
+
 
 ### Plan de implementación
 
