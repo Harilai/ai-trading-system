@@ -310,3 +310,46 @@ def test_ccxt_discovery_maps_tick_size_and_order_limits():
     assert instrument.max_cost == pytest.approx(50000)
     assert instrument.venue_id == "fake"
     assert instrument.contract_type == "spot"
+
+
+def test_market_instrument_rejects_non_finite_contract_values():
+    with pytest.raises(ValueError, match="price_tick must be finite"):
+        MarketInstrument(
+            provider_id="ccxt:example", symbol="BTC/EUR",
+            asset_class=AssetClass.CRYPTO, market_type=MarketType.SPOT,
+            base="BTC", quote="EUR", active=True, price_tick=float("nan"),
+        )
+    with pytest.raises(ValueError, match="taker_fee must be finite"):
+        MarketInstrument(
+            provider_id="ccxt:example", symbol="BTC/EUR",
+            asset_class=AssetClass.CRYPTO, market_type=MarketType.SPOT,
+            base="BTC", quote="EUR", active=True, taker_fee=float("inf"),
+        )
+
+
+def test_ccxt_discovery_maps_decimal_places_without_inventing_tick_sizes():
+    import ccxt
+    from app.providers.base import PrecisionMode
+    from app.providers.ccxt_spot import CcxtSpotProvider
+
+    class FakeExchange:
+        precisionMode = ccxt.DECIMAL_PLACES
+
+    provider = CcxtSpotProvider.__new__(CcxtSpotProvider)
+    provider.provider_id = "ccxt:fake"
+    provider.exchange_id = "fake"
+    provider._markets = {
+        "ETH/EUR": {
+            "spot": True, "active": True, "base": "ETH", "quote": "EUR",
+            "precision": {"price": 2, "amount": 5},
+            "limits": {},
+        },
+    }
+    provider.exchange = FakeExchange()
+
+    instrument = provider.discover_markets()[0]
+    assert instrument.precision_mode is PrecisionMode.DECIMAL_PLACES
+    assert instrument.price_precision == 2
+    assert instrument.amount_precision == 5
+    assert instrument.price_tick is None
+    assert instrument.amount_step is None
