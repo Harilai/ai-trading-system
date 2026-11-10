@@ -821,12 +821,21 @@ class PaperPortfolio:
                             "VALUES(?,'filled',?,?,?,?,?)",
                             (client_order_id, request_json, prior["id"], self._canonical_json(prior), stamp, stamp),
                         )
+                        self._insert_order_intent_event(
+                            db, client_order_id, None, "filled",
+                            {"trade_id": prior["id"], "legacy_trade_replay": True}, stamp,
+                        )
                     else:
                         db.execute(
                             "UPDATE order_intents SET status='filled',trade_id=?,fill_json=?,updated_at=? "
                             "WHERE client_order_id=?",
                             (prior["id"], self._canonical_json(prior), stamp, client_order_id),
                         )
+                        if intent_row["status"] != "filled":
+                            self._insert_order_intent_event(
+                                db, client_order_id, intent_row["status"], "filled",
+                                {"trade_id": prior["id"], "reconciled": True}, stamp,
+                            )
                     prior["mode"] = "paper"
                     prior["idempotent_replay"] = True
                     return prior
