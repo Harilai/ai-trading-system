@@ -175,3 +175,15 @@ def test_registry_requires_timezone_aware_fresh_balance_timestamp():
     }
     with pytest.raises(AccountProviderError, match="stale"):
         registry.fetch_balances("test:venue")
+
+
+def test_registry_rejects_production_demo_environment_mismatch():
+    registry = AccountProviderRegistry()
+    provider = FakeAccountProvider()
+    registry.register(provider)
+    provider.fetch_balances = lambda: {
+        **FakeAccountProvider().fetch_balances(),
+        "environment": "production",
+    }
+    with pytest.raises(AccountProviderError, match="environment"):
+        registry.fetch_balances("test:venue")
