@@ -642,6 +642,13 @@ class AutonomousAgent:
                 task["id"],
             )
             if previous_order is not None:
+                filled_intent = await asyncio.to_thread(
+                    self.portfolio.get_order_intent, task["id"],
+                )
+                if filled_intent and filled_intent["status"] == "reconciliation_required":
+                    raise RuntimeError("Paper order requires reconciliation; replay is blocked")
+                if filled_intent and filled_intent["status"] != "filled":
+                    raise RuntimeError("Trade ledger exists without a completed order intent")
                 result = {
                     "execution": "paper_order_replayed",
                     "order": previous_order,
@@ -656,6 +663,26 @@ class AutonomousAgent:
             )
             if existing_intent is not None:
                 if existing_intent["status"] == "risk_approved":
+                    fresh = await asyncio.to_thread(
+                        self.portfolio.order_intent_is_fresh,
+                        task["id"],
+                        settings.max_data_age_seconds,
+                        settings.max_fx_data_age_seconds,
+                    )
+                    if not fresh:
+                        await asyncio.to_thread(
+                            self.portfolio.expire_order_intent,
+                            task["id"],
+                            "Approved intent market/FX evidence expired before paper fill",
+                        )
+                        result = {
+                            "execution": "expired",
+                            "order_intent": await asyncio.to_thread(
+                                self.portfolio.get_order_intent, task["id"],
+                            ),
+                        }
+                        self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
+                        return result
                     try:
                         resumed_order = await asyncio.to_thread(
                             self.portfolio.execute,
@@ -681,9 +708,9 @@ class AutonomousAgent:
                         }
                     self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
                     return result
-                if existing_intent["status"] == "rejected":
+                if existing_intent["status"] in {"rejected", "expired"}:
                     result = {
-                        "execution": "rejected",
+                        "execution": existing_intent["status"],
                         "order_intent": existing_intent,
                     }
                     self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
@@ -798,6 +825,8 @@ class AutonomousAgent:
                 and decision.risk.accepted
             ):
                 proposal = decision.proposal
+                decision_market = (decision.evidence or {}).get("market") or {}
+                risk_fx = (portfolio.get("fx_observations") or {}).get("USD") or {}
                 execution_request = {
                     "symbol": proposal.symbol,
                     "side": proposal.side,
@@ -813,6 +842,14 @@ class AutonomousAgent:
                     "strategy_id": decision.strategy_id if proposal.side == "buy" else None,
                     "stop_loss": proposal.stop_loss,
                     "take_profit": proposal.take_profit,
+                    "quote_currency": "EUR",
+                    "fx_rate_to_eur": 1.0,
+                    "fx_provider_id": None,
+                    "fx_timestamp": None,
+                    "market_timestamp": decision_market.get("timestamp"),
+                    "risk_fx_rate_to_eur": float(risk_fx.get("rate", 1.0)),
+                    "risk_fx_provider_id": risk_fx.get("provider_id"),
+                    "risk_fx_timestamp": risk_fx.get("timestamp"),
                 }
                 await asyncio.to_thread(
                     self.portfolio.record_order_intent,
