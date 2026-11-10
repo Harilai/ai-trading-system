@@ -116,6 +116,8 @@ class BinanceSpotDemoAccount:
             "market_discovery": True,
             "order_submission": False,
             "order_management": False,
+            "order_cancellation": False,
+            "reconciliation": False,
             "withdrawals": False,
             "transfers": False,
             "production_endpoint_allowed": False,
@@ -236,6 +238,8 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
         result.update({
             "order_submission": True,
             "order_management": True,
+            "order_cancellation": True,
+            "reconciliation": True,
             "order_types": ["limit"],
             "market_orders": False,
             "max_order_quote_default": "25",

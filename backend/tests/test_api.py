@@ -1555,3 +1555,116 @@ def test_binance_demo_fill_reconciliation_rejects_incomplete_fee_evidence(monkey
     )
     assert response.status_code == 409
     assert store.list_fills("api-fill-missing-fee") == []
+
+
+def test_generic_account_provider_balance_and_snapshot_routes_use_normalized_registry(monkeypatch):
+    from app.accounts.contracts import AccountProviderRegistry
+
+    headers = configure_order_auth(monkeypatch)
+
+    class FakeProvider:
+        def describe(self):
+            return {
+                "provider_id": "test:broker",
+                "account_alias": "test-cash",
+                "venue_type": "broker",
+                "market_types": ["spot"],
+                "environment": "demo",
+                "configured": True,
+                "balances": True,
+                "positions": False,
+                "order_management": False,
+                "order_submission": False,
+                "order_cancellation": False,
+                "reconciliation": False,
+                "read_only_connector": True,
+                "transfers": False,
+                "withdrawals": False,
+                "wallet_signing": False,
+                "account_key_permissions_verified": False,
+            }
+
+        def fetch_balances(self):
+            return {
+                "provider_id": "test:broker",
+                "account_alias": "test-cash",
+                "market_type": "spot",
+                "environment": "demo",
+                "read_only": True,
+                "execution_enabled": False,
+                "withdrawals_enabled": False,
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "balances": [{"asset": "USD", "free": "100.00", "used": "0", "total": "100.00"}],
+            }
+
+    class FakeSnapshotStore:
+        def record_snapshot(self, snapshot):
+            return {
+                "provider_id": snapshot["provider_id"],
+                "account_alias": snapshot["account_alias"],
+                "stored": True,
+            }
+
+    registry = AccountProviderRegistry()
+    registry.register(FakeProvider())
+    monkeypatch.setattr("app.main.account_provider_registry", registry)
+    monkeypatch.setattr("app.main.account_snapshot_store", FakeSnapshotStore())
+
+    unauthorized = client.get("/api/accounts/test:broker/balances")
+    assert unauthorized.status_code == 401
+
+    balances = client.get("/api/accounts/test:broker/balances", headers=headers)
+    assert balances.status_code == 200
+    assert balances.json()["balances"][0]["free"] == "100"
+
+    snapshot = client.post("/api/accounts/test:broker/snapshots", headers=headers)
+    assert snapshot.status_code == 201
+    assert snapshot.json()["stored"] is True
+
+
+def test_generic_account_snapshot_route_rejects_trading_enabled_accounts(monkeypatch):
+    from app.accounts.contracts import AccountProviderRegistry
+
+    headers = configure_order_auth(monkeypatch)
+
+    class FakeDemoProvider:
+        def describe(self):
+            return {
+                "provider_id": "test:demo",
+                "account_alias": "virtual-account",
+                "venue_type": "cex",
+                "market_types": ["spot"],
+                "environment": "demo",
+                "configured": True,
+                "balances": True,
+                "positions": False,
+                "order_management": True,
+                "order_submission": True,
+                "order_cancellation": True,
+                "reconciliation": True,
+                "read_only_connector": False,
+                "transfers": False,
+                "withdrawals": False,
+                "wallet_signing": False,
+                "account_key_permissions_verified": False,
+            }
+
+        def fetch_balances(self):
+            return {
+                "provider_id": "test:demo",
+                "account_alias": "virtual-account",
+                "market_type": "spot",
+                "read_only": False,
+                "execution_enabled": True,
+                "withdrawals_enabled": False,
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "balances": [{"asset": "USDT", "free": "100", "used": "0", "total": "100"}],
+            }
+
+    registry = AccountProviderRegistry()
+    registry.register(FakeDemoProvider())
+    monkeypatch.setattr("app.main.account_provider_registry", registry)
+
+    response = client.post("/api/accounts/test:demo/snapshots", headers=headers)
+    assert response.status_code == 409
+    assert "read-only" in response.json()["detail"]

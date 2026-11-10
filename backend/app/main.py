@@ -28,6 +28,10 @@ from .fx import invert_fx_observation, validate_fx_observation
 from .backup_scheduler import read_backup_status
 from .accounts.binance_spot import AccountConnectorError, BinanceSpotReadOnlyAccount
 from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
+from .accounts.contracts import (
+    AccountProviderError, AccountProviderNotFound, AccountProviderRegistry,
+    UnsupportedAccountCapability,
+)
 from .accounts.binance_demo import BinanceDemoError, BinanceSpotDemoExecution
 from .accounts.demo_order_store import (
     BinanceDemoOrderStore, DemoOrderConflict, DemoOrderStoreError,
@@ -96,6 +100,12 @@ demo_order_reconciler = (
     if binance_demo_account_provider is not None else None
 )
 
+account_provider_registry = AccountProviderRegistry()
+if binance_account_provider is not None:
+    account_provider_registry.register(binance_account_provider)
+if binance_demo_account_provider is not None:
+    account_provider_registry.register(binance_demo_account_provider)
+
 class OrderRequest(BaseModel):
     symbol: str = Field(min_length=3)
     provider_id: str = "ccxt:kraken"
@@ -143,8 +153,47 @@ def accounts(x_agent_token: str | None = Header(default=None)):
     return {
         "configuration_status": binance_account_configuration_status,
         "accounts": configured,
+        "normalized_accounts": account_provider_registry.list_accounts(),
         "demo_configuration_status": binance_demo_configuration_status,
     }
+
+
+@app.get("/api/accounts/{provider_id}/balances")
+def account_provider_balances(
+    provider_id: str,
+    account_alias: str | None = None,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        return account_provider_registry.fetch_balances(provider_id, account_alias)
+    except AccountProviderNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except AccountProviderError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/api/accounts/{provider_id}/snapshots", status_code=201)
+def create_account_provider_snapshot(
+    provider_id: str,
+    account_alias: str | None = None,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        return account_provider_registry.record_read_only_snapshot(
+            provider_id, account_snapshot_store, account_alias,
+        )
+    except AccountProviderNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except UnsupportedAccountCapability as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except AccountProviderError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except AccountSnapshotError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to persist account snapshot") from exc
 
 
 @app.get("/api/accounts/binance/spot/balances")
