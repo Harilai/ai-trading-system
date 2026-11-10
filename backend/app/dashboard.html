@@ -308,20 +308,20 @@
         if(!items.length){empty(node,"No hay historial de investigación");return;}
         for(const item of items.slice(0,10)){const result=item.result||{};node.appendChild(dataItem(item.strategy_id||"Estrategia",item.instrument_id+" · "+date(item.created_at),item.eligible?"Elegible":"No elegible",item.eligible?"state-good":"state-warn"));const failures=(item.validation_failures||[]).slice(0,2);if(failures.length)node.appendChild(dataItem("Validación",failures.join(" · "),result.walk_forward?.windows?"Walk-forward":"Revisar"));}
       }
-      function drawChart(candles){
+      function drawChart(candles,currency="EUR"){
         const svg=$("market-chart");svg.replaceChildren();const ns="http://www.w3.org/2000/svg";const width=900,height=240,pad=26;
         const closes=candles.map(c=>Number(c.close)).filter(Number.isFinite);if(closes.length<2)throw new Error("No hay suficientes velas válidas");
         const min=Math.min(...closes),max=Math.max(...closes),span=max-min||Math.max(Math.abs(max)*0.001,1);
         const points=closes.map((v,i)=>((pad+i*(width-2*pad)/(closes.length-1)).toFixed(2)+","+(height-pad-(v-min)*(height-2*pad)/span).toFixed(2))).join(" ");
         for(let n=0;n<4;n++){const line=document.createElementNS(ns,"line");const y=pad+n*(height-2*pad)/3;line.setAttribute("x1",pad);line.setAttribute("x2",width-pad);line.setAttribute("y1",y);line.setAttribute("y2",y);line.setAttribute("stroke","#263347");line.setAttribute("stroke-width","1");svg.appendChild(line);}
         const poly=document.createElementNS(ns,"polyline");poly.setAttribute("points",points);poly.setAttribute("fill","none");poly.setAttribute("stroke","#62a6ef");poly.setAttribute("stroke-width","2.5");poly.setAttribute("stroke-linejoin","round");poly.setAttribute("stroke-linecap","round");svg.appendChild(poly);
-        $("chart-range").textContent=money(min,"EUR")+" — "+money(max,"EUR")+" · "+candles.length+" velas";$("chart-latest").textContent="Último cierre "+money(closes[closes.length-1],"EUR")+" · "+date(candles[candles.length-1].timestamp);
+        $("chart-range").textContent=money(min,currency)+" — "+money(max,currency)+" · "+candles.length+" velas";$("chart-latest").textContent="Último cierre "+money(closes[closes.length-1],currency)+" · "+date(candles[candles.length-1].timestamp);
       }
       async function loadChart(){
         const symbol=$("chart-symbol").value.trim().toUpperCase(),provider=$("chart-provider").value,timeframe=$("chart-timeframe").value;
         if(!symbol){setMessage("chart-message","Introduce un símbolo.","error");return;}
         $("load-chart").disabled=true;$("chart-status").textContent="Cargando";
-        try{const result=await api("/api/market/"+encodeURIComponent(symbol)+"/ohlcv?timeframe="+encodeURIComponent(timeframe)+"&limit=120&provider_id="+encodeURIComponent(provider));drawChart(result.candles||[]);$("chart-status").textContent=provider+" · "+timeframe;setMessage("chart-message","Datos OHLCV recibidos. Gráfico informativo; no es una señal de compra/venta.","success");}
+        try{const result=await api("/api/market/"+encodeURIComponent(symbol)+"/ohlcv?timeframe="+encodeURIComponent(timeframe)+"&limit=120&provider_id="+encodeURIComponent(provider));drawChart(result.candles||[],provider==="twelve_data"?"USD":"EUR");$("chart-status").textContent=provider+" · "+timeframe;setMessage("chart-message","Datos OHLCV recibidos. Gráfico informativo; no es una señal de compra/venta.","success");}
         catch(error){$("chart-status").textContent="Sin datos";setMessage("chart-message","No se pudo cargar el gráfico: "+error.message,"error");}
         finally{$("load-chart").disabled=false;}
       }
