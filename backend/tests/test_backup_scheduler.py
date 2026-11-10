@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, timezone
 import os
 import sqlite3
 
+import pytest
+
 from app.backup_scheduler import run_backup_cycle
 
 
