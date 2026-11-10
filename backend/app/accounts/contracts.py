@@ -462,6 +462,84 @@ class AccountProviderRegistry:
             positions=tuple(sorted(positions, key=lambda item: (item.instrument_id, item.side))),
         ).to_dict()
 
+    def fetch_positions_snapshot(self, provider_id: str, account_alias: str | None = None) -> dict:
+        provider, capabilities, lock = self._resolve(provider_id, account_alias)
+        if not capabilities.positions:
+            raise UnsupportedAccountCapability("Account provider does not declare position support")
+        if not capabilities.read_only or any((
+            capabilities.order_management, capabilities.order_submission,
+            capabilities.order_cancellation, capabilities.transfers,
+            capabilities.withdrawals, capabilities.wallet_signing,
+        )):
+            raise UnsupportedAccountCapability("Position snapshots require an explicitly read-only account")
+        fetcher = getattr(provider, "fetch_positions_snapshot", None)
+        if not callable(fetcher):
+            raise UnsupportedAccountCapability(
+                "Provider must implement fetch_positions_snapshot with explicit coverage metadata"
+            )
+        try:
+            with lock:
+                raw = fetcher()
+        except AccountProviderError:
+            raise
+        except Exception as exc:
+            raise AccountProviderError(f"Account position snapshot request failed ({type(exc).__name__})") from None
+        if not isinstance(raw, dict):
+            raise AccountProviderError("Account provider returned an invalid position snapshot")
+        if raw.get("provider_id") != capabilities.provider_id:
+            raise AccountProviderError("Account provider identity changed in position response")
+        if raw.get("account_alias") != capabilities.account_alias:
+            raise AccountProviderError("Account alias changed in position response")
+        if str(raw.get("environment", "")).strip().lower() != capabilities.environment:
+            raise AccountProviderError("Account environment conflicts with declared provider capabilities")
+        market_type = raw.get("market_type")
+        if not isinstance(market_type, str) or market_type not in capabilities.market_types:
+            raise AccountProviderError("Position market type is not declared by the provider")
+        if raw.get("read_only") is not True or raw.get("execution_enabled") is not False:
+            raise AccountProviderError("Position snapshot permission flags conflict with read-only capability")
+        if raw.get("withdrawals_enabled") is not False:
+            raise AccountProviderError("Position snapshot withdrawals must be disabled")
+        coverage = raw.get("coverage_status")
+        if coverage not in {"complete", "partial"}:
+            raise AccountProviderError("Position provider must declare complete or partial coverage")
+        fetched_at = raw.get("fetched_at")
+        if not isinstance(fetched_at, str):
+            raise AccountProviderError("Position snapshot timestamp is missing")
+        try:
+            timestamp = datetime.fromisoformat(fetched_at)
+        except ValueError:
+            raise AccountProviderError("Position snapshot timestamp is invalid") from None
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            raise AccountProviderError("Position snapshot timestamp must include a timezone")
+        age = (datetime.now(timezone.utc) - timestamp.astimezone(timezone.utc)).total_seconds()
+        if age < -60 or age > 300:
+            raise AccountProviderError("Position snapshot is stale or future-dated")
+        raw_positions = raw.get("positions")
+        if not isinstance(raw_positions, list):
+            raise AccountProviderError("Position snapshot positions must be a list")
+        positions = []
+        seen = set()
+        for item in raw_positions:
+            position = AccountPosition.normalize(item)
+            if position.market_type != market_type:
+                raise AccountProviderError("Position market type conflicts with snapshot")
+            if position.instrument_id in seen:
+                raise AccountProviderError("Position provider returned duplicate instrument positions")
+            seen.add(position.instrument_id)
+            positions.append(asdict(position))
+        return {
+            "provider_id": capabilities.provider_id,
+            "account_alias": capabilities.account_alias,
+            "environment": capabilities.environment,
+            "market_type": market_type,
+            "fetched_at": timestamp.astimezone(timezone.utc).isoformat(),
+            "read_only": True,
+            "execution_enabled": False,
+            "withdrawals_enabled": False,
+            "coverage_status": coverage,
+            "positions": sorted(positions, key=lambda item: item["instrument_id"]),
+        }
+
     def record_read_only_snapshot(
         self,
         provider_id: str,
