@@ -1,6 +1,6 @@
 # Engineering roadmap
 
-> Continuity between ChatGPT sessions: read [`docs/SESSION_HANDOFF.md`](SESSION_HANDOFF.md) first for the verified repository state and the next concrete implementation phase.
+> Continuity between ChatGPT sessions: read [`docs/SESSION_HANDOFF.md`](SESSION_HANDOFF.md) for project state and [`docs/AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) for the mandatory multi-agent development method.
 
 Actualizado: 2026-11-09. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
