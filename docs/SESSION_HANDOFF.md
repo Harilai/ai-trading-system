@@ -5,7 +5,7 @@
 > **Último commit integrado en `main`:** `eed5860541867a15e069434908ac046b50c589f9` — handoff posterior al contrato de posiciones (#73).
 > **Estado de ejecución:** paper trading únicamente; Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
-## Fase completada — Demo local paper (PR #75 abierta)
+## Fase completada — Demo local paper (PR #75)
 
 - Compose independiente `docker-compose.demo.yml`: solo API, publicación en `127.0.0.1`, volumen persistente propio, 10.000 EUR virtuales, mercado público Kraken y hardening del contenedor. No lee `.env` de producción ni inicia el servicio de backups.
 - Binance read-only, CCXT autenticado, Binance Spot Demo y backups externos quedan forzados desactivados y sin claves. Solo se puede añadir opcionalmente `TWELVE_DATA_API_KEY` para datos de cotizaciones, en `.env.demo` ignorado por Git.
@@ -16,7 +16,7 @@
 
 ## Siguiente acción
 
-Fusionar PR #75 tras comprobar CI en su SHA final. Después, continuar la PR #74 abierta para el ledger persistente de snapshots de posiciones multi-venue descrito abajo.
+Tras integrar PR #75, continuar la PR #74 para el ledger persistente de snapshots de posiciones multi-venue descrito abajo.
 
 ## 1. Cómo retomar en una conversación nueva
 
