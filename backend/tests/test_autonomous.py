@@ -828,3 +828,30 @@ def test_decision_cycle_expires_approved_intent_when_market_evidence_is_stale(tm
     assert result["execution"] == "expired"
     assert portfolio.get_order_intent(task_id)["status"] == "expired"
     assert portfolio.history() == []
+
+
+def test_worker_heartbeat_keeps_long_running_task_claim_alive(tmp_path):
+    import asyncio
+
+    store = AutonomousStore(str(tmp_path / "worker-heartbeat.db"))
+    store.set_enabled(True)
+    task = store.enqueue("health_check", {}, due_at=utcnow() - timedelta(seconds=1))
+    worker = AutonomousAgent(store)
+    worker.lease_seconds = 2
+
+    async def slow_execute(_task):
+        await asyncio.sleep(2.3)
+        return {"ok": True}
+
+    worker._execute = slow_execute
+
+    async def run():
+        await worker.start()
+        await asyncio.sleep(2.5)
+        await worker.stop()
+
+    asyncio.run(run())
+    overview = store.overview()
+    row = next(item for item in overview["tasks"] if item["id"] == task["id"])
+    assert row["status"] == "completed"
+    assert row["attempts"] == 1
