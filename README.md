@@ -138,6 +138,7 @@ Lista los objetos remotos y descarga uno a un fichero candidato; el comando veri
 ```bash
 docker compose run --rm --no-deps backup python -m app.backup_remote list
 docker compose run --rm --no-deps backup python -m app.backup_remote download --key "ai-trading-system/2026/11/10/trading-...sqlite3" --destination /app/data/restore-candidate-trading.sqlite3
+docker compose run --rm --no-deps backup python -m app.backup_remote download --key "ai-trading-system/2026/11/10/twelve_data_state-...sqlite3" --destination /app/data/restore-candidate-twelve-data.sqlite3
 ```
 
 Para restaurar, detén API y scheduler antes de sustituir cualquier base activa. Restaura cada candidato por separado; `app.backup restore` conserva una copia de seguridad pre-restauración:
