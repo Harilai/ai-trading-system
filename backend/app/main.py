@@ -219,6 +219,8 @@ def create_account_provider_snapshot(
         raise HTTPException(404, str(exc)) from exc
     except UnsupportedAccountCapability as exc:
         raise HTTPException(409, str(exc)) from exc
+    except AmbiguousAccountProvider as exc:
+        raise HTTPException(409, str(exc)) from exc
     except AccountProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
     except AccountSnapshotError as exc:
