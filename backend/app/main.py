@@ -17,6 +17,7 @@ from .providers.twelve_data import TwelveDataProvider
 from .providers.base import AssetClass
 from .instrument_catalog import InstrumentCatalog, InstrumentCatalogError
 from .equity_research import EquityEtfResearchAgent
+from .equity_exits import EquityExitMonitor
 from .providers.registry import ProviderRegistry
 from .scout import ScoutAgent
 from .strategy_research import StrategyResearchAgent
@@ -1311,12 +1312,17 @@ equity_research_agent = (
     )
     if settings.twelve_data_api_key else None
 )
+equity_exit_monitor = (
+    EquityExitMonitor(market.get("twelve_data"), portfolio)
+    if settings.twelve_data_api_key else None
+)
 agent_worker = AutonomousAgent(
     agent_store,
     scout=scout,
     chief=chief,
     portfolio=portfolio,
     equity_research=equity_research_agent,
+    equity_exit_monitor=equity_exit_monitor,
     demo_reconciler=demo_order_reconciler,
 )
 

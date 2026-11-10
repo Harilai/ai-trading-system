@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 import json
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import RLock
@@ -524,6 +525,7 @@ class AutonomousAgent:
         portfolio=None,
         equity_research=None,
         *,
+        equity_exit_monitor=None,
         demo_reconciler=None,
         poll_interval_seconds: float = 5.0,
     ):
@@ -535,6 +537,8 @@ class AutonomousAgent:
         self.chief = chief
         self.portfolio = portfolio
         self.equity_research = equity_research
+        self.equity_exit_monitor = equity_exit_monitor
+        self._last_equity_exit_check = 0.0
         self.demo_reconciler = demo_reconciler
         self.lease_seconds = 120
         self._task: asyncio.Task | None = None
@@ -566,6 +570,14 @@ class AutonomousAgent:
                     )
                     if demo_reconciliation.get("claimed"):
                         self.store.audit("binance_demo_periodic_reconciliation", demo_reconciliation)
+                # Risk exits are safety work: keep them active while strategy
+                # automation is paused, and check immediately after restarts.
+                if (self.equity_exit_monitor is not None
+                        and time.monotonic() - self._last_equity_exit_check >= 60):
+                    self._last_equity_exit_check = time.monotonic()
+                    equity_exits = await asyncio.to_thread(self.equity_exit_monitor.run_once)
+                    if equity_exits.get("closed") or equity_exits.get("skipped"):
+                        self.store.audit("equity_paper_exit_monitor", equity_exits)
                 if self.portfolio is not None:
                     reconciliation = await asyncio.to_thread(
                         self.portfolio.reconcile_order_intents

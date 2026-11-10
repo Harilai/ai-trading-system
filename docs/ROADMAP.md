@@ -91,7 +91,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 | Chief Agent y coordinación de decisiones | Implementado; ciclo ejecuta paper bajo gate de riesgo |
 | Risk Manager conectado obligatoriamente a órdenes paper | Implementado; crypto spot EUR autónomo y cash equities/ETF USD manual-only paper con límites propios |
 | Sniper y generación de propuestas | Implementado; propuestas deterministas bajo Risk Manager obligatorio |
-| Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada para crypto spot EUR; monitor equity stop/take pendiente |
+| Ejecución paper desde `decision_cycle` y monitorización de stop/take | Crypto spot EUR por ciclo; monitor equity paper USD cada minuto, independiente de la pausa de estrategias; sin ejecución live |
 | Datos de acciones/ETF estadounidenses | Adaptador Twelve Data Basic y pipeline autónomo read-only; órdenes manuales paper USD integradas, sin broker ni ejecución real |
 | Ejecución real multi-venue (CEX/broker/DEX/wallet) | No implementada; requiere adaptadores autenticados, elegibilidad, sandbox y gates de seguridad |
 | DEX, wallets, blockchain y DeFi | Pendiente; sin conexión, firma ni ejecución |
@@ -127,7 +127,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [x] Añadir idempotencia de órdenes paper mediante `client_order_id` vinculado a la tarea.
 - [x] Completar estados legales de órdenes paper (PR #44) y lifecycle limit-order Binance Spot Demo (PR #63), con idempotencia, reconciliación y fail-closed.
 - [x] Añadir reconciliación periódica automática de órdenes Demo abiertas/unknown tras restart, con lease, rate limit y sin reenvío ciego.
-- [ ] Añadir monitorización paper de stop-loss/take-profit equity con cotizaciones USD y FX frescas, cierres idempotentes y recuperación tras reinicio.
+- [x] Añadir monitorización paper de stop-loss/take-profit equity con cotizaciones USD y FX frescas, cierres idempotentes y recuperación tras reinicio (PR #77; CI pendiente en head actual).
 - [x] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
 - [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
 
