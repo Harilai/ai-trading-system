@@ -1227,3 +1227,225 @@ def test_binance_demo_account_configuration_uses_masked_secret_settings():
     assert config.binance_spot_demo_api_secret.get_secret_value() == api_secret
     assert api_key not in repr(config)
     assert api_secret not in repr(config)
+
+
+def test_binance_demo_order_api_persists_before_submission_and_is_idempotent(monkeypatch, tmp_path):
+    from app.accounts.demo_order_store import BinanceDemoOrderStore
+
+    headers = configure_order_auth(monkeypatch)
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-orders.db"))
+    monkeypatch.setattr("app.main.demo_order_store", store)
+
+    class FakeDemoExecution:
+        def __init__(self):
+            self.submissions = 0
+
+        def validate_limit_order(self, **kwargs):
+            return {
+                "client_order_id": kwargs["client_order_id"],
+                "symbol": kwargs["symbol"],
+                "side": kwargs["side"],
+                "amount": kwargs["amount"],
+                "price": kwargs["price"],
+                "quote_asset": "USDT",
+            }
+
+        def submit_limit_order(self, request):
+            self.submissions += 1
+            assert store.get_order(request["client_order_id"])["status"] == "submission_unknown"
+            return {
+                "status": "open",
+                "exchange_order_id": "demo-exchange-1",
+                "exchange_status": "new",
+                "filled": "0",
+                "remaining": request["amount"],
+                "average": None,
+                "error": None,
+            }
+
+    provider = FakeDemoExecution()
+    monkeypatch.setattr("app.main.binance_demo_account_provider", provider)
+    payload = {
+        "symbol": "BTC/USDT", "side": "buy", "amount": "0.001",
+        "price": "20000", "client_order_id": "api-demo-order-1",
+    }
+
+    unauthorized = client.post("/api/demo/binance/spot/orders", json=payload)
+    assert unauthorized.status_code == 401
+
+    created = client.post("/api/demo/binance/spot/orders", json=payload, headers=headers)
+    assert created.status_code == 201, created.text
+    assert created.json()["status"] == "open"
+    assert created.json()["exchange_order_id"] == "demo-exchange-1"
+    assert provider.submissions == 1
+
+    replay = client.post("/api/demo/binance/spot/orders", json=payload, headers=headers)
+    assert replay.status_code == 200
+    assert replay.json()["client_order_id"] == "api-demo-order-1"
+    assert provider.submissions == 1
+
+    conflict = client.post(
+        "/api/demo/binance/spot/orders",
+        json={**payload, "amount": "0.002"},
+        headers=headers,
+    )
+    assert conflict.status_code == 409
+    assert provider.submissions == 1
+
+    events = client.get(
+        "/api/demo/binance/spot/orders/api-demo-order-1/events",
+        headers=headers,
+    )
+    assert events.status_code == 200
+    assert [item["to_status"] for item in events.json()["items"]] == [
+        "intent_created", "submission_unknown", "open",
+    ]
+
+
+def test_binance_demo_order_api_never_resubmits_unknown_submission_and_reconciles_by_client_id(monkeypatch, tmp_path):
+    from app.accounts.demo_order_store import BinanceDemoOrderStore
+    from app.accounts.binance_demo import BinanceDemoError
+
+    headers = configure_order_auth(monkeypatch)
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-unknown.db"))
+    monkeypatch.setattr("app.main.demo_order_store", store)
+
+    class FakeDemoExecution:
+        def __init__(self):
+            self.submissions = 0
+            self.reconciliations = 0
+
+        def validate_limit_order(self, **kwargs):
+            return {
+                "client_order_id": kwargs["client_order_id"],
+                "symbol": kwargs["symbol"],
+                "side": kwargs["side"],
+                "amount": kwargs["amount"],
+                "price": kwargs["price"],
+                "quote_asset": "USDT",
+            }
+
+        def submit_limit_order(self, request):
+            self.submissions += 1
+            raise BinanceDemoError("Binance Demo order submission outcome is unknown (NetworkError)")
+
+        def fetch_order_by_client_id(self, *, symbol, client_order_id, expected_amount=None, expected_side=None):
+            self.reconciliations += 1
+            return {
+                "status": "filled",
+                "exchange_order_id": "demo-exchange-unknown",
+                "exchange_status": "closed",
+                "filled": "0.001",
+                "remaining": "0",
+                "average": "20000",
+                "error": None,
+            }
+
+    provider = FakeDemoExecution()
+    monkeypatch.setattr("app.main.binance_demo_account_provider", provider)
+    payload = {
+        "symbol": "BTC/USDT", "side": "buy", "amount": "0.001",
+        "price": "20000", "client_order_id": "api-demo-unknown-1",
+    }
+
+    first = client.post("/api/demo/binance/spot/orders", json=payload, headers=headers)
+    assert first.status_code == 202
+    assert first.json()["status"] == "submission_unknown"
+    assert provider.submissions == 1
+
+    replay = client.post("/api/demo/binance/spot/orders", json=payload, headers=headers)
+    assert replay.status_code == 202
+    assert provider.submissions == 1
+
+    reconciled = client.post(
+        "/api/demo/binance/spot/orders/api-demo-unknown-1/reconcile",
+        headers=headers,
+    )
+    assert reconciled.status_code == 200
+    assert reconciled.json()["status"] == "filled"
+    assert provider.submissions == 1
+    assert provider.reconciliations == 1
+
+
+def test_binance_demo_order_api_cancels_open_order_and_blocks_second_unresolved_order(monkeypatch, tmp_path):
+    from app.accounts.demo_order_store import BinanceDemoOrderStore
+
+    headers = configure_order_auth(monkeypatch)
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-cancel.db"))
+    monkeypatch.setattr("app.main.demo_order_store", store)
+
+    class FakeDemoExecution:
+        def validate_limit_order(self, **kwargs):
+            return {
+                "client_order_id": kwargs["client_order_id"],
+                "symbol": kwargs["symbol"],
+                "side": kwargs["side"],
+                "amount": kwargs["amount"],
+                "price": kwargs["price"],
+                "quote_asset": "USDT",
+            }
+
+        def submit_limit_order(self, request):
+            return {
+                "status": "open", "exchange_order_id": "cancel-id-1",
+                "exchange_status": "new", "filled": "0",
+                "remaining": request["amount"], "average": None, "error": None,
+            }
+
+        def cancel_limit_order(self, **kwargs):
+            return {
+                "status": "cancelled", "exchange_order_id": kwargs["exchange_order_id"],
+                "exchange_status": "canceled", "filled": "0",
+                "remaining": "0.001", "average": None, "error": None,
+            }
+
+    monkeypatch.setattr("app.main.binance_demo_account_provider", FakeDemoExecution())
+    payload = {
+        "symbol": "BTC/USDT", "side": "buy", "amount": "0.001",
+        "price": "20000", "client_order_id": "api-demo-cancel-1",
+    }
+    created = client.post("/api/demo/binance/spot/orders", json=payload, headers=headers)
+    assert created.status_code == 201
+
+    blocked = client.post(
+        "/api/demo/binance/spot/orders",
+        json={**payload, "client_order_id": "api-demo-cancel-2"},
+        headers=headers,
+    )
+    assert blocked.status_code == 409
+
+    cancelled = client.post(
+        "/api/demo/binance/spot/orders/api-demo-cancel-1/cancel",
+        headers=headers,
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+
+
+def test_binance_demo_order_api_is_disabled_without_demo_connector(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    monkeypatch.setattr("app.main.binance_demo_account_provider", None)
+    response = client.post(
+        "/api/demo/binance/spot/orders",
+        json={
+            "symbol": "BTC/USDT", "side": "buy", "amount": "0.001",
+            "price": "20000", "client_order_id": "disabled-demo-order",
+        },
+        headers=headers,
+    )
+    assert response.status_code == 503
+
+
+def test_binance_demo_order_api_requires_exact_decimal_strings(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    payload = {
+        "symbol": "BTC/USDT", "side": "buy", "amount": 0.001,
+        "price": "20000", "client_order_id": "numeric-demo-amount",
+    }
+    response = client.post(
+        "/api/demo/binance/spot/orders",
+        json=payload,
+        headers=headers,
+    )
+    assert response.status_code == 422
+    assert "amount" in response.text
