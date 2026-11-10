@@ -444,6 +444,27 @@ class PaperPortfolio:
         return self.get_order_intent(client_order_id)
 
     @staticmethod
+    def _insert_order_intent_event(
+        db,
+        client_order_id: str,
+        from_status: str | None,
+        to_status: str,
+        details: dict | None,
+        stamp: str,
+    ) -> None:
+        db.execute(
+            "INSERT INTO order_intent_events(client_order_id,from_status,to_status,details_json,created_at) "
+            "VALUES(?,?,?,?,?)",
+            (
+                client_order_id,
+                from_status,
+                to_status,
+                PaperPortfolio._canonical_json(details or {}),
+                stamp,
+            ),
+        )
+
+    @staticmethod
     def _decode_order_intent(row) -> dict:
         result = dict(row)
         result["request"] = json.loads(result.pop("request_json"))
