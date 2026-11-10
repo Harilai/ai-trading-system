@@ -157,7 +157,8 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [x] Generalizar el portfolio a claves `provider_id + instrument_id`, con migración de datos legacy y aislamiento de símbolos duplicados.
 - [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución.
 - [x] Añadir contrato y endpoint autenticado para posiciones normalizadas, exigiendo capacidad explícita y sin sintetizarlas desde balances.
-- [x] Implementar almacenamiento append-only de snapshots externos de posiciones, con identidad por cuenta/entorno, coste/mark/P&L/divisa declarados, decimales exactos, hash y cobertura explícita (PR #92; capa de almacenamiento).\n- [ ] Integrar el ledger con proveedores que declaren `positions=true`, añadir endpoints autenticados de captura/historial/detalle y conciliar snapshots solo cuando la cobertura sea completa.
+- [x] Implementar almacenamiento append-only de snapshots externos de posiciones, con identidad por cuenta/entorno, coste/mark/P&L/divisa declarados, decimales exactos, hash y cobertura explícita (PR #92; capa de almacenamiento).
+- [ ] Integrar el ledger con proveedores que declaren `positions=true`, añadir endpoints autenticados de captura/historial/detalle y conciliar snapshots solo cuando la cobertura sea completa.
 - [ ] Implementar adaptadores FX, índices y commodities solo tras validar APIs y elegibilidad.
 - [ ] Diseñar wallet read-only y blockchain monitoring antes de añadir firma aislada; no usar seeds en agentes.
 - [ ] Implementar DEX swaps con simulación, gas, slippage, MEV y reconciliación antes de habilitar ejecución.
