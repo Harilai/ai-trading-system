@@ -214,18 +214,17 @@ def account_provider_positions(
     require_order_control_token(x_agent_token)
     try:
         capabilities = account_provider_registry.capabilities(provider_id, account_alias)
-        positions = account_provider_registry.fetch_positions(
+        position_snapshot = account_provider_registry.fetch_positions(
             provider_id, account_alias, market_type=market_type,
-        )
-        selected_market = market_type or (
-            capabilities.market_types[0] if len(capabilities.market_types) == 1 else None
         )
         return {
             "provider_id": capabilities.provider_id,
             "account_alias": capabilities.account_alias,
-            "market_type": selected_market,
-            "positions": positions,
-            "position_count": len(positions),
+            "market_type": position_snapshot["market_type"],
+            "environment": position_snapshot["environment"],
+            "fetched_at": position_snapshot["fetched_at"],
+            "positions": position_snapshot["positions"],
+            "position_count": len(position_snapshot["positions"]),
         }
     except AccountProviderNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
