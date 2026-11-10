@@ -298,8 +298,15 @@
       }
       function renderEquityResearch(data){
         const node=$("research-results");node.replaceChildren();const items=data.analyses||[];$("research-count").textContent=(items.length||0)+" análisis";
-        node.appendChild(dataItem("Universo",String(data.discovered??"—")+" detectados · "+String(data.considered??"—")+" considerados",String(data.analysed??items.length??0)+" analizados"));
-        for(const item of items.slice(0,8)){const result=item.result||item;const label=item.symbol||item.instrument?.symbol||result.symbol||"Instrumento";const summary=result.recommendation||result.signal||result.status||"Investigación disponible";node.appendChild(dataItem(label,(item.name||"")+" · "+(item.timeframe||data.timeframe||""),summary));}
+        node.appendChild(dataItem("Universo",String(data.discovered??"—")+" detectados · "+String(data.considered??"—")+" considerados",String(data.analysed??items.length)+" analizados"));
+        for(const item of items.slice(0,8)){
+          const instrument=item.instrument||{},quote=item.quote||{},research=item.strategy_research||{},regime=research.market_regime||{};
+          const summary=research.recommended_strategy||"Sin estrategia elegible";
+          const detail="Rank #"+(item.rank??"—")+" · "+instrument.asset_class+" · "+instrument.quote_currency+" · régimen "+(regime.structure||"n/d")+"/"+(regime.volatility||"n/d");
+          node.appendChild(dataItem(instrument.symbol||"Instrumento",detail,"Último "+money(quote.last,instrument.quote_currency||"USD")+" · "+summary,item.research_eligible?"state-good":"state-warn"));
+          const blockers=(item.execution_blockers||[]).slice(0,2);
+          if(blockers.length)node.appendChild(dataItem("Bloqueos · "+(instrument.symbol||""),blockers.join(" · "),"Sin ejecución","state-warn"));
+        }
         if(!items.length)node.appendChild(dataItem("Investigación","No hay análisis elegibles","Solo lectura"));
         node.appendChild(dataItem("Ejecución","Deshabilitada","Research only","state-warn"));
       }
