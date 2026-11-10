@@ -504,6 +504,16 @@ def _paper_equity_order(order: OrderRequest):
         )
     except PortfolioError as exc:
         raise HTTPException(422, str(exc)) from exc
+    if not portfolio.order_intent_is_fresh(
+        order.client_order_id.strip(),
+        settings.max_data_age_seconds,
+        settings.max_fx_data_age_seconds,
+    ):
+        portfolio.expire_order_intent(
+            order.client_order_id.strip(),
+            "Market/FX evidence expired before paper fill",
+        )
+        raise HTTPException(503, "Market or FX evidence expired before paper fill")
     try:
         return portfolio.execute(**execution_request, require_order_intent=True)
     except PortfolioError as exc:
@@ -642,6 +652,16 @@ def paper_order(
             execution_request,
             {"risk": risk.model_dump(), "proposal": proposal.model_dump()},
         )
+        if not portfolio.order_intent_is_fresh(
+            order.client_order_id.strip(),
+            settings.max_data_age_seconds,
+            settings.max_fx_data_age_seconds,
+        ):
+            portfolio.expire_order_intent(
+                order.client_order_id.strip(),
+                "Market/FX evidence expired before paper fill",
+            )
+            raise HTTPException(503, "Market or FX evidence expired before paper fill")
         try:
             return portfolio.execute(**execution_request, require_order_intent=True)
         except PortfolioError as exc:
