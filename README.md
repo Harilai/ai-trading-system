@@ -161,7 +161,12 @@ El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y contr
 - `GET /api/accounts` — estado y capacidades de conectores de cuenta; requiere `X-Agent-Token`.
 - `GET /api/accounts/binance/spot/balances` — balances reales de Binance Spot, solo lectura y sin persistencia; requiere `X-Agent-Token`.
 - `GET /api/demo/binance/spot/balances` — balances virtuales de Binance Spot Demo Trading; requiere `X-Agent-Token` y configuración demo explícita.
-- `GET /api/demo/binance/spot/markets` — catálogo de mercados Spot disponibles en Demo Trading; requiere `X-Agent-Token`. No hay envío de órdenes en esta fase.
+- `GET /api/demo/binance/spot/markets` — catálogo de mercados Spot disponibles en Demo Trading; requiere `X-Agent-Token`.
+- `POST /api/demo/binance/spot/orders` — limit order en Demo Trading, con intent persistido e idempotencia por client order ID.
+- `GET /api/demo/binance/spot/orders` y `GET /api/demo/binance/spot/orders/{client_order_id}` — estado persistido.
+- `POST /api/demo/binance/spot/orders/{client_order_id}/reconcile` — conciliación explícita tras timeout/restart.
+- `POST /api/demo/binance/spot/orders/{client_order_id}/cancel` — cancelación de órdenes abiertas/partial fills.
+- `GET /api/demo/binance/spot/orders/{client_order_id}/events` — auditoría append-only. Solo limit orders, máximo 25 unidades de quote por defecto y un único intent sin resolver. Demo-only; no hay ejecución en producción.
 - `POST /api/accounts/binance/spot/snapshots` — captura y persiste un snapshot inmutable de balances; requiere `X-Agent-Token`.
 - `GET /api/accounts/snapshots` y `GET /api/accounts/snapshots/{snapshot_id}` — historial y diferencias entre snapshots; requieren `X-Agent-Token`. Configura `BINANCE_READONLY_API_KEY` y `BINANCE_READONLY_API_SECRET` con permisos de lectura únicamente.
 - `GET /api/research/equities?max_instruments=5&max_quote_candidates=10&timeframe=1day` — investigación manual de acciones/ETF; requiere `TWELVE_DATA_API_KEY`, limita las cotizaciones examinadas (1–100) y el histórico descargado (1–10), y nunca ejecuta operaciones. El muestreo de cotizaciones se distribuye por todo el catálogo y la clasificación preliminar prioriza volumen (60%), frescura (25%) y spread (15%); la ausencia de volumen penaliza la posición, pero no elimina por sí sola la investigación histórica.
