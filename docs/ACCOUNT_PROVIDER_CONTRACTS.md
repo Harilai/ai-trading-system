@@ -10,7 +10,7 @@ Provide a venue-independent account boundary without merging accounts, environme
 - `AccountBalance` / `AccountBalanceSnapshot`: canonical asset codes and decimal-string free/used/total amounts, account identity, market type, environment, timestamp and explicit permission flags.
 - `AccountPosition`: normalized instrument identity, quantity/side, quote currency, entry/mark price, market value and unrealized P&L.
 - `AccountOrder`: normalized client/exchange IDs, instrument, side/type/status, requested/filled/remaining quantities, average fill and quote currency.
-- `AccountBalanceProvider`, `PositionProvider` and `OrderReconciliationProvider`: capability-specific protocols. A provider must not imply support for methods it does not implement.
+- `AccountBalanceProvider`, `PositionProvider` and `OrderReconciliationProvider`: capability-specific protocols. A position provider returns a timestamped envelope containing provider ID, account alias, environment, market type and normalized positions. A provider must not imply support for methods it does not implement.
 
 ## Registry invariants
 
@@ -38,4 +38,4 @@ Provide a venue-independent account boundary without merging accounts, environme
 - `POST /api/accounts/{provider_id}/snapshots?account_alias=...&market_type=...`: immutable balance/position snapshot for explicitly read-only accounts; owner token required.
 - Existing Binance-specific endpoints remain available for compatibility.
 
-The append-only snapshot store now supports balances and positions across Spot, cash equity, margin, futures, options, FX and on-chain market types, with environment-scoped history, exact decimal quantities and per-instrument change detection. No current production read-only adapter yet declares positions, so position endpoints return an unsupported-capability response until such an adapter is connected. Snapshots remain separate from the paper portfolio.
+The append-only snapshot store now supports balances and positions across Spot, cash equity, margin, futures, options, FX and on-chain market types, with environment-scoped history, exact decimal quantities and per-instrument change detection. Position source timestamps are validated for freshness and combined balance/position observations must be within 60 seconds of each other. No current production read-only adapter yet declares positions, so position endpoints return an unsupported-capability response until such an adapter is connected. Snapshots remain separate from the paper portfolio.
