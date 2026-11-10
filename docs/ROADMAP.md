@@ -27,10 +27,10 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 11. **Completado — lifecycle de órdenes Binance Spot Demo (PR #63):** limit orders, intents persistentes, clientOrderId, timeout/unknown-state reconciliation, partial fills, cancelación, auditoría append-only y fail-closed. No existe fallback a producción.
 12. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** seguir `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md` y verificar respuestas reales, filtros/precisión, partial fills, cancelación, timeout y reconciliación tras restart. Credenciales Demo solo en el servidor; no se simula una prueba real si el propietario no ha configurado la cuenta.
 13. **Completado en PR #66 — ledger idempotente de fills individuales y comisiones:** trade IDs, order ID, cantidad, precio, quote cost, comisión/activo, timestamp, persistencia append-only y bloqueo fail-closed hasta cubrir el fill acumulado.
-14. **Siguiente — reconciliación periódica Demo:** polling de órdenes abiertas/unknown y fills con leases, rate limits, backoff y recuperación tras restart; nunca reenviar una orden por incertidumbre.
-15. **Generalización multi-venue:** contratos de ejecución, balances, posiciones, permisos y conciliación para otros CEX/brokers y clases de activo.
+14. **Completado en PR #68 — reconciliación periódica Demo:** polling de órdenes abiertas/unknown y fills con leases persistentes, fencing, backoff, lotes acotados y recuperación tras restart; funciona con estrategia pausada y nunca reenvía órdenes.
+15. **Siguiente — generalización multi-venue:** contratos de cuenta/ejecución para balances, posiciones, órdenes, permisos y conciliación para otros CEX/brokers y clases de activo; capabilities explícitas por adaptador.
 16. **Supervisión paper equity y operación 24/7:** stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
-17. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+17. **Live controlado por venue/clase:** solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## Estado integrado
 
@@ -43,6 +43,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 | Binance Spot Demo Trading | Implementado en PR #61; balances virtuales y discovery Spot. PR #63 añade limit orders Demo con lifecycle persistente; desactivado por defecto y sin ruta de producción |
 | Binance Spot Demo order lifecycle | Implementado y fusionado en PR #63 (`013f44f`); 400 tests y Docker hardening correctos; Demo-only, limit orders y cap 25 quote por defecto |
 | Binance Spot Demo individual fill/fee ledger | Implementado y fusionado en PR #66 (`0f667db`); 410 tests y Docker hardening correctos; append-only, idempotente y fail-closed ante evidencia incompleta |
+| Binance Spot Demo periodic reconciliation | Implementado y fusionado en PR #68 (`8943fde`); 420 tests y Docker hardening correctos; SQLite lease fencing, backoff y worker independiente del estado de estrategias |
 
 
 
