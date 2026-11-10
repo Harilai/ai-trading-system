@@ -114,6 +114,7 @@ def test_experimental_position_can_still_exit_when_experimental_mode_is_disabled
     assert decision.action == "sell"
     assert decision.risk is not None and decision.risk.accepted is True
     assert decision.strategy_id == "experimental:ema_12_26"
+    assert "experimental strategy exit signal" in decision.rationale
 
 
 def test_strategy_research_exposes_separate_experimental_candidates():
