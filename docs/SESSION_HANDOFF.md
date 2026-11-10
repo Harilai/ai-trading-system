@@ -5,6 +5,17 @@
 > **Último feature merge:** `a9378266626aca81be46f854f8d11011ee4804ca` — PR #83, experimental paper demo.
 > **Estado de ejecución:** paper trading únicamente; demo local aislada con 10.000 EUR virtuales; Binance Spot Demo no se usa en esta demo; live trading no implementado ni habilitado.
 
+## En curso — trazabilidad de investigación experimental y decisiones Chief
+
+- Rama: `fix/experimental-research-diagnostics`; PR #89 abierta contra `demo` (https://github.com/Harilai/ai-trading-system/pull/89).
+- Se está corrigiendo la persistencia de aptitud experimental y señales actuales en `strategy_research_history.result`, sin añadir columnas ni migración.
+- Los registros anteriores deben exponer `experimental_eligible=null` y `experimental_status=legacy`; nunca convertir un campo ausente en `false`.
+- Dashboard: distinguir validación de promoción y elegibilidad paper experimental, mostrando los motivos de cada una y advirtiendo que aptitud experimental no equivale a rentabilidad.
+- Chief: registrar contadores concretos de candidatos, señales, exclusiones por símbolo/posición/precio y propuestas rechazadas por Sniper/Risk Manager.
+- Se añadieron pruebas para persistencia, compatibilidad legacy y decisiones hold sin señal de entrada.
+- CI completo (Python tests y Docker build/runtime hardening) pasó en el head `a299b8732890c80999ff53fa9b5520aa23d3b4cf`; si cambia el código o este handoff, repetir CI sobre el nuevo head. Revisión independiente pendiente antes del merge.
+- Seguridad: paper-only; no se amplían permisos, límites ni rutas de ejecución real.
+
 ## Fase completada — timestamps Kraken (PR #81)
 
 - Merge commit `5bbb8800dfab86405bb798f51e749609923ca852`.
