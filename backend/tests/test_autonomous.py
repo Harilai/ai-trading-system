@@ -742,3 +742,49 @@ def test_decision_cycle_resumes_persisted_risk_approved_intent_without_rescannin
     assert result["order"]["client_order_id"] == task_id
     assert portfolio.get_order_intent(task_id)["status"] == "filled"
     assert len(portfolio.history()) == 1
+
+
+def test_failed_decision_task_is_requeued_when_approved_order_is_unresolved(tmp_path):
+    store = AutonomousStore(str(tmp_path / "requeue.db"))
+    task = store.enqueue("decision_cycle", {}, due_at=utcnow() - timedelta(seconds=1))
+    claimed = store.claim_due_task()
+    assert claimed["id"] == task["id"]
+    store.fail_task(claimed, "temporary database interruption", max_attempts=1)
+    assert store.overview()["tasks"][0]["status"] == "failed"
+
+    assert store.requeue_failed_decision_task(task["id"]) is True
+    recovered = store.overview()["tasks"][0]
+    assert recovered["status"] == "pending"
+    assert recovered["attempts"] == 0
+    assert store.requeue_failed_decision_task(task["id"]) is False
+
+
+def test_decision_cycle_blocks_new_scan_when_another_intent_needs_reconciliation(tmp_path):
+    import asyncio
+
+    from app.portfolio import PaperPortfolio, PortfolioError
+
+    path = str(tmp_path / "blocked-new-entry.db")
+    portfolio = PaperPortfolio(path, 20)
+    request = {
+        "symbol": "BTC/EUR", "side": "buy", "quantity": 0.001, "price": 10000,
+        "fee_rate": 0.001, "slippage_rate": 0.001, "max_fraction": 1,
+        "minimum": 1, "client_order_id": "older-unresolved-intent",
+        "provider_id": "ccxt:kraken", "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "strategy_id": None, "stop_loss": None, "take_profit": None,
+    }
+    portfolio.record_order_intent(
+        "older-unresolved-intent", request, {"risk_accepted": True},
+    )
+
+    class ScoutMustNotRun:
+        def scan(self, *args, **kwargs):
+            raise AssertionError("New market scan must be blocked while another intent is unresolved")
+
+    worker = AutonomousAgent(
+        AutonomousStore(path), scout=ScoutMustNotRun(), chief=object(), portfolio=portfolio,
+    )
+    with pytest.raises(RuntimeError, match="blocked by unresolved"):
+        asyncio.run(worker._execute({
+            "id": "new-decision-task", "kind": "decision_cycle", "payload": {},
+        }))
