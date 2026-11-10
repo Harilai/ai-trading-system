@@ -248,3 +248,88 @@ def test_chief_reports_experimental_candidate_without_entry_signal():
     assert decision.evidence["experimental_candidates"] == 1
     assert decision.evidence["experimental_entry_signals"] == 0
     assert decision.evidence["eligible_opportunities"] == 0
+
+
+def _position_exit_inputs(*, price=95, stop_loss=90, take_profit=110, candidate=None):
+    instrument_id = "ccxt:kraken:spot:BTC/EUR"
+    market = {
+        "symbol": "BTC/EUR",
+        "provider_id": "ccxt:kraken",
+        "instrument_id": instrument_id,
+        "bid": price,
+        "last": price,
+    }
+    research = {"candidates": [] if candidate is None else [candidate]}
+    scan = {"analyses": [{"market": market, "strategy_research": research}]}
+    portfolio = {
+        "equity": 1000,
+        "cash": 500,
+        "valuation_complete": True,
+        "positions": [{
+            "symbol": "BTC/EUR",
+            "provider_id": "ccxt:kraken",
+            "instrument_id": instrument_id,
+            "quantity": 0.25,
+            "strategy_id": "ema_12_26",
+            "stop_loss": stop_loss,
+            "take_profit": take_profit,
+        }],
+    }
+    return scan, portfolio
+
+
+@pytest.mark.parametrize(
+    "price,stop_loss,take_profit,expected_reason",
+    [
+        (89, 90, 110, "persisted stop-loss triggered"),
+        (111, 90, 110, "persisted take-profit triggered"),
+    ],
+)
+def test_chief_generates_risk_approved_sell_when_protective_level_triggers(
+    price, stop_loss, take_profit, expected_reason,
+):
+    scan, portfolio = _position_exit_inputs(
+        price=price, stop_loss=stop_loss, take_profit=take_profit,
+    )
+    decision = ChiefAgent().decide(scan, portfolio)
+    assert decision.action == "sell"
+    assert decision.proposal.side == "sell"
+    assert decision.proposal.quantity == pytest.approx(0.25)
+    assert decision.risk.accepted is True
+    assert expected_reason in decision.rationale
+    assert decision.evidence["observed_sell_price"] == pytest.approx(price)
+
+
+def test_chief_generates_sell_for_explicit_strategy_exit_signal():
+    scan, portfolio = _position_exit_inputs(
+        price=95,
+        stop_loss=90,
+        take_profit=110,
+        candidate={
+            "strategy_id": "ema_12_26",
+            "eligible": True,
+            "current_hold_signal": False,
+        },
+    )
+    decision = ChiefAgent().decide(scan, portfolio)
+    assert decision.action == "sell"
+    assert "validated strategy exit signal" in decision.rationale
+
+
+def test_chief_does_not_sell_when_strategy_hold_signal_is_missing():
+    scan, portfolio = _position_exit_inputs(
+        price=95,
+        stop_loss=90,
+        take_profit=110,
+        candidate={"strategy_id": "ema_12_26", "eligible": True},
+    )
+    decision = ChiefAgent().decide(scan, portfolio)
+    assert decision.action == "hold"
+    assert decision.evidence["positions_without_exit_signal"] == 1
+
+
+def test_chief_fails_closed_when_position_market_price_is_malformed():
+    scan, portfolio = _position_exit_inputs(price="not-a-price")
+    decision = ChiefAgent().decide(scan, portfolio)
+    assert decision.action == "hold"
+    assert decision.evidence["positions_missing_market_data"] == 1
