@@ -817,3 +817,28 @@ def test_manual_crypto_order_replay_returns_original_fill_without_new_quote(monk
     assert [event["to_status"] for event in paper.list_order_intent_events("crypto-manual-replay")] == [
         "risk_approved", "filled",
     ]
+
+
+def test_backup_status_endpoint_requires_owner_token_and_reports_offsite_state(monkeypatch, tmp_path):
+    import json
+
+    monkeypatch.setattr("app.main.settings.backup_directory", str(tmp_path))
+    (tmp_path / "backup_status.json").write_text(
+        json.dumps({
+            "last_cycle_at": "2026-11-10T00:00:00+00:00",
+            "local": {"status": "created", "created": ["trading.sqlite3"], "failures": []},
+            "external": {
+                "enabled": True, "status": "verified",
+                "uploaded": [{"key": "private/trading.sqlite3", "verified": True}],
+                "failures": [],
+            },
+        }),
+        encoding="utf-8",
+    )
+    headers = configure_order_auth(monkeypatch)
+    unauthorized = client.get("/api/agent/backup-status")
+    assert unauthorized.status_code == 401
+
+    response = client.get("/api/agent/backup-status", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["external"]["status"] == "verified"
