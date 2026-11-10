@@ -219,7 +219,7 @@ class FakeDemoExecutionExchange(FakeBinanceDemoExchange):
 
     def price_to_precision(self, symbol, price):
         self.calls.append(("price_to_precision", symbol, price))
-        return "20000"
+        return str(price)
 
     def create_order(self, symbol, order_type, side, amount, price, params):
         self.calls.append(("create_order", symbol, order_type, side, amount, price, params))
