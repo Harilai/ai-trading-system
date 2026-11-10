@@ -487,6 +487,11 @@ def _paper_equity_order(order: OrderRequest):
         "risk_fx_provider_id": fx["provider_id"],
         "risk_fx_timestamp": fx["timestamp"],
     }
+    portfolio.reconcile_order_intents(
+        active_task_ids=agent.store.active_task_ids(),
+        max_data_age_seconds=settings.max_data_age_seconds,
+        max_fx_age_seconds=settings.max_fx_data_age_seconds,
+    )
     try:
         portfolio.record_order_intent(
             order.client_order_id.strip(),
@@ -619,6 +624,11 @@ def paper_order(
             "risk_fx_provider_id": risk_fx.get("provider_id"),
             "risk_fx_timestamp": risk_fx.get("timestamp"),
         }
+        portfolio.reconcile_order_intents(
+            active_task_ids=agent.store.active_task_ids(),
+            max_data_age_seconds=settings.max_data_age_seconds,
+            max_fx_age_seconds=settings.max_fx_data_age_seconds,
+        )
         portfolio.record_order_intent(
             order.client_order_id.strip(),
             execution_request,
