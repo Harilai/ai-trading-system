@@ -5,18 +5,18 @@
 > **Último commit integrado en `main`:** `eed5860541867a15e069434908ac046b50c589f9` — handoff posterior al contrato de posiciones (#73).
 > **Estado de ejecución:** paper trading únicamente; Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
-## Fase en curso — Demo local paper
+## Fase completada — Demo local paper (PR #75 abierta)
 
 - Compose independiente `docker-compose.demo.yml`: solo API, publicación en `127.0.0.1`, volumen persistente propio, 10.000 EUR virtuales, mercado público Kraken y hardening del contenedor. No lee `.env` de producción ni inicia el servicio de backups.
 - Binance read-only, CCXT autenticado, Binance Spot Demo y backups externos quedan forzados desactivados y sin claves. Solo se puede añadir opcionalmente `TWELVE_DATA_API_KEY` para datos de cotizaciones, en `.env.demo` ignorado por Git.
 - Arranque documentado: `docker compose -f docker-compose.demo.yml up --build`; dashboard local en `/dashboard`. Las órdenes paper existentes siguen protegidas por Risk Manager y token.
-- Añadida validación de configuración del Compose demo a CI. Falta ejecutar CI sobre la PR y confirmar su estado; esta fase no se considera integrada hasta entonces.
+- Añadida validación de configuración del Compose demo a CI. En el SHA `7abd5f527612d0c593e93d8a94852cc29d0a72d8`, `Python tests` pasó con **460 tests** y `Docker build and runtime hardening` pasó, incluida la validación de los Compose base y demo.
 - Entorno de trabajo actual no tiene Docker ni intérprete Python disponibles, así que no es posible ejecutar localmente `docker compose config` ni `pytest -q`; ejecutar ambos gates en GitHub Actions.
 - Sin credenciales reales, fondos, despliegue ni conexión de ejecución a producción.
 
 ## Siguiente acción
 
-Completar y abrir PR de la demo local; revisar el compose y el límite de ejecución, esperar `Python tests` y `Docker build and runtime hardening` en el SHA exacto, y solo integrar si ambos pasan. Después, retomar el ledger persistente de snapshots de posiciones multi-venue descrito abajo.
+Fusionar PR #75 tras comprobar CI en su SHA final. Después, continuar la PR #74 abierta para el ledger persistente de snapshots de posiciones multi-venue descrito abajo.
 
 ## 1. Cómo retomar en una conversación nueva
 
