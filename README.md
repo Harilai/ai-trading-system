@@ -1,8 +1,8 @@
 # AI Trading System
 
-Plataforma modular de trading algorítmico autónomo, construida por fases con prioridad en la validación, la trazabilidad y la protección del capital.
+Plataforma modular de trading algorítmico multiactivo y multi-venue, orientada a investigación, gestión de cartera y eventual ejecución con capital real. Se construye por fases con prioridad en validación, trazabilidad y protección del capital.
 
-**Continuidad entre conversaciones:** consulta [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) para conocer el último estado revisado y el siguiente paso concreto. El método obligatorio de trabajo por roles especializados está en [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md). El diseño de cartera EUR/USD está en [`docs/MULTICURRENCY_DESIGN.md`](docs/MULTICURRENCY_DESIGN.md). Comprueba siempre el estado vivo de `main` y las PR antes de continuar.
+**Continuidad entre conversaciones:** consulta [`docs/SESSION_HANDOFF.md`](docs/SESSION_HANDOFF.md) para conocer el último estado revisado y el siguiente paso concreto. El método obligatorio de trabajo por roles especializados está en [`docs/AGENT_WORKFLOW.md`](docs/AGENT_WORKFLOW.md). El diseño de cartera EUR/USD está en [`docs/MULTICURRENCY_DESIGN.md`](docs/MULTICURRENCY_DESIGN.md). La arquitectura objetivo multiactivo y multi-venue está en [`docs/MARKET_EXPANSION_ARCHITECTURE.md`](docs/MARKET_EXPANSION_ARCHITECTURE.md). Comprueba siempre el estado vivo de `main` y las PR antes de continuar.
 
 ## Estado real de implementación
 
