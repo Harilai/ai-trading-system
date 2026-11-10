@@ -6,7 +6,7 @@ Keep the existing verified local SQLite snapshots, then replicate each successfu
 
 ## Storage model
 
-- Local snapshots remain in `BACKUP_DIRECTORY` with the existing local retention policy.
+- Local snapshots remain in `BACKUP_DIRECTORY` with the existing local retention policy. When off-host storage is enabled, retention does not delete a local snapshot until its remote copy has passed read-back verification; a prolonged outage can therefore consume local disk and must be monitored.
 - Remote objects use immutable keys containing source database name, UTC timestamp and SHA-256 prefix.
 - Supported destinations: AWS S3 and S3-compatible services such as Cloudflare R2, Backblaze B2 or self-hosted MinIO, subject to endpoint and encryption capabilities.
 - The application never creates buckets, changes bucket policies, deletes remote backups or configures lifecycle rules. Operators configure private bucket access, versioning and lifecycle retention in the storage provider.
