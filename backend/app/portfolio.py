@@ -638,6 +638,7 @@ class PaperPortfolio:
                 ("price", fill_price),
                 ("fee", fee),
                 ("total", total),
+                ("total_eur", total * float(request.get("fx_rate_to_eur", 1.0))),
                 ("fx_rate_to_eur", float(request.get("fx_rate_to_eur", 1.0))),
             )
             return all(
