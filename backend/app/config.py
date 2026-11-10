@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     binance_readonly_api_key: SecretStr = Field(default=SecretStr(""), repr=False)
     binance_readonly_api_secret: SecretStr = Field(default=SecretStr(""), repr=False)
     ccxt_readonly_exchange_id: str = "kraken"
-    ccxt_readonly_account_alias: str = "kraken-spot-readonly"
+    ccxt_readonly_account_alias: str = ""
     ccxt_readonly_api_key: SecretStr = Field(default=SecretStr(""), repr=False)
     ccxt_readonly_api_secret: SecretStr = Field(default=SecretStr(""), repr=False)
     binance_spot_demo_enabled: bool = False
