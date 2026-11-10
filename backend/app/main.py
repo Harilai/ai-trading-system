@@ -128,7 +128,7 @@ def markets():
             }
             for item in instruments
         ],
-        "provider_failures": failures,
+        "provider_failures": catalogue_sync["failures"],
         "catalogue_sync": catalogue_sync,
     }
 
