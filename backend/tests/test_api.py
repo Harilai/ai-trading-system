@@ -780,3 +780,37 @@ def test_order_intent_history_api_requires_owner_token_and_returns_audit_events(
     assert payload["item"]["status"] == "filled"
     assert payload["item"]["trade_id"] == fill["id"]
     assert [event["to_status"] for event in payload["events"]] == ["risk_approved", "filled"]
+
+
+def test_manual_crypto_order_replay_returns_original_fill_without_new_quote(monkeypatch, tmp_path):
+    from datetime import datetime, timezone
+
+    headers = configure_order_auth(monkeypatch)
+    paper = PaperPortfolio(str(tmp_path / "crypto-order-replay.db"), initial_cash=100)
+    monkeypatch.setattr("app.main.portfolio", paper)
+    timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
+    calls = []
+
+    def ticker(symbol, provider_id=None):
+        calls.append(symbol)
+        last = 10000 if len(calls) == 1 else 11000
+        return {
+            "symbol": symbol, "last": last, "bid": last - 1, "ask": last + 1,
+            "timestamp": timestamp, "provider_id": provider_id,
+        }
+
+    monkeypatch.setattr("app.main.market.ticker", ticker)
+    payload = {
+        "symbol": "BTC/EUR", "provider_id": "ccxt:kraken",
+        "side": "buy", "quantity": 0.001, "stop_loss": 9800,
+        "client_order_id": "crypto-manual-replay",
+    }
+    first = client.post("/api/orders", json=payload, headers=headers)
+    replay = client.post("/api/orders", json=payload, headers=headers)
+
+    assert first.status_code == 201, first.text
+    assert replay.status_code == 201, replay.text
+    assert replay.json()["id"] == first.json()["id"]
+    assert replay.json()["idempotent_replay"] is True
+    assert len(calls) == 1
+    assert len(paper.history()) == 1
