@@ -241,7 +241,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
 
     @staticmethod
     def _decimal(value: Any, field: str) -> Decimal:
-        if not isinstance(value, str) or not re.fullmatch(r"\\d+(?:\\.\\d+)?", value):
+        if not isinstance(value, str) or not re.fullmatch(r"\d+(?:\.\d+)?", value):
             raise BinanceDemoError(f"Demo order {field} must be a plain decimal string")
         try:
             result = Decimal(value)
