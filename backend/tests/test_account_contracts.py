@@ -240,19 +240,26 @@ def test_registry_supports_position_only_readonly_accounts_and_combined_snapshot
             }
 
         def fetch_positions(self):
-            return [{
-                "instrument_id": "broker:equity:AAPL",
-                "symbol": "AAPL",
-                "asset_class": "equity",
+            return {
+                "provider_id": "test:equity-broker",
+                "account_alias": "cash-equities",
                 "market_type": "cash_equity",
-                "quantity": "2.000",
-                "side": "long",
-                "quote_currency": "USD",
-                "average_entry_price": "180",
-                "mark_price": "185",
-                "market_value": "370",
-                "unrealized_pnl": "-10.50",
-            }]
+                "environment": "production",
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "positions": [{
+                    "instrument_id": "broker:equity:AAPL",
+                    "symbol": "AAPL",
+                    "asset_class": "equity",
+                    "market_type": "cash_equity",
+                    "quantity": "2.000",
+                    "side": "long",
+                    "quote_currency": "USD",
+                    "average_entry_price": "180",
+                    "mark_price": "185",
+                    "market_value": "370",
+                    "unrealized_pnl": "-10.50",
+                }],
+            }
 
     registry = AccountProviderRegistry()
     registry.register(FakePositionProvider())
@@ -326,7 +333,14 @@ def test_registry_rejects_duplicate_or_wrong_market_positions():
             }
 
         def fetch_positions(self):
-            return self.positions
+            return {
+                "provider_id": "test:positions",
+                "account_alias": "one",
+                "market_type": "cash_equity",
+                "environment": "production",
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "positions": self.positions,
+            }
 
     base = {
         "instrument_id": "broker:AAPL", "symbol": "AAPL", "asset_class": "equity",
