@@ -1553,5 +1553,5 @@ def test_binance_demo_fill_reconciliation_rejects_incomplete_fee_evidence(monkey
         "/api/demo/binance/spot/orders/api-fill-missing-fee/fills/reconcile",
         headers=headers,
     )
-    assert response.status_code == 422
+    assert response.status_code == 409
     assert store.list_fills("api-fill-missing-fee") == []
