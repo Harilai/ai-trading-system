@@ -282,3 +282,92 @@ def test_retention_keeps_expired_local_snapshot_until_offhost_verification(tmp_p
         external_store=WorkingStore(), external_enabled=True,
     )
     assert not expired.exists()
+
+
+def test_backup_scheduler_retries_failed_cycles_before_next_daily_interval(monkeypatch, tmp_path):
+    from app import backup_scheduler
+    from app.config import settings
+
+    trading = tmp_path / "trading.db"
+    create_database(trading, "portfolio")
+    monkeypatch.setattr(settings, "database_path", str(trading))
+    monkeypatch.setattr(settings, "twelve_data_state_path", str(tmp_path / "missing.sqlite3"))
+    monkeypatch.setattr(settings, "backup_directory", str(tmp_path / "backups"))
+    monkeypatch.setattr(settings, "backup_interval_seconds", 86400)
+    monkeypatch.setattr(settings, "backup_retry_interval_seconds", 300)
+    monkeypatch.setattr(settings, "backup_retention_days", 14)
+    monkeypatch.setattr(settings, "backup_external_enabled", False)
+
+    def failed_cycle(*args, **kwargs):
+        backup_scheduler._write_status(
+            tmp_path / "backups" / "backup_status.json",
+            {
+                "last_cycle_at": datetime.now(timezone.utc).isoformat(),
+                "local": {"status": "failed", "created": [], "failures": [{"error": "disk full"}]},
+                "external": {"enabled": False, "status": "disabled"},
+            },
+        )
+        return []
+
+    monkeypatch.setattr(backup_scheduler, "run_backup_cycle", failed_cycle)
+    delays = []
+
+    class StopScheduler(Exception):
+        pass
+
+    def stop_after_sleep(delay):
+        delays.append(delay)
+        raise StopScheduler
+
+    monkeypatch.setattr(backup_scheduler.time, "sleep", stop_after_sleep)
+    with pytest.raises(StopScheduler):
+        backup_scheduler.run_forever()
+
+    assert delays == [300]
+
+
+def test_backup_scheduler_retries_failed_offhost_replication(monkeypatch, tmp_path):
+    from app import backup_scheduler
+    from app.config import settings
+
+    trading = tmp_path / "trading.db"
+    create_database(trading, "portfolio")
+    monkeypatch.setattr(settings, "database_path", str(trading))
+    monkeypatch.setattr(settings, "twelve_data_state_path", str(tmp_path / "missing.sqlite3"))
+    monkeypatch.setattr(settings, "backup_directory", str(tmp_path / "backups"))
+    monkeypatch.setattr(settings, "backup_interval_seconds", 86400)
+    monkeypatch.setattr(settings, "backup_retry_interval_seconds", 180)
+    monkeypatch.setattr(settings, "backup_retention_days", 14)
+    monkeypatch.setattr(settings, "backup_external_enabled", True)
+    monkeypatch.setattr(
+        backup_scheduler.S3BackupStore,
+        "from_settings",
+        classmethod(lambda cls, config: object()),
+    )
+
+    def failed_external_cycle(*args, **kwargs):
+        backup_scheduler._write_status(
+            tmp_path / "backups" / "backup_status.json",
+            {
+                "last_cycle_at": datetime.now(timezone.utc).isoformat(),
+                "local": {"status": "created", "created": ["trading.sqlite3"], "failures": []},
+                "external": {"enabled": True, "status": "failed", "failures": [{"error": "offline"}]},
+            },
+        )
+        return []
+
+    monkeypatch.setattr(backup_scheduler, "run_backup_cycle", failed_external_cycle)
+    delays = []
+
+    class StopScheduler(Exception):
+        pass
+
+    def stop_after_sleep(delay):
+        delays.append(delay)
+        raise StopScheduler
+
+    monkeypatch.setattr(backup_scheduler.time, "sleep", stop_after_sleep)
+    with pytest.raises(StopScheduler):
+        backup_scheduler.run_forever()
+
+    assert delays == [180]
