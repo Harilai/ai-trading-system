@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 import re
 from threading import RLock
 from typing import Any, Protocol, runtime_checkable
@@ -81,7 +81,7 @@ class AccountCapabilities:
             "positions": description.get("positions", False),
             "order_management": description.get("order_management", False),
             "order_submission": description.get("order_submission", False),
-            "order_cancellation": description.get("order_cancellation", description.get("order_management", False)),
+            "order_cancellation": description.get("order_cancellation", False),
             "reconciliation": description.get("reconciliation", False),
             "read_only": description.get("read_only_connector", False),
             "transfers": description.get("transfers", False),
@@ -141,7 +141,9 @@ class AccountBalance:
         if free is None and used is None and total is None:
             raise AccountProviderError(f"Account balance for {asset} has no amount fields")
         if total is None and free is not None and used is not None:
-            total = format(Decimal(free) + Decimal(used), "f")
+            with localcontext() as context:
+                context.prec = 160
+                total = format(Decimal(free) + Decimal(used), "f")
         return cls(asset=asset.strip().upper(), free=free, used=used, total=total)
 
 
@@ -156,6 +158,8 @@ class AccountBalanceSnapshot:
     execution_enabled: bool
     withdrawals_enabled: bool
     transfers_enabled: bool
+    wallet_signing_enabled: bool
+    permissions_verified: bool
     balances: tuple[AccountBalance, ...]
 
     def to_dict(self) -> dict:
@@ -169,6 +173,8 @@ class AccountBalanceSnapshot:
             "execution_enabled": self.execution_enabled,
             "withdrawals_enabled": self.withdrawals_enabled,
             "transfers_enabled": self.transfers_enabled,
+            "wallet_signing_enabled": self.wallet_signing_enabled,
+            "permissions_verified": self.permissions_verified,
             "balances": [asdict(item) for item in self.balances],
             "balance_count": len(self.balances),
         }
@@ -344,6 +350,8 @@ class AccountProviderRegistry:
             execution_enabled=flags["execution_enabled"],
             withdrawals_enabled=flags["withdrawals_enabled"],
             transfers_enabled=capabilities.transfers,
+            wallet_signing_enabled=capabilities.wallet_signing,
+            permissions_verified=capabilities.permissions_verified,
             balances=tuple(sorted(balances, key=lambda item: item.asset)),
         ).to_dict()
         for optional in ("demo_only",):
