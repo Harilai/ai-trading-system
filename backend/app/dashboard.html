@@ -274,6 +274,14 @@
       function renderConnectors(data,ready){
         const node=$("connector-list");node.replaceChildren();const caps=data.capabilities||[];$("connector-count").textContent=caps.length+" capacidades";
         node.appendChild(dataItem("API",ready.status||"unknown","paper · live off",ready.status==="ready"?"state-good":"state-warn"));
+        node.appendChild(dataItem(
+          "Modo de estrategias",
+          ready.experimental_paper_enabled ? "EXPERIMENTAL PAPER" : "Solo estrategias validadas",
+          ready.experimental_paper_enabled
+            ? "Capital ficticio · señales no promocionadas"
+            : "Sin bypass de promoción",
+          ready.experimental_paper_enabled ? "state-warn" : "state-good"
+        ));
         if(!caps.length){node.appendChild(dataItem("Proveedores","No hay capacidades declaradas","—","state-warn"));return;}
         for(const cap of caps){const status=cap.connectivity_status||"not_checked";const auth=cap.authenticated_account?"Cuenta autenticada":"Sin cuenta autenticada";const features=(cap.asset_classes||[]).join(", ")+" · "+(cap.market_types||[]).join(", ")+" · "+(cap.order_management?"gestión de órdenes declarada":"sin gestión de órdenes");node.appendChild(dataItem(cap.provider_id,features,auth+" · estado: "+status,status==="connected"?"state-good":"state-warn"));}
       }
