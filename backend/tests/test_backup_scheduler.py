@@ -230,3 +230,53 @@ def test_backup_cycle_does_not_reupload_unchanged_verified_snapshots(tmp_path):
         external_store=external, external_enabled=True,
     )
     assert external.upload_calls == 1
+
+
+def test_retention_keeps_expired_local_snapshot_until_offhost_verification(tmp_path):
+    from app.backup import BackupError
+    from hashlib import sha256
+
+    class FailingStore:
+        def list_backups(self):
+            return []
+
+        def upload(self, path, *, created_at):
+            raise BackupError("offsite unavailable")
+
+    class WorkingStore:
+        def __init__(self):
+            self.keys = set()
+
+        def list_backups(self):
+            return [{"key": key} for key in self.keys]
+
+        def upload(self, path, *, created_at):
+            digest = sha256(path.read_bytes()).hexdigest()
+            key = f"retention/{path.name}-{digest[:12]}.sqlite3"
+            self.keys.add(key)
+            return {
+                "key": key, "sha256": digest, "size_bytes": path.stat().st_size,
+                "server_side_encryption": "AES256", "verified": True,
+            }
+
+    source = tmp_path / "trading.db"
+    destination = tmp_path / "backups"
+    create_database(source, "current")
+    destination.mkdir()
+    expired = destination / "trading-older.sqlite3"
+    create_database(expired, "old")
+    old_time = (datetime.now(timezone.utc) - timedelta(days=30)).timestamp()
+    os.utime(expired, (old_time, old_time))
+
+    run_backup_cycle(
+        [source], destination, retention_days=14,
+        external_store=FailingStore(), external_enabled=True,
+    )
+    assert expired.exists()
+
+    run_backup_cycle(
+        [], destination, retention_days=14,
+        now=datetime.now(timezone.utc),
+        external_store=WorkingStore(), external_enabled=True,
+    )
+    assert not expired.exists()
