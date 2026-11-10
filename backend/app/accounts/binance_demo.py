@@ -584,6 +584,86 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             expected_side=expected_side,
         )
 
+    def fetch_order_fills(
+        self,
+        *,
+        symbol: str,
+        exchange_order_id: str,
+        since: int | None = None,
+        limit: int = 1000,
+    ) -> dict:
+        if not isinstance(limit, int) or not 1 <= limit <= 1000:
+            raise BinanceDemoError("Demo trade history limit must be between 1 and 1000")
+        if not isinstance(exchange_order_id, str) or not exchange_order_id.strip():
+            raise BinanceDemoError("Demo exchange order ID is required for trade history")
+        try:
+            response = self._exchange.fetch_my_trades(
+                symbol,
+                since,
+                limit,
+                {"orderId": exchange_order_id},
+            )
+        except Exception as exc:
+            raise BinanceDemoError(
+                f"Binance Demo trade history request failed ({type(exc).__name__})"
+            ) from None
+        if not isinstance(response, list):
+            raise BinanceDemoError("Binance Demo returned an invalid trade history response")
+
+        fills = []
+        for trade in response:
+            if not isinstance(trade, dict):
+                raise BinanceDemoError("Binance Demo returned a malformed trade record")
+            trade_order_id = trade.get("order")
+            if trade_order_id is None or str(trade_order_id) != exchange_order_id:
+                raise BinanceDemoError("Binance Demo trade history contains an unexpected order ID")
+            if str(trade.get("symbol") or "").upper() != symbol.upper():
+                raise BinanceDemoError("Binance Demo trade history contains an unexpected symbol")
+            trade_side = str(trade.get("side") or "").lower()
+            if trade_side not in ("buy", "sell"):
+                raise BinanceDemoError("Binance Demo trade history contains an invalid side")
+            trade_id = trade.get("id")
+            if trade_id is None or not str(trade_id).strip():
+                raise BinanceDemoError("Binance Demo trade history is missing a trade ID")
+            amount = self._nonnegative_decimal_text(trade.get("amount"), "trade amount")
+            price = self._nonnegative_decimal_text(trade.get("price"), "trade price")
+            cost = self._nonnegative_decimal_text(trade.get("cost"), "trade cost")
+            if amount in (None, "0") or price in (None, "0") or cost in (None, "0"):
+                raise BinanceDemoError("Binance Demo trade history contains zero or missing execution values")
+            timestamp = trade.get("timestamp")
+            if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp <= 0:
+                raise BinanceDemoError("Binance Demo trade history timestamp is invalid")
+            fee = trade.get("fee")
+            fee_cost = None
+            fee_currency = None
+            if fee is not None:
+                if not isinstance(fee, dict):
+                    raise BinanceDemoError("Binance Demo trade fee response is malformed")
+                raw_fee_cost = fee.get("cost")
+                if raw_fee_cost is not None:
+                    fee_cost = self._nonnegative_decimal_text(raw_fee_cost, "trade fee")
+                    fee_currency = fee.get("currency")
+                    if not isinstance(fee_currency, str) or not fee_currency.strip():
+                        raise BinanceDemoError("Binance Demo trade fee currency is missing")
+            fills.append({
+                "trade_id": str(trade_id),
+                "exchange_order_id": exchange_order_id,
+                "symbol": symbol,
+                "side": trade_side,
+                "amount": amount,
+                "price": price,
+                "cost": cost,
+                "fee_cost": fee_cost,
+                "fee_currency": fee_currency.upper() if fee_currency else None,
+                "timestamp_ms": timestamp,
+            })
+        return {
+            "fills": fills,
+            "complete": len(response) < limit,
+            "returned_count": len(response),
+            "limit": limit,
+        }
+
     def cancel_limit_order(
         self,
         *,
