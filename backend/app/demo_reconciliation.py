@@ -139,11 +139,18 @@ class BinanceDemoReconciler:
                 try:
                     outcomes.append(self._reconcile_one(order))
                 except (BinanceDemoError, DemoOrderStoreError) as exc:
+                    awaitable_error = type(exc).__name__
+                    self.store.record_reconciliation_failure(
+                        order["client_order_id"], awaitable_error,
+                    )
                     failures.append({
                         "client_order_id": order["client_order_id"],
-                        "error": f"{type(exc).__name__}: {str(exc)[:300]}",
+                        "error": f"{awaitable_error}: {str(exc)[:300]}",
                     })
                 except Exception as exc:
+                    self.store.record_reconciliation_failure(
+                        order["client_order_id"], type(exc).__name__,
+                    )
                     failures.append({
                         "client_order_id": order["client_order_id"],
                         "error": f"Unexpected reconciliation failure ({type(exc).__name__})",
