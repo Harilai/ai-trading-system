@@ -5,16 +5,16 @@
 > **Último commit integrado en `main`:** `35b894800ebf24324aebb2f09c363bdda8d1fca8` — documentación de la demo local paper.
 > **Estado de ejecución:** paper trading únicamente; Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
-## Fase en curso — contratos normalizados de órdenes y ejecuciones
+## Fase en curso — ledger común de órdenes y ejecuciones (PR #79 draft)
 
-- PR #78 (`feat/normalized-account-orders`) añade `AccountOrder` y `AccountOrderFill`, normalización decimal estricta, identidad por proveedor/cuenta/entorno/mercado, validación de cantidades parciales, fees y timestamps; completa los tipos del protocolo de reconciliación.
-- PR #78 solo establece contratos y validación: no incorpora adaptador, envío de órdenes ni worker genérico. Binance Demo conserva su conciliador aislado.
-- Suite completa: **486 passed, 1 warning** (deprecación Starlette/AnyIO), dentro de Docker desechable con `--network none`; los tests específicos nuevos: **20 passed**.
-- GitHub Actions run `42858147348` pasó los jobs `Python tests` y `Docker build and runtime hardening` sobre el head de implementación `e46ad4d059f7561d508e859208739be31d6e2a07`. PR #78 está listo para revisión; revisar CI del head vigente tras el ajuste documental.
-- Revisión independiente pendiente según `docs/AGENT_WORKFLOW.md`; no mergear hasta completarla y confirmar CI verde en el head exacto.
-- PR #77 sigue abierto con cierres paper para equities; su suite completa pasó con 466 tests y la demo local respondió healthy. PR #74 mantiene el ledger multi-mercado de posiciones; su head tenía CI verde y la revisión independiente sigue pendiente.
-- La demo paper continúa en localhost; su contenedor no se reinició para esta fase.
-- Sin credenciales ni claves consultadas, sin fondos reales, operaciones live o despliegue.
+- PR #78 (`feat/normalized-account-orders`) está abierto y contiene los contratos `AccountOrder` / `AccountOrderFill`; no añade adaptadores ni worker genérico.
+- PR #79 (`feat/provider-order-ledger`) está apilado sobre el head de PR #78 `8f91087100d7ef438c1fe6eed6b9e68b732f9634`. Añade un ledger SQLite con historial append-only de observaciones y fills, deduplicación por trade ID y ámbito de cuenta/entorno/mercado, validación de transiciones y cobertura exacta de fills.
+- El ledger no envía, cancela ni reintenta órdenes y no se conecta a proveedores. Binance Demo conserva su conciliador separado; producción continúa deshabilitada.
+- Tests dirigidos: **27 passed**. Suite completa en Docker aislado con `--network none`: **493 passed, 1 warning** (deprecación Starlette/AnyIO).
+- PR #79 ejecutó correctamente `Python tests` y `Docker build and runtime hardening` en el head `68986d10aaa13f32be1a950969d33222dbeedd84` (run 42861461390). Revisión independiente pendiente; no integrar hasta completarla según `docs/AGENT_WORKFLOW.md`.
+- PR #74 y PR #77 siguen abiertos pendientes de revisión independiente; verificar sus checks sobre los heads vigentes.
+- La demo local paper sigue activa en localhost y no se reinició.
+- No se consultaron secretos ni se conectaron fondos, cuentas de producción o servicios de ejecución real.
 
 ## Fase completada — Demo local paper (PR #75)
 
@@ -27,7 +27,7 @@
 
 ## Siguiente acción
 
-Completar CI sobre el head documental vigente y obtener revisión independiente para los PR #74, #77 y #78 antes de integrar. Después de #78, continuar la conciliación multi-proveedor con un ledger idempotente de fills y estados por proveedor/cuenta/instrumento, conservando Binance Demo aislado y manteniendo producción deshabilitada.
+Obtener CI verde y revisión independiente para PR #78 y PR #79 sobre sus heads exactos; después, diseñar un adaptador read-only de reconciliación para consumir el ledger, sin alterar Binance Demo ni habilitar producción.
 
 ## 1. Cómo retomar en una conversación nueva
 
