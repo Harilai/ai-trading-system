@@ -278,8 +278,8 @@ class AccountSnapshotStore:
         venue_type = snapshot.get("venue_type", "unknown")
         if not isinstance(environment, str) or not environment.strip() or len(environment) > 32:
             raise AccountSnapshotError("Account snapshot environment is invalid")
-        if not isinstance(venue_type, str) or not venue_type.strip() or len(venue_type) > 32:
-            raise AccountSnapshotError("Account snapshot venue_type is invalid")
+        if venue_type not in {"cex", "broker", "dex", "wallet", "market_data", "unknown"}:
+            raise AccountSnapshotError("Account snapshot venue_type is unsupported")
 
         fetched_at = cls._parse_time(snapshot.get("fetched_at"), "fetched_at")
         now = datetime.now(timezone.utc)
@@ -568,7 +568,16 @@ class AccountSnapshotStore:
                 f"ORDER BY fetched_at DESC,recorded_at DESC,snapshot_id DESC LIMIT ?",
                 params,
             ).fetchall()
-        return [dict(row) for row in rows]
+        results = []
+        for row in rows:
+            item = dict(row)
+            for field in (
+                "read_only", "execution_enabled", "withdrawals_enabled", "transfers_enabled",
+                "wallet_signing_enabled", "permissions_verified",
+            ):
+                item[field] = bool(item[field])
+            results.append(item)
+        return results
 
     def get_snapshot(self, snapshot_id: str) -> dict | None:
         if not isinstance(snapshot_id, str) or not snapshot_id.strip():
