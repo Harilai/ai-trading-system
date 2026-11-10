@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import ccxt
 
-from .base import AssetClass, MarketInstrument, MarketType, ProviderCapabilities, VenueType
+from .base import AssetClass, MarketInstrument, MarketType, PrecisionMode, ProviderCapabilities, VenueType
 from ..market_data import MarketDataError, _normalize_discovered_spot_ticker
 
 
@@ -50,6 +50,60 @@ class CcxtSpotProvider:
             ),
         )
 
+    @staticmethod
+    def _optional_float(value):
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return parsed if parsed == parsed and abs(parsed) != float("inf") else None
+
+    @staticmethod
+    def _optional_precision(value):
+        if isinstance(value, bool):
+            return None
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if not parsed.is_integer() or parsed < 0:
+            return None
+        return int(parsed)
+
+    def _precision_fields(self, market: dict) -> dict:
+        raw = market.get("precision") or {}
+        mode_value = getattr(self.exchange, "precisionMode", None)
+        if mode_value == getattr(ccxt, "TICK_SIZE", object()):
+            mode = PrecisionMode.TICK_SIZE
+        elif mode_value == getattr(ccxt, "DECIMAL_PLACES", object()):
+            mode = PrecisionMode.DECIMAL_PLACES
+        elif mode_value == getattr(ccxt, "SIGNIFICANT_DIGITS", object()):
+            mode = PrecisionMode.SIGNIFICANT_DIGITS
+        else:
+            mode = PrecisionMode.UNKNOWN
+
+        fields = {"precision_mode": mode}
+        if mode == PrecisionMode.TICK_SIZE:
+            fields["price_tick"] = self._optional_float(raw.get("price"))
+            fields["amount_step"] = self._optional_float(raw.get("amount"))
+        elif mode in {PrecisionMode.DECIMAL_PLACES, PrecisionMode.SIGNIFICANT_DIGITS}:
+            fields["price_precision"] = self._optional_precision(raw.get("price"))
+            fields["amount_precision"] = self._optional_precision(raw.get("amount"))
+        return fields
+
+    @staticmethod
+    def _expiry_iso(market: dict) -> str | None:
+        value = market.get("expiryDatetime")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        value = market.get("expiry")
+        if value is None:
+            return None
+        try:
+            return datetime.fromtimestamp(float(value) / 1000, timezone.utc).isoformat()
+        except (TypeError, ValueError, OverflowError, OSError):
+            return None
+
     def discover_markets(self, asset_classes=None) -> list[MarketInstrument]:
         if asset_classes and AssetClass.CRYPTO not in asset_classes:
             return []
@@ -68,13 +122,32 @@ class CcxtSpotProvider:
                     base=str(market.get("base", "")),
                     quote=str(market.get("quote", "")),
                     active=market.get("active") is not False,
-                    min_amount=(market.get("limits", {}).get("amount", {}).get("min")),
-                    min_cost=(market.get("limits", {}).get("cost", {}).get("min")),
-                    maker_fee=market.get("maker"),
-                    taker_fee=market.get("taker"),
+                    min_amount=self._optional_float(market.get("limits", {}).get("amount", {}).get("min")),
+                    max_amount=self._optional_float(market.get("limits", {}).get("amount", {}).get("max")),
+                    min_cost=self._optional_float(market.get("limits", {}).get("cost", {}).get("min")),
+                    max_cost=self._optional_float(market.get("limits", {}).get("cost", {}).get("max")),
+                    maker_fee=self._optional_float(market.get("maker")),
+                    taker_fee=self._optional_float(market.get("taker")),
+                    venue_id=self.exchange_id,
+                    native_symbol=symbol,
+                    **self._precision_fields(market),
+                    contract_type=(
+                        "option" if market.get("option") else
+                        "perpetual" if market.get("swap") else
+                        "future" if market.get("future") else
+                        "spot"
+                    ),
+                    contract_size=self._optional_float(market.get("contractSize")),
+                    settlement_currency=market.get("settle"),
+                    expiry=self._expiry_iso(market),
+                    strike=self._optional_float(market.get("strike")),
+                    option_type=market.get("optionType"),
+                    underlying=market.get("underlying"),
+                    trading_status="active" if market.get("active") is not False else "inactive",
                     metadata={
                         "id": market.get("id"),
                         "precision": market.get("precision", {}),
+                        "precision_mode": str(getattr(self.exchange, "precisionMode", "unknown")),
                         "contract": bool(market.get("contract", False)),
                     },
                 )
