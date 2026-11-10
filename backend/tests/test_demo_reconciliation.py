@@ -166,3 +166,39 @@ def test_periodic_reconciler_retries_provider_errors_with_persistent_backoff(tmp
         ).fetchone()
     assert row["attempts"] == 1
     assert row["next_due_at"]
+
+
+def test_periodic_reconciler_quarantines_unexpected_state_after_partial_fill(tmp_path):
+    store = BinanceDemoOrderStore(str(tmp_path / "periodic-unexpected-state.db"))
+    store.prepare_intent({
+        "client_order_id": "periodic-unexpected-1",
+        "symbol": "BTC/USDT", "side": "buy",
+        "amount": "0.001", "price": "20000", "quote_asset": "USDT",
+    })
+    store.transition("periodic-unexpected-1", "submission_unknown")
+    store.transition(
+        "periodic-unexpected-1", "partially_filled",
+        exchange_order_id="exchange-unexpected-1",
+        exchange_status="PARTIALLY_FILLED",
+        filled="0.0004", remaining="0.0006", average="20000",
+    )
+
+    class UnexpectedAccount:
+        def fetch_order_by_client_id(self, **kwargs):
+            return {
+                "status": "rejected",
+                "exchange_order_id": "exchange-unexpected-1",
+                "exchange_status": "REJECTED",
+                "filled": "0.0004",
+                "remaining": "0.0006",
+                "average": "20000",
+                "error": None,
+            }
+
+    reconciler = BinanceDemoOrderReconciler(
+        store, UnexpectedAccount(), interval_seconds=15, lease_seconds=30,
+    )
+    result = reconciler.run_once()
+
+    assert result["results"][0]["status"] == "reconciliation_required"
+    assert store.get_order("periodic-unexpected-1")["status"] == "reconciliation_required"
