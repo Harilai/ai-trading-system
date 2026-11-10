@@ -603,7 +603,7 @@ def test_order_intent_reconciles_trade_ledger_and_detects_missing_fill(portfolio
             ("reconcile-filled",),
         )
     result = portfolio.reconcile_order_intents()
-    assert result == {"reconciled_filled": 1, "reconciliation_required": 0}
+    assert result == {"reconciled_filled": 1, "reconciliation_required": 0, "expired": 0}
     assert portfolio.get_order_intent("reconcile-filled")["status"] == "filled"
 
     missing = {**request, "client_order_id": "missing-ledger-fill"}
