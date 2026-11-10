@@ -36,7 +36,7 @@ Balances and market discovery are owner-authenticated. The Demo adapter can now 
 
 Every endpoint requires `X-Agent-Token`. Orders require a unique client ID, exact decimal-string amount and price, an active Spot market, valid exchange precision/limits and an allowed quote asset (USDT, USDC, FDUSD, TUSD or EUR). The default per-order quote notional cap is 25 units; configuration is bounded to a maximum of 1000. Only one unresolved order is allowed at a time.
 
-The lifecycle persists `intent_created` then `submission_unknown` before the network call. A timeout is never interpreted as a failed order: the API returns HTTP 202 and requires explicit reconciliation. Replays never resubmit an existing client order ID. Partial fills, fills, cancellation and rejected/unknown states are persisted with append-only audit events.
+The lifecycle persists `intent_created` then `submission_unknown` before the network call. A timeout is never interpreted as a failed order: the API returns HTTP 202 and requires explicit reconciliation. Replays never resubmit an existing client order ID. Partial fills, fills, cancellation and rejected/unknown states are persisted with append-only audit events. Each exchange snapshot is checked against the immutable client ID, exchange order ID, symbol, side and requested amount. Cumulative filled quantity cannot regress, remaining quantity cannot increase, and filled plus remaining must account for the original amount. Missing or contradictory terminal fill evidence moves the order to `reconciliation_required` while preserving the last known-good quantities and recording the observed response.
 
 ## Safety and remaining work
 
