@@ -3,11 +3,21 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import re
+from functools import wraps
+from threading import RLock
 from typing import Any, Callable
 
 
 class BinanceDemoError(RuntimeError):
     pass
+
+
+def _exchange_serialized(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._exchange_lock:
+            return method(self, *args, **kwargs)
+    return wrapped
 
 
 class BinanceSpotDemoAccount:
@@ -24,6 +34,7 @@ class BinanceSpotDemoAccount:
         enabled: bool,
         exchange_factory: Callable[[dict[str, Any]], Any] | None = None,
     ):
+        self._exchange_lock = RLock()
         if enabled is not True:
             raise BinanceDemoError("Binance Spot Demo Trading connector is disabled")
         if not isinstance(api_key, str) or not api_key.strip():
@@ -136,6 +147,7 @@ class BinanceSpotDemoAccount:
             text = text.rstrip("0").rstrip(".")
         return "0" if text in ("", "-0") else text
 
+    @_exchange_serialized
     def fetch_balances(self) -> dict:
         try:
             response = self._exchange.fetch_balance()
@@ -183,6 +195,7 @@ class BinanceSpotDemoAccount:
             "balance_count": len(balances),
         }
 
+    @_exchange_serialized
     def discover_spot_markets(self, *, limit: int = 100) -> dict:
         if not isinstance(limit, int) or not 1 <= limit <= 500:
             raise BinanceDemoError("Demo market limit must be between 1 and 500")
@@ -286,6 +299,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             raise BinanceDemoError("Binance Demo returned invalid market limits")
         return number
 
+    @_exchange_serialized
     def validate_limit_order(
         self,
         *,
@@ -513,6 +527,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             ),
         }
 
+    @_exchange_serialized
     def submit_limit_order(self, request: dict) -> dict:
         try:
             response = self._exchange.create_order(
@@ -540,6 +555,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             expected_side=request["side"],
         )
 
+    @_exchange_serialized
     def fetch_order_by_client_id(
         self, *, symbol: str, client_order_id: str, expected_amount: str | None = None,
         expected_side: str | None = None,
@@ -564,6 +580,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             expected_side=expected_side,
         )
 
+    @_exchange_serialized
     def fetch_order_by_id(
         self, *, symbol: str, exchange_order_id: str,
         client_order_id: str, expected_amount: str | None = None,
@@ -584,6 +601,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             expected_side=expected_side,
         )
 
+    @_exchange_serialized
     def fetch_order_fills(
         self,
         *,
@@ -663,6 +681,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             "limit": limit,
         }
 
+    @_exchange_serialized
     def cancel_limit_order(
         self,
         *,
