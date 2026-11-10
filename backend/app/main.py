@@ -30,7 +30,7 @@ from .accounts.binance_spot import AccountConnectorError, BinanceSpotReadOnlyAcc
 from .accounts.ccxt_readonly import CcxtReadOnlyAccount, CcxtReadOnlyAccountError
 from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
 from .accounts.contracts import (
-    AccountProviderError, AccountProviderNotFound, AccountProviderRegistry,
+    AccountProviderError, AccountProviderNotFound, AccountProviderRegistry, AmbiguousAccountProvider,
     UnsupportedAccountCapability,
 )
 from .accounts.binance_demo import BinanceDemoError, BinanceSpotDemoExecution
@@ -198,6 +198,8 @@ def account_provider_balances(
         return account_provider_registry.fetch_balances(provider_id, account_alias)
     except AccountProviderNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
+    except AmbiguousAccountProvider as exc:
+        raise HTTPException(409, str(exc)) from exc
     except AccountProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
 
