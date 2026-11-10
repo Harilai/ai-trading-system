@@ -128,6 +128,8 @@ class S3BackupStore:
         timestamp = (created_at or datetime.now(timezone.utc)).astimezone(timezone.utc)
         digest = self._sha256(source)
         size = source.stat().st_size
+        if size > 5 * 1024 * 1024 * 1024:
+            raise BackupError("SQLite backup exceeds the 5 GiB single-request S3 upload limit")
         key = self._key_for(source, timestamp, digest)
         metadata = {
             "sha256": digest,
@@ -205,8 +207,16 @@ class S3BackupStore:
             expected_size = int(head.get("ContentLength", -1))
             metadata = {str(k).lower(): str(v) for k, v in head.get("Metadata", {}).items()}
             expected_digest = metadata.get("sha256")
-            if expected_size < 1 or not expected_digest or len(expected_digest) != 64:
-                raise BackupError("Remote backup is missing size or SHA-256 metadata")
+            if (
+                expected_size < 1
+                or not expected_digest
+                or len(expected_digest) != 64
+                or any(char not in "0123456789abcdef" for char in expected_digest.lower())
+            ):
+                raise BackupError("Remote backup is missing valid size or SHA-256 metadata")
+            if self.server_side_encryption != "provider-managed":
+                if head.get("ServerSideEncryption") != self.server_side_encryption:
+                    raise BackupError("Remote backup encryption verification failed")
             response = self.client.get_object(Bucket=self.bucket, Key=remote_key)
             digest = hashlib.sha256()
             written = 0
@@ -227,7 +237,9 @@ class S3BackupStore:
             if written != expected_size or digest.hexdigest() != expected_digest:
                 raise BackupError("Downloaded backup failed size or SHA-256 verification")
             _integrity_check(temporary)
-            os.replace(temporary, destination)
+            # Hard-link publication is atomic and refuses to overwrite an existing candidate.
+            os.link(temporary, destination)
+            temporary.unlink(missing_ok=True)
             return destination
         except BackupError:
             temporary.unlink(missing_ok=True)
