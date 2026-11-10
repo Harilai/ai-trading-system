@@ -204,16 +204,50 @@ def account_provider_balances(
         raise HTTPException(502, str(exc)) from exc
 
 
+@app.get("/api/accounts/{provider_id}/positions")
+def account_provider_positions(
+    provider_id: str,
+    account_alias: str | None = None,
+    market_type: str | None = None,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        capabilities = account_provider_registry.capabilities(provider_id, account_alias)
+        positions = account_provider_registry.fetch_positions(
+            provider_id, account_alias, market_type=market_type,
+        )
+        selected_market = market_type or (
+            capabilities.market_types[0] if len(capabilities.market_types) == 1 else None
+        )
+        return {
+            "provider_id": capabilities.provider_id,
+            "account_alias": capabilities.account_alias,
+            "market_type": selected_market,
+            "positions": positions,
+            "position_count": len(positions),
+        }
+    except AccountProviderNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except AmbiguousAccountProvider as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except UnsupportedAccountCapability as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except AccountProviderError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
 @app.post("/api/accounts/{provider_id}/snapshots", status_code=201)
 def create_account_provider_snapshot(
     provider_id: str,
     account_alias: str | None = None,
+    market_type: str | None = None,
     x_agent_token: str | None = Header(default=None),
 ):
     require_order_control_token(x_agent_token)
     try:
         return account_provider_registry.record_read_only_snapshot(
-            provider_id, account_snapshot_store, account_alias,
+            provider_id, account_snapshot_store, account_alias, market_type,
         )
     except AccountProviderNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
