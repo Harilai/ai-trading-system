@@ -867,7 +867,7 @@ def test_dashboard_chart_ohlcv_route_accepts_encoded_slash_symbol(monkeypatch):
     assert response.json()["candles"][0]["close"] == 103
 
 
-def test_markets_api_exposes_normalized_instrument_contract_fields(monkeypatch):
+def test_markets_api_exposes_normalized_instrument_contract_fields(monkeypatch, tmp_path):
     from app.providers.base import AssetClass, MarketInstrument, MarketType, PrecisionMode
 
     instrument = MarketInstrument(
@@ -881,6 +881,8 @@ def test_markets_api_exposes_normalized_instrument_contract_fields(monkeypatch):
         min_cost=5, max_cost=10000,
         contract_type="spot", trading_status="active",
     )
+    from app.instrument_catalog import InstrumentCatalog
+    monkeypatch.setattr("app.main.instrument_catalog", InstrumentCatalog(str(tmp_path / "markets.db")))
     monkeypatch.setattr("app.main.market.discover_markets", lambda: ([instrument], []))
 
     response = client.get("/api/markets")
@@ -894,3 +896,65 @@ def test_markets_api_exposes_normalized_instrument_contract_fields(monkeypatch):
     assert item["amount_step"] == pytest.approx(0.0001)
     assert item["maximum_amount"] == pytest.approx(2)
     assert item["trading_status"] == "active"
+    assert response.json()["catalogue_sync"]["inserted_count"] == 1
+    assert item["catalogue_id"].startswith("inst_")
+
+
+def test_instrument_catalogue_api_lists_filters_and_returns_detail(monkeypatch, tmp_path):
+    from app.instrument_catalog import InstrumentCatalog
+    from app.providers.base import AssetClass, MarketInstrument, MarketType
+
+    catalogue = InstrumentCatalog(str(tmp_path / "api-catalogue.db"))
+    item = MarketInstrument(
+        provider_id="twelve_data", symbol="ACME",
+        asset_class=AssetClass.EQUITY, market_type=MarketType.CASH_EQUITY,
+        base="ACME", quote="USD", active=True,
+        venue_id="XNAS", native_symbol="ACME",
+    )
+    catalogue.record_discovery([item])
+    monkeypatch.setattr("app.main.instrument_catalog", catalogue)
+
+    listing = client.get("/api/instruments?asset_class=equity&provider_id=twelve_data")
+    assert listing.status_code == 200
+    assert len(listing.json()["items"]) == 1
+    catalogue_id = listing.json()["items"][0]["catalogue_id"]
+
+    detail = client.get(f"/api/instruments/{catalogue_id}")
+    assert detail.status_code == 200
+    assert detail.json()["venue_id"] == "XNAS"
+    assert detail.json()["instrument_id"] == "twelve_data:cash_equity:ACME"
+
+    missing = client.get("/api/instruments/inst_missing")
+    assert missing.status_code == 404
+
+
+def test_instrument_catalogue_refresh_requires_owner_token(monkeypatch, tmp_path):
+    from app.instrument_catalog import InstrumentCatalog
+
+    monkeypatch.setattr("app.main.instrument_catalog", InstrumentCatalog(str(tmp_path / "refresh.db")))
+    monkeypatch.setattr("app.main.market.discover_markets", lambda: ([], []))
+    monkeypatch.setattr("app.main.settings.agent_control_token", "test-control-token")
+
+    unauthorized = client.post("/api/instruments/refresh")
+    assert unauthorized.status_code == 401
+
+    authorized = client.post(
+        "/api/instruments/refresh",
+        headers={"X-Agent-Token": "test-control-token"},
+    )
+    assert authorized.status_code == 200
+    assert authorized.json()["status"] == "success"
+    assert authorized.json()["discovered_count"] == 0
+
+
+def test_instrument_discovery_runs_endpoint_returns_persisted_failures(monkeypatch, tmp_path):
+    from app.instrument_catalog import InstrumentCatalog
+
+    catalogue = InstrumentCatalog(str(tmp_path / "runs.db"))
+    catalogue.record_discovery([], [{"provider_id": "ccxt:kraken", "reason": "offline"}])
+    monkeypatch.setattr("app.main.instrument_catalog", catalogue)
+
+    response = client.get("/api/instrument-discovery/runs")
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["failures"][0]["reason"] == "offline"
