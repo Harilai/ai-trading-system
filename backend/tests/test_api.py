@@ -1120,7 +1120,10 @@ def test_binance_account_snapshot_api_rejects_invalid_provider_snapshot(monkeypa
                 "provider_id": "ccxt:binance",
                 "account_alias": "binance-spot-readonly",
                 "market_type": "spot",
-                "fetched_at": "2026-11-10T10:00:00+00:00",
+                "read_only": True,
+                "execution_enabled": False,
+                "withdrawals_enabled": False,
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
                 "balances": [{"asset": "BTC", "free": 0.1, "used": "0", "total": "0.1"}],
             }
 
