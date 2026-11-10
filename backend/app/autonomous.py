@@ -523,7 +523,7 @@ class AutonomousAgent:
                     self.store.schedule_decision_cycle(settings.decision_cycle_interval_seconds)
                     if self.equity_research is not None:
                         self.store.schedule_equity_research(settings.equity_research_interval_seconds)
-                    task = self.store.claim_due_task()
+                    task = self.store.claim_due_task(lease_seconds=self.lease_seconds)
                     if task:
                         heartbeat = asyncio.create_task(self._heartbeat_task_lease(task))
                         try:
