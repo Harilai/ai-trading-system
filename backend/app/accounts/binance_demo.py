@@ -589,7 +589,6 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
         *,
         symbol: str,
         exchange_order_id: str,
-        since: int | None = None,
         limit: int = 1000,
     ) -> dict:
         if not isinstance(limit, int) or not 1 <= limit <= 1000:
@@ -599,7 +598,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
         try:
             response = self._exchange.fetch_my_trades(
                 symbol,
-                since,
+                None,
                 limit,
                 {"orderId": exchange_order_id},
             )
