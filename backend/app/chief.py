@@ -212,24 +212,37 @@ class ChiefAgent:
         opportunities = []
         for item in scan.get("analyses", []):
             research = item.get("strategy_research", {})
-            strategy_id = research.get("recommended_strategy")
+            validated_candidates = [
+                candidate for candidate in research.get("candidates", [])
+                if candidate.get("eligible")
+                and candidate.get("current_entry_signal")
+                and isinstance(candidate.get("score"), (int, float))
+            ]
             experimental = False
-            if not strategy_id and self.allow_experimental_strategies:
-                strategy_id = research.get("recommended_experimental_strategy")
-                experimental = bool(strategy_id)
-            candidate = self._candidate_for(
-                item,
-                strategy_id,
-                allow_experimental=experimental,
-            )
-            if candidate is None:
+            if validated_candidates:
+                candidate = max(validated_candidates, key=lambda row: float(row["score"]))
+                strategy_id = candidate["strategy_id"]
+                score = candidate["score"]
+            elif self.allow_experimental_strategies:
+                experimental_candidates = [
+                    candidate for candidate in research.get("candidates", [])
+                    if candidate.get("experimental_eligible")
+                    and candidate.get("current_entry_signal")
+                    and isinstance(candidate.get("experimental_score"), (int, float))
+                ]
+                if not experimental_candidates:
+                    continue
+                candidate = max(
+                    experimental_candidates,
+                    key=lambda row: float(row["experimental_score"]),
+                )
+                strategy_id = candidate["strategy_id"]
+                score = candidate["experimental_score"]
+                experimental = True
+            else:
                 continue
             market = item.get("market", {})
             symbol = str(market.get("symbol", "")).upper()
-            score = (
-                candidate.get("experimental_score")
-                if experimental else candidate.get("score")
-            )
             provider_id = str(market.get("provider_id") or "ccxt:kraken")
             identity = self._instrument_identity(provider_id, market.get("instrument_id"), symbol)
             if (
