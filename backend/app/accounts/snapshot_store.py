@@ -124,6 +124,12 @@ class AccountSnapshotStore:
             raise AccountSnapshotError("Account snapshot account_alias is invalid")
         if market_type != "spot":
             raise AccountSnapshotError("Only explicitly supported spot account snapshots are accepted")
+        if snapshot.get("read_only") is not True:
+            raise AccountSnapshotError("Account snapshot must originate from a read-only connector")
+        if snapshot.get("execution_enabled") is not False:
+            raise AccountSnapshotError("Account snapshot cannot enable execution")
+        if snapshot.get("withdrawals_enabled") is not False:
+            raise AccountSnapshotError("Account snapshot cannot enable withdrawals")
         fetched_at = cls._parse_time(snapshot.get("fetched_at"), "fetched_at")
         now = datetime.now(timezone.utc)
         if (fetched_at - now).total_seconds() > 60:
