@@ -155,3 +155,18 @@ def test_catalogue_filters_by_venue_and_redacts_nested_provider_secrets(tmp_path
     assert metadata["nested"]["mic_code"] == "XNAS"
     assert "never-persist-this" not in str(catalog.list_instruments())
     assert "do-not-store" not in str(catalog.list_instruments())
+
+
+def test_catalogue_rejects_naive_or_reversed_discovery_timestamps(tmp_path):
+    import pytest
+    from app.instrument_catalog import InstrumentCatalogError
+
+    catalog = InstrumentCatalog(str(tmp_path / "timestamp-validation.db"))
+    with pytest.raises(InstrumentCatalogError, match="timezone-aware"):
+        catalog.record_discovery(
+            [], discovered_at=datetime(2026, 11, 10, 10, 0),
+        )
+    start = datetime(2026, 11, 10, 11, 0, tzinfo=timezone.utc)
+    finish = start - timedelta(minutes=1)
+    with pytest.raises(InstrumentCatalogError, match="after completion"):
+        catalog.record_discovery([], started_at=start, discovered_at=finish)
