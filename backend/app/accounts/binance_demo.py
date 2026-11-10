@@ -363,7 +363,14 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             "max_order_quote": self._canonical_decimal(max_quote_value),
         }
 
-    def normalize_order(self, response: Any, *, expected_client_order_id: str) -> dict:
+    def normalize_order(
+        self,
+        response: Any,
+        *,
+        expected_client_order_id: str,
+        expected_amount: str | None = None,
+        expected_exchange_order_id: str | None = None,
+    ) -> dict:
         if not isinstance(response, dict):
             raise BinanceDemoError("Binance Demo returned an invalid order response")
         info = response.get("info") if isinstance(response.get("info"), dict) else {}
@@ -372,46 +379,95 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             or info.get("clientOrderId")
             or info.get("origClientOrderId")
         )
+        exchange_order_id = response.get("id")
         if client_id != expected_client_order_id:
             return {
                 "status": "reconciliation_required",
                 "error": "Exchange order response did not match the immutable client order ID",
             }
-        if response.get("id") is None or not str(response.get("id")).strip():
+        if exchange_order_id is None or not str(exchange_order_id).strip():
             return {
                 "status": "reconciliation_required",
                 "error": "Exchange response did not contain a durable order ID",
             }
+        if (
+            expected_exchange_order_id is not None
+            and str(exchange_order_id) != str(expected_exchange_order_id)
+        ):
+            return {
+                "status": "reconciliation_required",
+                "error": "Exchange order response did not match the persisted exchange order ID",
+            }
+
         raw_status = str(response.get("status") or "").lower()
-        filled = self._nonnegative_decimal_text(response.get("filled") or "0", "filled")
+        raw_filled = response.get("filled")
+        filled = self._nonnegative_decimal_text(
+            "0" if raw_filled is None else raw_filled, "filled",
+        )
         remaining = self._nonnegative_decimal_text(response.get("remaining"), "remaining")
         average_value = self._nonnegative_decimal_text(response.get("average"), "average")
         average = average_value if average_value not in (None, "0") else None
-        if raw_status == "closed":
-            if Decimal(filled or "0") <= 0 or (remaining is not None and Decimal(remaining) > 0):
+        reported_amount = self._nonnegative_decimal_text(response.get("amount"), "order amount")
+        amount_value = (
+            self._decimal(expected_amount, "expected amount")
+            if expected_amount is not None
+            else (Decimal(reported_amount) if reported_amount is not None else None)
+        )
+        filled_value = Decimal(filled or "0")
+        remaining_value = Decimal(remaining) if remaining is not None else None
+        inconsistent = False
+        if expected_amount is not None and reported_amount is not None:
+            inconsistent = Decimal(reported_amount) != amount_value
+        if amount_value is not None:
+            if filled_value > amount_value:
+                inconsistent = True
+            if remaining_value is not None and remaining_value > amount_value:
+                inconsistent = True
+            if remaining_value is not None and filled_value + remaining_value != amount_value:
+                inconsistent = True
+
+        if inconsistent:
+            status = "reconciliation_required"
+        elif raw_status == "closed":
+            if (
+                filled_value <= 0
+                or remaining_value != 0
+                or amount_value is None
+                or filled_value != amount_value
+            ):
                 status = "reconciliation_required"
             else:
                 status = "filled"
-        elif raw_status in ("canceled", "cancelled"):
-            status = "cancelled"
-        elif raw_status == "expired":
-            status = "expired"
-        elif raw_status == "rejected":
-            status = "rejected"
-        elif raw_status == "open":
-            filled_value = Decimal(filled or "0")
-            remaining_decimal = Decimal(remaining) if remaining is not None else None
-            if filled_value > 0 and remaining_decimal == 0:
+        elif raw_status in ("canceled", "cancelled", "expired"):
+            if filled_value > 0 and remaining_value is None:
+                status = "reconciliation_required"
+            elif amount_value is not None and filled_value == amount_value and remaining_value == 0:
+                # The final fill may race with a cancel/expiry response.
                 status = "filled"
+            else:
+                status = "expired" if raw_status == "expired" else "cancelled"
+        elif raw_status == "rejected":
+            status = "reconciliation_required" if filled_value > 0 else "rejected"
+        elif raw_status == "open":
+            if filled_value > 0 and remaining_value is None:
+                status = "reconciliation_required"
+            elif filled_value > 0 and remaining_value == 0:
+                status = (
+                    "filled"
+                    if amount_value is not None and filled_value == amount_value
+                    else "reconciliation_required"
+                )
             elif filled_value > 0:
                 status = "partially_filled"
+            elif remaining_value == 0:
+                status = "reconciliation_required"
             else:
                 status = "open"
         else:
             status = "reconciliation_required"
         return {
             "status": status,
-            "exchange_order_id": str(response.get("id")) if response.get("id") is not None else None,
+            "exchange_order_id": str(exchange_order_id),
             "exchange_status": raw_status or "unknown",
             "filled": filled,
             "remaining": remaining,
@@ -419,7 +475,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             "error": (
                 None
                 if status != "reconciliation_required"
-                else "Exchange order status or fill quantities are inconsistent"
+                else "Exchange order status, identity or fill quantities are inconsistent"
             ),
         }
 
@@ -445,9 +501,12 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
         return self.normalize_order(
             response,
             expected_client_order_id=request["client_order_id"],
+            expected_amount=request["amount"],
         )
 
-    def fetch_order_by_client_id(self, *, symbol: str, client_order_id: str) -> dict | None:
+    def fetch_order_by_client_id(
+        self, *, symbol: str, client_order_id: str, expected_amount: str | None = None,
+    ) -> dict | None:
         try:
             response = self._exchange.fetch_order(
                 None,
@@ -460,16 +519,28 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             raise BinanceDemoError(
                 f"Binance Demo order reconciliation failed ({type(exc).__name__})"
             ) from None
-        return self.normalize_order(response, expected_client_order_id=client_order_id)
+        return self.normalize_order(
+            response,
+            expected_client_order_id=client_order_id,
+            expected_amount=expected_amount,
+        )
 
-    def fetch_order_by_id(self, *, symbol: str, exchange_order_id: str, client_order_id: str) -> dict:
+    def fetch_order_by_id(
+        self, *, symbol: str, exchange_order_id: str,
+        client_order_id: str, expected_amount: str | None = None,
+    ) -> dict:
         try:
             response = self._exchange.fetch_order(exchange_order_id, symbol)
         except Exception as exc:
             raise BinanceDemoError(
                 f"Binance Demo order status request failed ({type(exc).__name__})"
             ) from None
-        return self.normalize_order(response, expected_client_order_id=client_order_id)
+        return self.normalize_order(
+            response,
+            expected_client_order_id=client_order_id,
+            expected_amount=expected_amount,
+            expected_exchange_order_id=exchange_order_id,
+        )
 
     def cancel_limit_order(
         self,
@@ -477,6 +548,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
         symbol: str,
         exchange_order_id: str,
         client_order_id: str,
+        expected_amount: str | None = None,
     ) -> dict:
         try:
             response = self._exchange.cancel_order(exchange_order_id, symbol)
@@ -484,4 +556,9 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             raise BinanceDemoError(
                 f"Binance Demo cancel outcome is unknown ({type(exc).__name__})"
             ) from None
-        return self.normalize_order(response, expected_client_order_id=client_order_id)
+        return self.normalize_order(
+            response,
+            expected_client_order_id=client_order_id,
+            expected_amount=expected_amount,
+            expected_exchange_order_id=exchange_order_id,
+        )
