@@ -33,8 +33,9 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 17. **Completado — contrato y endpoint de posiciones normalizadas (PR #73):** snapshot tipado por proveedor/cuenta/entorno, validación decimal e identidad de instrumento y capability gate. Los adaptadores actuales siguen declarando `positions=false`; endpoint preparado para proveedores que implementen lectura de posiciones.
 18. **En curso — ledger persistente de posiciones multi-venue (PR #74 draft):** snapshots append-only por proveedor/cuenta/instrumento, diferencias sin asumir ausencias como cero, coste/mark/P&L y divisa con procedencia y frescura; rebase contra el `main` actualizado tras PR #75 y completar revisión/CI antes de marcar ready.
 19. **Completado en PR #75 — demo local paper:** Compose aislado con 10.000 EUR virtuales, datos públicos Kraken, clave Twelve Data opcional solo para cotizaciones, sin credenciales de cuenta ni ruta de ejecución. CI: 460 tests Python y validación/build Docker correctos en el SHA `7abd5f527612d0c593e93d8a94852cc29d0a72d8`.
-20. Supervisión paper equity y operación 24/7: stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
-21. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario. Sigue fuera del alcance de esta fase.
+20. **En curso — demo paper experimental aislada:** permitir que el worker pruebe señales no promocionadas solo en el Compose local de 10.000 EUR virtuales, con prefijo `experimental:`, riesgo por operación del 0,25%, orden máxima del 5% del equity y stop máximo del 3%. No equivale a rentabilidad ni habilita ejecución externa.
+21. Supervisión paper equity y operación 24/7: stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
+22. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario. Sigue fuera del alcance de esta fase.
 
 
 ## Estado integrado
@@ -57,7 +58,8 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 
 
 | Contrato normalizado de instrumentos v2 | Implementado y fusionado en PR #52 (`1d6ad47`); 312 tests y Docker hardening correctos; no habilita trading de derivados |
-| Dashboard de supervisión y operaciones paper | Implementado y fusionado en PR #50 (`848d1d3`); 305 tests y Docker hardening correctos |
+| Dashboard de supervisión y operaciones paper | Implementado y fusionado en PR #50 (`848d1d3`); 305 tests y Docker hardening correctos 
+| Demo paper experimental aislada | En desarrollo; solo Compose local, 10.000 EUR virtuales, candidatos no promocionados etiquetados y límites de riesgo más estrictos; nunca se activa en configuraciones normales |
 | Backups externos S3-compatible y restore candidate verificado | Implementado y fusionado en PR #48 (`ed08cec`); off-host desactivado por defecto hasta configurar `.env.backup`; 304 tests y Docker hardening correctos |
 | Ciclo de vida y conciliación de órdenes paper | Implementado y fusionado en PR #44 (`df76011`); 292 tests y Docker hardening correctos |
 | Cartera paper multidivisa EUR/USD, conversiones FX y manual equity/ETF paper | Implementado y fusionado en PR #41 (`23cfcb5`); 270 tests y Docker hardening correctos |
