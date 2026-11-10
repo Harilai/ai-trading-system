@@ -394,6 +394,4 @@ class AccountProviderRegistry:
         )):
             raise UnsupportedAccountCapability("Only explicitly read-only accounts can be snapshotted")
         snapshot = self.fetch_balances(provider_id, account_alias)
-        if snapshot["market_type"] != "spot":
-            raise UnsupportedAccountCapability("Account snapshot store currently supports spot balances only")
         return snapshot_store.record_snapshot(snapshot)
