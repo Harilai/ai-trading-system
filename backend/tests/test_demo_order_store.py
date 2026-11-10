@@ -151,3 +151,54 @@ def test_demo_order_store_lists_orders_with_bounded_limit(tmp_path):
     assert len(store.list_orders(limit=1)) == 1
     with pytest.raises(DemoOrderStoreError, match="limit"):
         store.list_orders(limit=0)
+
+
+def test_demo_order_store_quarantines_fill_regressions_and_preserves_last_good_snapshot(tmp_path):
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-fill-regression.db"))
+    store.prepare_intent(request())
+    store.transition("demo-order-1", "submission_unknown")
+    store.transition(
+        "demo-order-1", "open",
+        exchange_order_id="exchange-1", exchange_status="open",
+        filled="0", remaining="0.001",
+    )
+    store.transition(
+        "demo-order-1", "partially_filled",
+        exchange_status="open", filled="0.0005", remaining="0.0005",
+        average="20000",
+    )
+
+    quarantined = store.transition(
+        "demo-order-1", "partially_filled",
+        exchange_status="open", filled="0.0004", remaining="0.0006",
+        average="20000",
+    )
+
+    assert quarantined["status"] == "reconciliation_required"
+    assert quarantined["filled"] == "0.0005"
+    assert quarantined["remaining"] == "0.0005"
+    assert "regressed" in quarantined["error"]
+    event = store.list_events("demo-order-1")[-1]
+    assert event["to_status"] == "reconciliation_required"
+    assert event["payload"]["observed_filled"] == "0.0004"
+
+
+def test_demo_order_store_quarantines_exchange_order_id_changes(tmp_path):
+    store = BinanceDemoOrderStore(str(tmp_path / "demo-order-id-change.db"))
+    store.prepare_intent(request())
+    store.transition("demo-order-1", "submission_unknown")
+    store.transition(
+        "demo-order-1", "open",
+        exchange_order_id="exchange-1", exchange_status="open",
+        filled="0", remaining="0.001",
+    )
+
+    quarantined = store.transition(
+        "demo-order-1", "open",
+        exchange_order_id="exchange-2", exchange_status="open",
+        filled="0", remaining="0.001",
+    )
+
+    assert quarantined["status"] == "reconciliation_required"
+    assert quarantined["exchange_order_id"] == "exchange-1"
+    assert "ID changed" in quarantined["error"]
