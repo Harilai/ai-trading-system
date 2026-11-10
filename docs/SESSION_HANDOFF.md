@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `0f667db605da2baaf84d47f498fa85fd620c495a` — merge de PR #66, ledger individual de fills y comisiones Binance Spot Demo.  
+> **Último commit observado en `main`:** `8943fdec94104d881d138d8d8d6da0bfd7cd4518` — merge de PR #68, reconciliación periódica Binance Spot Demo con leases y backoff.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -46,6 +46,18 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 ## 4. Fases completadas: cartera multidivisa, conciliación y ejecución Demo
 
 **Completada en PR #41.** La cartera paper mantiene efectivo y posiciones EUR/USD, permite conversiones explícitas y valora acciones/ETF estadounidenses en USD dentro de una cartera cuya divisa base continúa siendo EUR. La investigación sigue siendo read-only para el Chief: las órdenes equity son manuales y paper-only.
+
+### Binance Spot Demo — PR #68: reconciliación periódica
+
+- PR: https://github.com/Harilai/ai-trading-system/pull/68
+- Merge commit: `8943fdec94104d881d138d8d8d6da0bfd7cd4518`.
+- Head validado: `a5d126395efbc7f2441343be258942422832f96b`.
+- CI: 420 pruebas Python correctas; Compose, build Docker y ejecución non-root correctos.
+- Polling de intents interrumpidos, órdenes open/partially-filled y terminales con ledger incompleto.
+- Leases persistentes, fencing de escrituras, eventos append-only, backoff y lotes acotados.
+- Se ejecuta aunque la automatización de estrategias esté pausada o en emergency stop.
+- Consulta por clientOrderId; no crea, reenvía, cancela ni modifica órdenes.
+- Órdenes acknowledged ausentes o estados contradictorios se ponen en cuarentena; fill/fee incompleto bloquea nuevas órdenes Demo.
 
 ### Binance Spot Demo — PR #66: ledger individual de fills y comisiones
 
@@ -250,11 +262,11 @@ Siguiente secuencia:
 6. **Completado — Binance Spot Demo connector y lifecycle de órdenes (PR #61/#63):** limit orders, idempotencia, reconciliación, cancelación y fail-closed. No existe ruta de órdenes a producción.
 7. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** seguir `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md`; configurar las credenciales Demo únicamente en el servidor y verificar respuestas reales, filtros de mercado, precisión, partial fills, cancelación, timeout y reconciliación tras restart. No compartir claves en el chat ni guardarlas en Git. No usar claves de producción. Esta comprobación requiere una cuenta Demo y acceso al servidor del propietario; no se simula como si se hubiera ejecutado.
 8. **Completado — ledger individual de fills/fees (PR #66):** persistencia append-only, IDs de trade, cantidades, precios, costes, comisiones/activos y reconciliación idempotente por order ID. Nuevas órdenes Demo se bloquean mientras falte cobertura de fills o comisiones.
-9. **Siguiente — reconciliación periódica de órdenes Demo abiertas/unknown:** worker con leases, rate limits, backoff y recuperación tras restart; debe refrescar estados y fills sin reenvío ciego.
-10. Generalizar contratos de ejecución, balances, posiciones, permisos y account/portfolio reconciliation para otros CEX/brokers y clases de activo.
+9. **Completado — reconciliación periódica Binance Demo (PR #68):** worker con leases SQLite y fencing, backoff, polling por clientOrderId y conciliación de fills; corre aunque la estrategia esté pausada y nunca reenvía órdenes.
+10. **Siguiente — generalización de account/portfolio connectors:** contratos normalizados para balances, posiciones, órdenes, permisos y conciliación multi-venue, manteniendo adaptadores específicos y capabilities explícitas.
 11. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
 12. Completar despliegue persistente 24/7 en VPS y configurar el proveedor externo de backups en el entorno operativo.
-13. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+13. Evaluar live limitado por venue/clase solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## 6. Límites que no se deben saltar
 
