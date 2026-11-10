@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     slippage_rate: float = 0.0005
     max_order_fraction: float = 0.25
     max_stop_distance_fraction: float = Field(default=0.05, gt=0, le=1)
+    risk_per_trade_fraction: float = Field(default=0.01, gt=0, le=0.25)
+    paper_demo_mode: bool = False
+    paper_experimental_strategies_enabled: bool = False
     min_order_value_eur: float = 1.0
     max_data_age_seconds: int = 60
     max_fx_data_age_seconds: int = Field(default=300, ge=1, le=3600)
