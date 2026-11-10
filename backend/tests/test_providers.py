@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from app.providers.base import (
     AssetClass,
     MarketInstrument,
