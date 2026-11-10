@@ -546,6 +546,37 @@ class PaperPortfolio:
             ).fetchone()
         return self._decode_order_intent(row) if row else None
 
+    @staticmethod
+    def _order_request_is_fresh(
+        request: dict,
+        max_data_age_seconds: int,
+        max_fx_age_seconds: int,
+        now_ms: int,
+    ) -> bool:
+        try:
+            market_timestamp = int(request.get("market_timestamp"))
+            max_data_age = int(max_data_age_seconds) * 1000
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if market_timestamp <= 0 or market_timestamp > now_ms or now_ms - market_timestamp > max_data_age:
+            return False
+        for timestamp_value in (
+            request.get("risk_fx_timestamp"),
+            request.get("fx_timestamp") if str(request.get("quote_currency") or "EUR").upper() == "USD" else None,
+        ):
+            if timestamp_value is None:
+                continue
+            try:
+                timestamp = int(timestamp_value)
+                max_fx_age = int(max_fx_age_seconds) * 1000
+            except (TypeError, ValueError, OverflowError):
+                return False
+            if timestamp <= 0 or timestamp > now_ms or now_ms - timestamp > max_fx_age:
+                return False
+        if str(request.get("quote_currency") or "EUR").upper() == "USD" and request.get("fx_timestamp") is None:
+            return False
+        return True
+
     def order_intent_is_fresh(
         self,
         client_order_id: str,
@@ -556,33 +587,10 @@ class PaperPortfolio:
         intent = self.get_order_intent(client_order_id)
         if not intent or intent["status"] != "risk_approved":
             return False
-        request = intent["request"]
         now = int(now_ms if now_ms is not None else datetime.now(timezone.utc).timestamp() * 1000)
-        try:
-            market_timestamp = int(request.get("market_timestamp"))
-            max_data_age = int(max_data_age_seconds) * 1000
-        except (TypeError, ValueError, OverflowError):
-            return False
-        if market_timestamp <= 0 or market_timestamp > now or now - market_timestamp > max_data_age:
-            return False
-        risk_fx_timestamp = request.get("risk_fx_timestamp")
-        if risk_fx_timestamp is not None:
-            try:
-                risk_fx_timestamp = int(risk_fx_timestamp)
-                max_fx_age = int(max_fx_age_seconds) * 1000
-            except (TypeError, ValueError, OverflowError):
-                return False
-            if risk_fx_timestamp <= 0 or risk_fx_timestamp > now or now - risk_fx_timestamp > max_fx_age:
-                return False
-        if str(request.get("quote_currency") or "EUR").upper() == "USD":
-            try:
-                fx_timestamp = int(request.get("fx_timestamp"))
-                max_fx_age = int(max_fx_age_seconds) * 1000
-            except (TypeError, ValueError, OverflowError):
-                return False
-            if fx_timestamp <= 0 or fx_timestamp > now or now - fx_timestamp > max_fx_age:
-                return False
-        return True
+        return self._order_request_is_fresh(
+            intent["request"], max_data_age_seconds, max_fx_age_seconds, now
+        )
 
     def expire_order_intent(self, client_order_id: str, reason: str) -> bool:
         if not isinstance(reason, str) or not reason.strip():
@@ -658,11 +666,20 @@ class PaperPortfolio:
             elif current["status"] != "rejected":
                 raise PortfolioError("Order intent cannot transition to rejected from its current state")
 
-    def reconcile_order_intents(self) -> dict:
-        """Reconcile persisted paper intents against the trade ledger without guessing."""
-        now = datetime.now(timezone.utc).isoformat()
+    def reconcile_order_intents(
+        self,
+        active_task_ids: set[str] | None = None,
+        max_data_age_seconds: int = 60,
+        max_fx_age_seconds: int = 300,
+    ) -> dict:
+        """Reconcile fills and expire stale unfilled intents without guessing."""
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+        now_ms = int(now_dt.timestamp() * 1000)
+        active = active_task_ids or set()
         filled = 0
         uncertain = 0
+        expired = 0
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             rows = db.execute(
@@ -713,7 +730,27 @@ class PaperPortfolio:
                         {"reason": "missing_trade"}, now,
                     )
                     uncertain += 1
-        return {"reconciled_filled": filled, "reconciliation_required": uncertain}
+                elif row["status"] == "risk_approved" and row["client_order_id"] not in active:
+                    request = json.loads(row["request_json"])
+                    if not self._order_request_is_fresh(
+                        request, max_data_age_seconds, max_fx_age_seconds, now_ms
+                    ):
+                        reason = "Approved intent market/FX evidence expired before paper fill"
+                        db.execute(
+                            "UPDATE order_intents SET status='expired',rejection_reason=?,updated_at=? "
+                            "WHERE client_order_id=? AND status='risk_approved'",
+                            (reason, now, row["client_order_id"]),
+                        )
+                        self._insert_order_intent_event(
+                            db, row["client_order_id"], "risk_approved", "expired",
+                            {"reason": reason}, now,
+                        )
+                        expired += 1
+        return {
+            "reconciled_filled": filled,
+            "reconciliation_required": uncertain,
+            "expired": expired,
+        }
 
     def execute(
         self,
