@@ -97,6 +97,7 @@ def run_backup_cycle(
     external_uploads: list[dict] = []
     external_failures: list[dict] = []
     remote_keys: set[str] = set()
+    remote_list_success = False
     uploaded_sources = {
         name: record
         for name, record in previous_sources.items()
@@ -110,6 +111,7 @@ def run_backup_cycle(
         else:
             try:
                 remote_keys = {item["key"] for item in external_store.list_backups()}
+                remote_list_success = True
             except BackupError as exc:
                 external_failures.append({"operation": "list", "error": str(exc)})
                 logger.exception("Unable to list existing external backups")
@@ -170,7 +172,12 @@ def run_backup_cycle(
 
     external_status = "disabled"
     if external_enabled:
-        external_status = "failed" if external_failures else "verified"
+        if external_failures:
+            external_status = "failed"
+        elif remote_keys or external_uploads:
+            external_status = "verified"
+        else:
+            external_status = "no_backups"
     status = {
         "last_cycle_at": timestamp.isoformat(),
         "local": {
@@ -185,7 +192,8 @@ def run_backup_cycle(
             "uploaded": external_uploads,
             "failures": external_failures,
             "uploaded_sources": uploaded_sources,
-            "last_verified_at": timestamp.isoformat() if external_enabled and not external_failures else previous_external.get("last_verified_at"),
+            "last_store_check_at": timestamp.isoformat() if remote_list_success else previous_external.get("last_store_check_at"),
+            "last_backup_verified_at": timestamp.isoformat() if external_uploads else previous_external.get("last_backup_verified_at"),
         },
     }
     try:
