@@ -175,7 +175,7 @@ def test_periodic_reconciliation_retries_transient_exchange_errors_with_backoff(
 
 def test_reconciliation_lease_is_exclusive_recovers_after_expiry_and_fences_old_owner(tmp_path):
     store = create_store(tmp_path)
-    now = datetime(2026, 11, 10, 12, 0, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc) + timedelta(seconds=1)
     first = store.claim_reconciliation_lease(lease_seconds=30, now=now)
     assert first is not None
     assert store.claim_reconciliation_lease(lease_seconds=30, now=now) is None
