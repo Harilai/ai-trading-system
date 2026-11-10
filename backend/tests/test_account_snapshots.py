@@ -181,3 +181,18 @@ def test_account_snapshot_store_rejects_stale_observations(tmp_path):
     stale = datetime.now(timezone.utc) - timedelta(minutes=10)
     with pytest.raises(AccountSnapshotError, match="stale"):
         store.record_snapshot(make_snapshot(fetched_at=stale.isoformat()))
+
+
+def test_account_snapshot_store_canonicalizes_equivalent_decimal_formats(tmp_path):
+    store = AccountSnapshotStore(str(tmp_path / "accounts.db"))
+    first = store.record_snapshot(make_snapshot(balances=[
+        {"asset": "BTC", "free": "1.0000", "used": "0.2300", "total": "1.2300"},
+    ]))
+    second = store.record_snapshot(make_snapshot(balances=[
+        {"asset": "BTC", "free": "1", "used": "0.23", "total": "1.23"},
+    ]))
+
+    assert first["balances"][0]["free"] == "1"
+    assert first["balances"][0]["total"] == "1.23"
+    assert second["reconciliation_status"] == "unchanged"
+    assert second["change_count"] == 0
