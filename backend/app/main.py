@@ -24,6 +24,7 @@ from .agents.risk import RiskManager
 from .portfolio import PaperPortfolio, PortfolioError
 from .fx import invert_fx_observation, validate_fx_observation
 from .backup_scheduler import read_backup_status
+from .accounts.binance_spot import AccountConnectorError, BinanceSpotReadOnlyAccount
 
 WORKER_HEARTBEAT_MAX_AGE_SECONDS = 600
 
@@ -42,6 +43,20 @@ if settings.twelve_data_api_key:
     ))
 portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 instrument_catalog = InstrumentCatalog(settings.database_path)
+
+_binance_key = settings.binance_readonly_api_key.get_secret_value().strip()
+_binance_secret = settings.binance_readonly_api_secret.get_secret_value().strip()
+binance_account_configuration_status = "not_configured"
+binance_account_provider = None
+if _binance_key and _binance_secret:
+    try:
+        binance_account_provider = BinanceSpotReadOnlyAccount(_binance_key, _binance_secret)
+        binance_account_configuration_status = "configured"
+    except AccountConnectorError:
+        binance_account_configuration_status = "invalid_configuration"
+elif _binance_key or _binance_secret:
+    binance_account_configuration_status = "incomplete_configuration"
+del _binance_key, _binance_secret
 
 class OrderRequest(BaseModel):
     symbol: str = Field(min_length=3)
@@ -70,6 +85,29 @@ def dashboard():
 @app.get("/api/providers")
 def providers():
     return market.describe()
+
+
+@app.get("/api/accounts")
+def accounts(x_agent_token: str | None = Header(default=None)):
+    require_order_control_token(x_agent_token)
+    configured = []
+    if binance_account_provider is not None:
+        configured.append(binance_account_provider.describe())
+    return {
+        "configuration_status": binance_account_configuration_status,
+        "accounts": configured,
+    }
+
+
+@app.get("/api/accounts/binance/spot/balances")
+def binance_spot_balances(x_agent_token: str | None = Header(default=None)):
+    require_order_control_token(x_agent_token)
+    if binance_account_provider is None:
+        raise HTTPException(503, "Binance read-only account connector is not configured")
+    try:
+        return binance_account_provider.fetch_balances()
+    except AccountConnectorError as exc:
+        raise HTTPException(502, str(exc)) from exc
 
 
 @app.get("/api/risk-profiles")

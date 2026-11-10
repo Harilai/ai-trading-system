@@ -967,3 +967,76 @@ def test_instrument_discovery_runs_endpoint_returns_persisted_failures(monkeypat
 
     assert response.status_code == 200
     assert response.json()["items"][0]["failures"][0]["reason"] == "offline"
+
+
+def test_binance_account_endpoints_require_owner_auth_and_expose_only_read_capabilities(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+
+    class FakeReadOnlyAccount:
+        def describe(self):
+            return {
+                "provider_id": "ccxt:binance",
+                "account_alias": "binance-spot-readonly",
+                "read_only_connector": True,
+                "order_submission": False,
+                "withdrawals": False,
+                "account_key_permissions_verified": False,
+            }
+
+        def fetch_balances(self):
+            return {
+                "provider_id": "ccxt:binance",
+                "account_alias": "binance-spot-readonly",
+                "market_type": "spot",
+                "read_only": True,
+                "fetched_at": "2026-11-10T10:00:00+00:00",
+                "balances": [{"asset": "BTC", "free": 0.1, "used": 0.0, "total": 0.1}],
+                "balance_count": 1,
+                "execution_enabled": False,
+                "withdrawals_enabled": False,
+            }
+
+    monkeypatch.setattr("app.main.binance_account_provider", FakeReadOnlyAccount())
+    monkeypatch.setattr("app.main.binance_account_configuration_status", "configured")
+
+    unauthorized = client.get("/api/accounts")
+    assert unauthorized.status_code == 401
+    unauthorized_balances = client.get("/api/accounts/binance/spot/balances")
+    assert unauthorized_balances.status_code == 401
+
+    accounts = client.get("/api/accounts", headers=headers)
+    assert accounts.status_code == 200
+    assert accounts.json()["configuration_status"] == "configured"
+    assert accounts.json()["accounts"][0]["order_submission"] is False
+    assert accounts.json()["accounts"][0]["withdrawals"] is False
+
+    balances = client.get("/api/accounts/binance/spot/balances", headers=headers)
+    assert balances.status_code == 200
+    assert balances.json()["balances"][0]["asset"] == "BTC"
+    assert balances.json()["execution_enabled"] is False
+    assert "api_key" not in balances.text.lower()
+    assert "secret" not in balances.text.lower()
+
+
+def test_binance_account_balances_endpoint_is_disabled_without_credentials(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    monkeypatch.setattr("app.main.binance_account_provider", None)
+    response = client.get("/api/accounts/binance/spot/balances", headers=headers)
+    assert response.status_code == 503
+    assert "not configured" in response.json()["detail"]
+
+
+def test_binance_account_endpoint_sanitizes_connector_failures(monkeypatch):
+    from app.accounts.binance_spot import AccountConnectorError
+
+    headers = configure_order_auth(monkeypatch)
+
+    class FailingReadOnlyAccount:
+        def fetch_balances(self):
+            raise AccountConnectorError("Binance spot balance request failed (NetworkError)")
+
+    monkeypatch.setattr("app.main.binance_account_provider", FailingReadOnlyAccount())
+    response = client.get("/api/accounts/binance/spot/balances", headers=headers)
+    assert response.status_code == 502
+    assert "NetworkError" in response.json()["detail"]
+    assert "secret" not in response.text.lower()
