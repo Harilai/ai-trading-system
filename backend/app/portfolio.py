@@ -557,9 +557,34 @@ class PaperPortfolio:
         if gross < minimum:
             raise PortfolioError(f"Minimum order value is {minimum:.2f} {quote_currency}")
 
+        request_payload = {
+            "symbol": symbol, "side": side, "quantity": quantity, "price": price,
+            "fee_rate": fee_rate, "slippage_rate": slippage_rate,
+            "max_fraction": max_fraction, "minimum": minimum,
+            "client_order_id": client_order_id, "provider_id": provider_id,
+            "instrument_id": instrument_id, "strategy_id": strategy_id,
+            "stop_loss": stop_loss, "take_profit": take_profit,
+            "quote_currency": quote_currency, "fx_rate_to_eur": fx_rate_to_eur,
+            "fx_provider_id": fx_provider_id, "fx_timestamp": fx_timestamp,
+        }
+        request_json = self._canonical_json(request_payload) if client_order_id else None
+
         with self.lock, self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
+            intent_row = None
             if client_order_id:
+                intent_row = db.execute(
+                    "SELECT * FROM order_intents WHERE client_order_id=?",
+                    (client_order_id,),
+                ).fetchone()
+                if intent_row:
+                    if intent_row["request_json"] != request_json:
+                        raise PortfolioError("client_order_id was already used for a different order intent")
+                    if intent_row["status"] == "rejected":
+                        raise PortfolioError("This order intent was already rejected")
+                    if intent_row["status"] == "reconciliation_required":
+                        raise PortfolioError("This order intent requires reconciliation before execution")
+
                 existing = db.execute(
                     "SELECT * FROM trades WHERE client_order_id=?",
                     (client_order_id,),
@@ -573,27 +598,44 @@ class PaperPortfolio:
                         and prior["instrument_id"] == instrument_id
                         and prior["quote_currency"] == quote_currency
                         and prior.get("strategy_id") == strategy_id
-                        and (
-                            (prior.get("stop_loss") is None and stop_loss is None)
-                            or (
-                                prior.get("stop_loss") is not None and stop_loss is not None
-                                and math.isclose(float(prior["stop_loss"]), stop_loss, rel_tol=1e-12, abs_tol=1e-12)
-                            )
-                        )
-                        and (
-                            (prior.get("take_profit") is None and take_profit is None)
-                            or (
-                                prior.get("take_profit") is not None and take_profit is not None
-                                and math.isclose(float(prior["take_profit"]), take_profit, rel_tol=1e-12, abs_tol=1e-12)
-                            )
-                        )
                         and math.isclose(float(prior["quantity"]), quantity, rel_tol=1e-12, abs_tol=1e-12)
+                        and math.isclose(float(prior["price"]), fill, rel_tol=1e-12, abs_tol=1e-12)
+                        and math.isclose(float(prior["fee"]), fee, rel_tol=1e-12, abs_tol=1e-12)
+                        and math.isclose(float(prior["total"]), total, rel_tol=1e-12, abs_tol=1e-12)
+                        and math.isclose(float(prior["fx_rate_to_eur"]), fx_rate_to_eur, rel_tol=1e-12, abs_tol=1e-12)
+                        and prior.get("fx_provider_id") == fx_provider_id
+                        and prior.get("fx_timestamp") == fx_timestamp
+                        and prior.get("stop_loss") == stop_loss
+                        and prior.get("take_profit") == take_profit
                     )
                     if not same_intent:
                         raise PortfolioError("client_order_id was already used for a different paper order")
+                    stamp = datetime.now(timezone.utc).isoformat()
+                    if not intent_row:
+                        db.execute(
+                            "INSERT INTO order_intents(client_order_id,status,request_json,trade_id,fill_json,created_at,updated_at) "
+                            "VALUES(?,'filled',?,?,?,?,?)",
+                            (client_order_id, request_json, prior["id"], self._canonical_json(prior), stamp, stamp),
+                        )
+                    else:
+                        db.execute(
+                            "UPDATE order_intents SET status='filled',trade_id=?,fill_json=?,updated_at=? "
+                            "WHERE client_order_id=?",
+                            (prior["id"], self._canonical_json(prior), stamp, client_order_id),
+                        )
                     prior["mode"] = "paper"
                     prior["idempotent_replay"] = True
                     return prior
+
+                if intent_row and intent_row["status"] == "filled":
+                    raise PortfolioError("Filled order intent has no matching trade; reconciliation is required")
+                if not intent_row:
+                    stamp = datetime.now(timezone.utc).isoformat()
+                    db.execute(
+                        "INSERT INTO order_intents(client_order_id,status,request_json,created_at,updated_at) "
+                        "VALUES(?,'risk_approved',?,?,?)",
+                        (client_order_id, request_json, stamp, stamp),
+                    )
 
             db.execute(
                 "INSERT OR IGNORE INTO currency_balances(currency,balance,updated_at) VALUES(?,0,?)",
@@ -692,7 +734,7 @@ class PaperPortfolio:
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (symbol, side, quantity, fill, fee, total, stamp, client_order_id, provider_id, instrument_id, quote_currency, fx_rate_to_eur, total_eur, fx_provider_id, fx_timestamp, strategy_id, stop_loss, take_profit),
             )
-            return {
+            result = {
                 "id": cursor.lastrowid,
                 "symbol": symbol,
                 "provider_id": provider_id,
@@ -715,6 +757,13 @@ class PaperPortfolio:
                 "mode": "paper",
                 "idempotent_replay": False,
             }
+            if client_order_id:
+                db.execute(
+                    "UPDATE order_intents SET status='filled',trade_id=?,fill_json=?,rejection_reason=NULL,updated_at=? "
+                    "WHERE client_order_id=? AND status='risk_approved'",
+                    (cursor.lastrowid, self._canonical_json(result), stamp, client_order_id),
+                )
+            return result
 
     def convert_currency(
         self,
