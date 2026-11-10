@@ -380,6 +380,8 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
         expected_client_order_id: str,
         expected_amount: str | None = None,
         expected_exchange_order_id: str | None = None,
+        expected_symbol: str | None = None,
+        expected_side: str | None = None,
     ) -> dict:
         if not isinstance(response, dict):
             raise BinanceDemoError("Binance Demo returned an invalid order response")
@@ -390,26 +392,49 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             or info.get("origClientOrderId")
         )
         exchange_order_id = response.get("id")
+        raw_status = str(response.get("status") or "").lower()
+        observed = {
+            "observed_client_order_id": client_id,
+            "observed_exchange_order_id": (
+                str(exchange_order_id) if exchange_order_id is not None else None
+            ),
+            "observed_exchange_status": raw_status or "unknown",
+        }
+
+        def identity_mismatch(message: str) -> dict:
+            return {
+                "status": "reconciliation_required",
+                "error": message,
+                **observed,
+            }
+
         if client_id != expected_client_order_id:
-            return {
-                "status": "reconciliation_required",
-                "error": "Exchange order response did not match the immutable client order ID",
-            }
+            return identity_mismatch(
+                "Exchange order response did not match the immutable client order ID"
+            )
         if exchange_order_id is None or not str(exchange_order_id).strip():
-            return {
-                "status": "reconciliation_required",
-                "error": "Exchange response did not contain a durable order ID",
-            }
+            return identity_mismatch("Exchange response did not contain a durable order ID")
         if (
             expected_exchange_order_id is not None
             and str(exchange_order_id) != str(expected_exchange_order_id)
         ):
-            return {
-                "status": "reconciliation_required",
-                "error": "Exchange order response did not match the persisted exchange order ID",
-            }
-
-        raw_status = str(response.get("status") or "").lower()
+            return identity_mismatch(
+                "Exchange order response did not match the persisted exchange order ID"
+            )
+        response_symbol = response.get("symbol")
+        if (
+            expected_symbol is not None
+            and response_symbol is not None
+            and str(response_symbol).strip().upper() != expected_symbol.strip().upper()
+        ):
+            return identity_mismatch("Exchange order response symbol did not match the immutable intent")
+        response_side = response.get("side")
+        if (
+            expected_side is not None
+            and response_side is not None
+            and str(response_side).strip().lower() != expected_side.strip().lower()
+        ):
+            return identity_mismatch("Exchange order response side did not match the immutable intent")
         raw_filled = response.get("filled")
         filled = self._nonnegative_decimal_text(raw_filled, "filled")
         remaining = self._nonnegative_decimal_text(response.get("remaining"), "remaining")
@@ -511,10 +536,13 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             response,
             expected_client_order_id=request["client_order_id"],
             expected_amount=request["amount"],
+            expected_symbol=request["symbol"],
+            expected_side=request["side"],
         )
 
     def fetch_order_by_client_id(
         self, *, symbol: str, client_order_id: str, expected_amount: str | None = None,
+        expected_side: str | None = None,
     ) -> dict | None:
         try:
             response = self._exchange.fetch_order(
@@ -532,11 +560,14 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             response,
             expected_client_order_id=client_order_id,
             expected_amount=expected_amount,
+            expected_symbol=symbol,
+            expected_side=expected_side,
         )
 
     def fetch_order_by_id(
         self, *, symbol: str, exchange_order_id: str,
         client_order_id: str, expected_amount: str | None = None,
+        expected_side: str | None = None,
     ) -> dict:
         try:
             response = self._exchange.fetch_order(exchange_order_id, symbol)
@@ -549,6 +580,8 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             expected_client_order_id=client_order_id,
             expected_amount=expected_amount,
             expected_exchange_order_id=exchange_order_id,
+            expected_symbol=symbol,
+            expected_side=expected_side,
         )
 
     def cancel_limit_order(
@@ -558,6 +591,7 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
         exchange_order_id: str,
         client_order_id: str,
         expected_amount: str | None = None,
+        expected_side: str | None = None,
     ) -> dict:
         try:
             response = self._exchange.cancel_order(exchange_order_id, symbol)
@@ -570,4 +604,6 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             expected_client_order_id=client_order_id,
             expected_amount=expected_amount,
             expected_exchange_order_id=exchange_order_id,
+            expected_symbol=symbol,
+            expected_side=expected_side,
         )
