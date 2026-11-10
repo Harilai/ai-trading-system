@@ -301,6 +301,12 @@ class AccountProviderRegistry:
         market_type = raw.get("market_type")
         if not isinstance(market_type, str) or market_type not in capabilities.market_types:
             raise AccountProviderError("Account market type is not declared by the provider")
+        raw_environment = raw.get("environment", capabilities.environment)
+        if (
+            not isinstance(raw_environment, str)
+            or raw_environment.strip().lower() != capabilities.environment
+        ):
+            raise AccountProviderError("Account environment conflicts with declared provider capabilities")
         fetched_at = raw.get("fetched_at")
         if not isinstance(fetched_at, str):
             raise AccountProviderError("Account balance timestamp is missing")
