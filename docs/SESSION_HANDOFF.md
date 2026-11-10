@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `8943fdec94104d881d138d8d8d6da0bfd7cd4518` — merge de PR #68, reconciliación periódica Binance Spot Demo con leases y backoff.  
+> **Último commit observado en `main`:** `a7a9bb8487e7935f791cc6034dee8fd10e24ec6d` — merge de PR #71, contratos normalizados multi-venue para cuentas y balances.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
