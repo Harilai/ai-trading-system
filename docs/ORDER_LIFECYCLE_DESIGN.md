@@ -12,17 +12,18 @@ Persist each order under its immutable `client_order_id` in an `order_intents` t
 
 | State | Meaning | Terminal |
 |---|---|---|
-| `intent_created` | Validated request/proposal persisted before risk approval | No |
-| `risk_approved` | Deterministic Risk Manager approved the exact persisted intent | No |
-| `paper_filled` | Paper trade and portfolio mutation committed atomically with this state | Yes |
-| `rejected` | Risk gate rejected the intent | Yes |
-| `expired` | Unfilled intent was abandoned after its owning task/request was lost or its data expired | Yes |
-| `reconciliation_required` | Intent and trade ledger disagree; new orders must fail closed | No, operator/recovery action required |
+| `risk_approved` | Deterministic Risk Manager approved and the exact normalized paper request and decision evidence are persisted | No |
+| `filled` | Paper trade and portfolio mutation committed atomically with this state | Yes |
+| `rejected` | Deterministic execution/risk validation rejected the intent | Yes |
+| `expired` | Unfilled approval was abandoned because its market/FX evidence became stale | Yes |
+| `reconciliation_required` | Intent and trade ledger disagree; new buys fail closed | No, operator/recovery action required |
+
+The current implementation creates an intent only after the deterministic Risk Manager approves it; it does not persist a separate `intent_created` state.
 
 Legal transitions:
-- `intent_created -> risk_approved | rejected | expired | reconciliation_required`
-- `risk_approved -> paper_filled | expired | reconciliation_required`
-- `paper_filled -> reconciliation_required` only when the referenced trade is missing or inconsistent.
+- `risk_approved -> filled | rejected | expired | reconciliation_required`
+- `filled -> reconciliation_required` only when the referenced trade is missing or inconsistent.
+- `reconciliation_required -> filled` only when reconciliation later finds the matching trade.
 
 There are deliberately no `submitted`, `accepted`, `partial_fill` or broker-pending states because no broker order exists.
 
@@ -33,22 +34,22 @@ There are deliberately no `submitted`, `accepted`, `partial_fill` or broker-pend
 - A paper fill is allowed only from `risk_approved`.
 - The trade insert, position/cash mutation, intent transition to `paper_filled`, and fill event commit in the same SQLite transaction.
 - Replaying a filled intent returns the original trade without a second portfolio mutation.
-- A risk-approved intent with no trade is never blindly replayed after its owning task has been lost. It expires; the next scheduled cycle must obtain fresh market data and a new task ID.
+- A retry resumes the exact persisted request only while its market and, when applicable, FX timestamps remain within configured freshness limits. If evidence is stale, the intent expires and the next scheduled cycle must obtain fresh data and a new task ID.
 - A filled intent with no matching trade, or a trade inconsistent with its intent, moves to `reconciliation_required` and blocks new orders.
 
 ## Worker lease fencing
 
 Each task claim receives a random `lease_token`. Heartbeats extend the lease. Completion, failure and retry scheduling are conditional on both task ID and the current lease token. A worker whose lease was reclaimed cannot complete or fail the newer worker's task.
 
-Expired leases are reclaimed with the token cleared. Order-intent reconciliation then expires unfilled autonomous intents whose task is no longer actively leased. Manual-owner intents left unfilled across process restart are expired before the API accepts new work.
+Expired leases are reclaimed with the token cleared. A failed decision task with a durable risk-approved intent can be requeued, but the exact request is resumed only if its stored market/FX evidence is still fresh. Stale approvals expire. Manual-owner paper requests are filled atomically with the ledger in the same transaction, so they cannot remain half-submitted across restart.
 
 ## Recovery sequence
 
 1. Recover expired task leases.
-2. Reconcile order intents against the trade ledger and currently active task leases.
+2. Reconcile order intents against the trade ledger.
 3. Mark missing/mismatched fills as `reconciliation_required`.
-4. Expire unfilled intents that no longer have a live owner.
-5. Allow only new intents whose market/FX data and risk checks are fresh.
+4. Requeue failed decision tasks that still own a risk-approved intent; require fresh market/FX evidence before resuming.
+5. Expire stale approvals and allow new intents only after a fresh decision.
 6. Complete tasks only with the matching lease token.
 
 ## Equity protective levels
