@@ -566,6 +566,23 @@ class AutonomousAgent:
                         if intent["status"] != "risk_approved":
                             continue
                         client_order_id = intent["client_order_id"]
+                        fresh = await asyncio.to_thread(
+                            self.portfolio.order_intent_is_fresh,
+                            client_order_id,
+                            settings.max_data_age_seconds,
+                            settings.max_fx_data_age_seconds,
+                        )
+                        if not fresh:
+                            await asyncio.to_thread(
+                                self.portfolio.expire_order_intent,
+                                client_order_id,
+                                "Market or FX evidence became stale before the approved paper order was filled",
+                            )
+                            self.store.audit("approved_order_intent_expired", {
+                                "client_order_id": client_order_id,
+                                "reason": "stale_market_or_fx_evidence",
+                            })
+                            continue
                         if self.store.requeue_failed_decision_task(client_order_id):
                             continue
                         task_state = self.store.task_state(client_order_id)
