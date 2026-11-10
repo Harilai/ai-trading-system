@@ -306,8 +306,8 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
         market = markets.get(symbol) if isinstance(markets, dict) else None
         if not isinstance(market, dict) or market.get("spot") is not True:
             raise BinanceDemoError("Order symbol is not a supported Binance Demo Spot market")
-        if market.get("active") is False:
-            raise BinanceDemoError("Order symbol is inactive on Binance Demo Spot")
+        if market.get("active") is not True:
+            raise BinanceDemoError("Order symbol is inactive or has unknown status on Binance Demo Spot")
         quote_asset = market.get("quote")
         if not isinstance(quote_asset, str) or not quote_asset:
             raise BinanceDemoError("Binance Demo market is missing quote asset metadata")
