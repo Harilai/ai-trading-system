@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 import json
 from pathlib import Path
 import re
@@ -126,17 +127,30 @@ class BinanceDemoOrderStore:
             raise DemoOrderStoreError("Demo order symbol is invalid")
         if side not in ("buy", "sell"):
             raise DemoOrderStoreError("Demo order side must be buy or sell")
+        normalized_amounts = {}
         for field, value in (("amount", amount), ("price", price)):
             if not isinstance(value, str) or not value or len(value) > 80:
                 raise DemoOrderStoreError(f"Demo order {field} must be a decimal string")
+            try:
+                parsed = Decimal(value)
+            except (InvalidOperation, ValueError):
+                raise DemoOrderStoreError(f"Demo order {field} is malformed") from None
+            if not parsed.is_finite() or parsed <= 0:
+                raise DemoOrderStoreError(f"Demo order {field} must be finite and positive")
+            if len(parsed.as_tuple().digits) > 50 or abs(parsed.as_tuple().exponent) > 50:
+                raise DemoOrderStoreError(f"Demo order {field} precision is unsupported")
+            text = format(parsed, "f")
+            if "." in text:
+                text = text.rstrip("0").rstrip(".")
+            normalized_amounts[field] = text
         if not isinstance(quote_asset, str) or not re.fullmatch(r"[A-Z0-9._-]{1,24}", quote_asset):
             raise DemoOrderStoreError("Demo order quote asset is invalid")
         return {
             "client_order_id": client_order_id,
             "symbol": symbol,
             "side": side,
-            "amount": amount,
-            "price": price,
+            "amount": normalized_amounts["amount"],
+            "price": normalized_amounts["price"],
             "quote_asset": quote_asset,
         }
 
