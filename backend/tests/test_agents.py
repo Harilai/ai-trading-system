@@ -3,6 +3,7 @@ import pytest
 from app.agents.charts import ChartsAgent
 from app.agents.contracts import RiskContext, TradeProposal
 from app.agents.risk import RiskManager
+from app.chief import ChiefAgent
 
 
 def proposal(**overrides):
@@ -189,3 +190,57 @@ def test_equity_concentration_uses_current_eur_market_value_when_available():
     )
     assert decision.accepted is False
     assert "instrument concentration" in decision.reason.lower()
+
+
+
+def test_chief_explains_validated_candidate_without_current_entry_signal():
+    chief = ChiefAgent()
+    decision = chief.decide(
+        {
+            "analyses": [{
+                "market": {"symbol": "BTC/EUR", "last": 100, "ask": 100},
+                "strategy_research": {
+                    "recommended_strategy": "ema_12_26",
+                    "candidates": [{
+                        "strategy_id": "ema_12_26",
+                        "eligible": True,
+                        "score": 0.5,
+                        "current_entry_signal": False,
+                    }],
+                },
+            }],
+        },
+        {"equity": 1000, "cash": 1000, "positions": []},
+    )
+    assert decision.action == "hold"
+    assert decision.evidence["markets_analysed"] == 1
+    assert decision.evidence["validated_candidates"] == 1
+    assert decision.evidence["validated_entry_signals"] == 0
+    assert decision.evidence["candidates_without_entry_signal"] == 1
+    assert decision.evidence["eligible_opportunities"] == 0
+
+
+def test_chief_reports_experimental_candidate_without_entry_signal():
+    chief = ChiefAgent(allow_experimental_strategies=True)
+    decision = chief.decide(
+        {
+            "analyses": [{
+                "market": {"symbol": "ETH/EUR", "last": 100, "ask": 100},
+                "strategy_research": {
+                    "recommended_experimental_strategy": "rsi_14_reversion",
+                    "candidates": [{
+                        "strategy_id": "rsi_14_reversion",
+                        "eligible": False,
+                        "experimental_eligible": True,
+                        "experimental_score": 0.25,
+                        "current_entry_signal": False,
+                    }],
+                },
+            }],
+        },
+        {"equity": 1000, "cash": 1000, "positions": []},
+    )
+    assert decision.action == "hold"
+    assert decision.evidence["experimental_candidates"] == 1
+    assert decision.evidence["experimental_entry_signals"] == 0
+    assert decision.evidence["eligible_opportunities"] == 0
