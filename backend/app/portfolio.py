@@ -375,9 +375,17 @@ class PaperPortfolio:
                 "fx_rate_to_eur": float(request.get("fx_rate_to_eur", 1.0)),
                 "fx_provider_id": request.get("fx_provider_id"),
                 "fx_timestamp": request.get("fx_timestamp"),
+                "market_timestamp": request.get("market_timestamp"),
+                "risk_fx_rate_to_eur": float(request.get("risk_fx_rate_to_eur", 1.0)),
+                "risk_fx_provider_id": request.get("risk_fx_provider_id"),
+                "risk_fx_timestamp": request.get("risk_fx_timestamp"),
             }
-            if quote_currency == "USD" and normalized["fx_timestamp"] is not None:
+            if normalized["fx_timestamp"] is not None:
                 normalized["fx_timestamp"] = int(normalized["fx_timestamp"])
+            if normalized["market_timestamp"] is not None:
+                normalized["market_timestamp"] = int(normalized["market_timestamp"])
+            if normalized["risk_fx_timestamp"] is not None:
+                normalized["risk_fx_timestamp"] = int(normalized["risk_fx_timestamp"])
         except (KeyError, TypeError, ValueError, OverflowError) as exc:
             raise PortfolioError("Order request contains missing or invalid fields") from exc
         if not symbol or not provider_id or not normalized["instrument_id"]:
