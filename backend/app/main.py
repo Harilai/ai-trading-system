@@ -500,7 +500,7 @@ def _paper_equity_order(order: OrderRequest):
         portfolio.record_order_intent(
             order.client_order_id.strip(),
             execution_request,
-            {"risk": risk.model_dump(), "instrument": instrument.model_dump()},
+            {"risk": risk.model_dump(), "instrument_id": instrument.instrument_id, "provider_id": instrument.provider_id},
         )
     except PortfolioError as exc:
         raise HTTPException(422, str(exc)) from exc
