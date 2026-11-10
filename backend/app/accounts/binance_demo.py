@@ -387,7 +387,10 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
         average_value = self._nonnegative_decimal_text(response.get("average"), "average")
         average = average_value if average_value not in (None, "0") else None
         if raw_status == "closed":
-            status = "filled"
+            if Decimal(filled or "0") <= 0 or (remaining is not None and Decimal(remaining) > 0):
+                status = "reconciliation_required"
+            else:
+                status = "filled"
         elif raw_status in ("canceled", "cancelled"):
             status = "cancelled"
         elif raw_status == "expired":
@@ -412,7 +415,11 @@ class BinanceSpotDemoExecution(BinanceSpotDemoAccount):
             "filled": filled,
             "remaining": remaining,
             "average": average,
-            "error": None if status != "reconciliation_required" else "Exchange returned an unknown order status",
+            "error": (
+                None
+                if status != "reconciliation_required"
+                else "Exchange order status or fill quantities are inconsistent"
+            ),
         }
 
     def submit_limit_order(self, request: dict) -> dict:
