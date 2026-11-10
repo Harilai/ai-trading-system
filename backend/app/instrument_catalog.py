@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -24,11 +25,19 @@ class InstrumentCatalog:
         Path(self.database_path).parent.mkdir(parents=True, exist_ok=True)
         self._initialize()
 
+    @contextmanager
     def connect(self):
         db = sqlite3.connect(self.database_path, timeout=15)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA busy_timeout=15000")
-        return db
+        try:
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
     def _initialize(self) -> None:
         with self.connect() as db:
@@ -91,15 +100,15 @@ class InstrumentCatalog:
 
     @staticmethod
     def _sanitize_metadata(value):
-        sensitive_keys = {
-            "api_key", "apikey", "secret", "secret_key", "private_key",
-            "authorization", "password", "seed_phrase", "access_token", "refresh_token",
-        }
+        sensitive_markers = (
+            "apikey", "secret", "privatekey", "authorization", "password",
+            "seedphrase", "accesstoken", "refreshtoken",
+        )
         if isinstance(value, dict):
             sanitized = {}
             for key, item in value.items():
-                normalized_key = str(key).strip().lower().replace("-", "_")
-                if normalized_key in sensitive_keys:
+                normalized_key = str(key).strip().lower().replace("-", "_").replace(" ", "").replace("_", "")
+                if any(marker in normalized_key for marker in sensitive_markers):
                     sanitized[str(key)] = "[REDACTED]"
                 else:
                     sanitized[str(key)] = InstrumentCatalog._sanitize_metadata(item)
@@ -158,7 +167,7 @@ class InstrumentCatalog:
             reason,
         )
         reason = re.sub(
-            r"(?i)(api[_-]?key|secret|token)\s*[:=]\s*[^\s&,;]+",
+            r"(?i)(api[_-]?key|secret|token|private[_-]?key|password|seed[_-]?phrase)\s*[:=]\s*[^\s&,;]+",
             r"\1=[REDACTED]",
             reason,
         )
