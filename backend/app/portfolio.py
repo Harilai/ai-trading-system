@@ -55,6 +55,16 @@ class PaperPortfolio:
                 "created_at TEXT NOT NULL)"
             )
             db.execute(
+                "CREATE TRIGGER IF NOT EXISTS order_intent_events_no_update "
+                "BEFORE UPDATE ON order_intent_events BEGIN "
+                "SELECT RAISE(ABORT, 'order intent events are append-only'); END"
+            )
+            db.execute(
+                "CREATE TRIGGER IF NOT EXISTS order_intent_events_no_delete "
+                "BEFORE DELETE ON order_intent_events BEGIN "
+                "SELECT RAISE(ABORT, 'order intent events are append-only'); END"
+            )
+            db.execute(
                 "CREATE TABLE IF NOT EXISTS currency_balances ("
                 "currency TEXT PRIMARY KEY, balance REAL NOT NULL CHECK(balance >= 0), "
                 "updated_at TEXT NOT NULL)"
@@ -91,7 +101,6 @@ class PaperPortfolio:
             self._ensure_column(db, "trades", "strategy_id", "TEXT")
             self._ensure_column(db, "trades", "stop_loss", "REAL")
             self._ensure_column(db, "trades", "take_profit", "REAL")
-            self._ensure_column(db, "trades", "market_timestamp", "INTEGER")
             self._ensure_column(db, "trades", "market_timestamp", "INTEGER")
             self._ensure_column(db, "currency_conversions", "fee_eur", "REAL NOT NULL DEFAULT 0")
             self._ensure_column(
@@ -620,6 +629,10 @@ class PaperPortfolio:
                             "WHERE client_order_id=?",
                             (trade["id"], now, row["client_order_id"]),
                         )
+                        self._insert_order_intent_event(
+                            db, row["client_order_id"], row["status"], "filled",
+                            {"trade_id": trade["id"], "reconciled": True}, now,
+                        )
                         filled += 1
                 elif row["status"] == "filled":
                     db.execute(
@@ -627,6 +640,10 @@ class PaperPortfolio:
                         "rejection_reason='Filled intent has no matching trade ledger row',updated_at=? "
                         "WHERE client_order_id=?",
                         (now, row["client_order_id"]),
+                    )
+                    self._insert_order_intent_event(
+                        db, row["client_order_id"], "filled", "reconciliation_required",
+                        {"reason": "Filled intent has no matching trade ledger row"}, now,
                     )
                     uncertain += 1
         return {"reconciled_filled": filled, "reconciliation_required": uncertain}
@@ -946,11 +963,16 @@ class PaperPortfolio:
                 "idempotent_replay": False,
             }
             if client_order_id:
-                db.execute(
+                changed = db.execute(
                     "UPDATE order_intents SET status='filled',trade_id=?,fill_json=?,rejection_reason=NULL,updated_at=? "
                     "WHERE client_order_id=? AND status='risk_approved'",
                     (cursor.lastrowid, self._canonical_json(result), stamp, client_order_id),
-                )
+                ).rowcount
+                if changed == 1:
+                    self._insert_order_intent_event(
+                        db, client_order_id, "risk_approved", "filled",
+                        {"trade_id": cursor.lastrowid, "fill": result}, stamp,
+                    )
             return result
 
     def convert_currency(
