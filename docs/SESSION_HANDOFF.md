@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `b993178069fb061797eafe228192c42e236dc10d` — actualización documental tras PR #50.  
+> **Último commit observado en `main`:** `1d6ad47d36927f5ec77d4eb0ffac5132e744a68a` — merge de PR #52, contrato normalizado de instrumentos v2.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -136,17 +136,20 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - Todo el contenido recibido de API se representa mediante text nodes; no se inserta como HTML.
 - La validación se ejecutó en el HEAD exacto indicado arriba antes del merge.
 
-### Fase actual — contrato normalizado de instrumentos v2
+### Fase completada — contrato normalizado de instrumentos v2 (PR #52)
 
-- Rama de trabajo: `feature/instrument-contract-v2`, creada desde main `b993178069fb061797eafe228192c42e236dc10d`.
+- PR: https://github.com/Harilai/ai-trading-system/pull/52
+- Merge commit: `1d6ad47d36927f5ec77d4eb0ffac5132e744a68a`.
+- Head validado: `f2a1e765671dce0e8ef242915065f2425a6f205a`.
+- CI: 312 pruebas Python correctas; Compose, build Docker y ejecución non-root correctos.
 - Extiende `MarketInstrument` con venue/native symbol, precision mode, price tick, amount step, precision digits, min/max amount/cost, contract type/size, settlement currency, expiry, strike, option right, underlying, trading status y session timezone.
 - Valida números finitos, tick/step/multiplicador positivos, límites coherentes y metadatos mínimos para opciones.
 - CCXT mapea precision mode correctamente: tick-size no se confunde con decimal places/significant digits.
 - Twelve Data conserva MIC/exchange y native symbol para equities/ETF; no inventa lot size, tick, settlement ni capacidades de trading.
 - `/api/markets` expone los campos normalizados.
 - Especificación: `docs/INSTRUMENT_CONTRACT_V2.md`.
-- **No habilita** futuros, opciones, margin, authenticated CEX trading, broker execution, wallets ni live trading. Los registros de derivados solo son válidos si incluyen los campos requeridos; no representan un adaptador implementado.
-- Validación CI pendiente en el HEAD final de esta rama.
+- **No habilita** futuros, opciones, margin, authenticated CEX trading, broker execution, wallets ni live trading. Los registros de derivados son metadatos, no un adaptador implementado.
+- Los campos nuevos todavía no están conectados a la validación de órdenes existente; la ejecución paper mantiene el alcance previo.
 
 ## 5. Objetivo de producto y siguientes fases
 
@@ -157,8 +160,8 @@ La arquitectura de referencia está en `docs/MARKET_EXPANSION_ARCHITECTURE.md`.
 Siguiente secuencia:
 1. **Completado — backups externos y restauración (PR #48):** replicación S3-compatible verificada, status API y descarga/validación de restore candidate. Falta configurar el proveedor real en el entorno operativo.
 2. **Completado en PR #50 — dashboard ampliado:** velas OHLC, salud de conectores/readiness, investigación, historial de estrategias, intents/fills paper, backup status y retiradas paper.
-3. **En curso — contrato normalizado de instrumentos v2:** ampliar precisión, límites, venue, settlement y metadatos contractuales sin habilitar nuevos mercados.
-4. **Siguiente — catálogo persistente venue-aware:** snapshots de discovery, first/last seen, restricciones y fallos; diseñar migración de identidad sin romper posiciones históricas.
+3. **Completado — contrato normalizado de instrumentos v2 (PR #52):** precision mode, ticks/steps, límites, venue y metadatos de contratos con validación estricta.
+4. **Siguiente fase — catálogo persistente venue-aware:** snapshots de discovery, first/last seen, restricciones y fallos; diseñar migración de identidad sin romper posiciones históricas.
 5. Preparar despliegue persistente 24/7 en VPS: TLS/reverse proxy, secretos, aislamiento, monitorización, alertas, readiness y recuperación.
 6. Añadir supervisión paper de stops/take-profit equity y madurez paper/sandbox por mercado antes de decisiones autónomas o live.
 7. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
