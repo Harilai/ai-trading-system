@@ -28,10 +28,11 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 12. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** seguir `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md` y verificar respuestas reales, filtros/precisión, partial fills, cancelación, timeout y reconciliación tras restart. Credenciales Demo solo en el servidor; no se simula una prueba real si el propietario no ha configurado la cuenta.
 13. **Completado en PR #66 — ledger idempotente de fills individuales y comisiones:** trade IDs, order ID, cantidad, precio, quote cost, comisión/activo, timestamp, persistencia append-only y bloqueo fail-closed hasta cubrir el fill acumulado.
 14. **Completado en PR #68 — reconciliación periódica Demo:** polling de órdenes abiertas/unknown y fills con leases persistentes, fencing, backoff, lotes acotados y recuperación tras restart; funciona con estrategia pausada y nunca reenvía órdenes.
-15. **Completado — contratos normalizados de cuenta (PR #71):** registry multi-account, permisos y balances normalizados. **En curso — PR #72:** adaptador genérico CCXT read-only para CEX Spot con autenticación API key/secret; no ejecuta órdenes.
-16. **Siguiente — snapshots de posiciones y ledger de cuenta multi-venue:** persistir posiciones por instrumento/cuenta, cantidades, coste, mark, P&L y moneda sin mezclarlo con paper portfolio; después incorporar adaptadores específicos de broker.
-17. Supervisión paper equity y operación 24/7: stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
-18. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+15. **Completado — contratos normalizados de cuenta (PR #71):** registry multi-account, permisos y balances normalizados.
+16. **Completado — adaptador genérico CCXT read-only (PR #72):** CEX Spot configurable por exchange ID (Kraken por defecto), autenticación API key/secret y solo lectura.
+17. **En curso — PR #73: ledger inmutable de posiciones multi-market:** snapshots por instrumento, market type y entorno, deltas exactos y separación de la cartera paper. Aún no incorpora un broker/venue con posiciones habilitadas.
+18. Incorporar adaptadores específicos de broker y posiciones por mercado; después supervisión paper equity y operación 24/7.
+19. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 
 ## Estado integrado
@@ -39,7 +40,8 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 | Área | Estado |
 |---|---|
 | Contratos normalizados de account providers | Integrado en PR #71 (`a7a9bb8`); 433 tests, Docker hardening y endpoints genéricos autenticados |
-| Adaptador CCXT read-only multi-CEX | En revisión en PR #72; balance Spot only, API key scope no verificado por software, sin operaciones de escritura |
+| Adaptador CCXT read-only multi-CEX | Integrado en PR #72 (`c44bc97`); 446 tests, balance Spot only y sin operaciones de escritura |
+| Ledger de posiciones multi-market | En revisión en PR #73; snapshots append-only por instrumento/entorno, aún sin adaptador de broker que publique posiciones |
 | Catálogo persistente de instrumentos | Implementado y fusionado en PR #54 (`b9dbba5`); 323 tests y Docker hardening correctos |
 | Preparación operativa 24/7 | Implementada en PR #56 (`c892ff3`); 330 tests y Docker hardening correctos; VPS pendiente |
 | Binance Spot account connector (read-only) | Implementado en PR #57 (`8773d75`); 345 tests y Docker hardening correctos; API key no configurada |
