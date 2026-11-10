@@ -153,18 +153,20 @@ class MarketInstrument:
         if not isinstance(self.precision_mode, PrecisionMode):
             try:
                 object.__setattr__(self, "precision_mode", PrecisionMode(self.precision_mode))
-            except ValueError as exc:
+            except (TypeError, ValueError) as exc:
                 raise ValueError("Unsupported instrument precision mode") from exc
 
         if self.native_symbol is None:
             object.__setattr__(self, "native_symbol", self.symbol)
-        elif not self.native_symbol.strip():
-            raise ValueError("Instrument native_symbol cannot be blank")
+        for name in ("native_symbol", "venue_id", "contract_type", "settlement_currency", "expiry", "underlying", "session_timezone"):
+            value = getattr(self, name)
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"Instrument {name} cannot be blank or non-text")
 
         status = self.trading_status
         if status is None:
             object.__setattr__(self, "trading_status", "active" if self.active else "inactive")
-        elif status not in {"active", "inactive", "suspended", "expired", "unknown"}:
+        elif not isinstance(status, str) or status not in {"active", "inactive", "suspended", "expired", "unknown"}:
             raise ValueError("Unsupported instrument trading_status")
 
         if self.option_type is not None:
@@ -190,15 +192,11 @@ class MarketInstrument:
         elif self.strike is not None:
             raise ValueError("strike is only valid for option instruments")
 
-        if self.venue_id is not None and not self.venue_id.strip():
-            raise ValueError("Instrument venue_id cannot be blank")
-        if self.settlement_currency is not None and not self.settlement_currency.strip():
-            raise ValueError("Instrument settlement_currency cannot be blank")
-
     @property
     def instrument_id(self) -> str:
-        # The native symbol is scoped by provider and market type, so identical
-        # tickers on separate venues or asset classes cannot collide.
+        # Preserve the legacy key for existing portfolio rows. Some providers
+        # (notably data aggregators) can expose the same ticker on multiple MICs;
+        # a venue-aware canonical key requires a separate, explicit DB migration.
         return f"{self.provider_id}:{self.market_type.value}:{self.symbol}"
 
 
