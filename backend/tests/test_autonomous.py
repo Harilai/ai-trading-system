@@ -860,3 +860,33 @@ def test_decision_cycle_expires_stale_approved_intent_instead_of_filling(tmp_pat
     assert result["execution"] == "expired"
     assert portfolio.get_order_intent(task_id)["status"] == "expired"
     assert portfolio.history() == []
+
+
+def test_demo_order_reconciliation_runs_even_when_strategy_worker_is_paused(tmp_path):
+    import asyncio
+
+    class FakeDemoReconciler:
+        def __init__(self):
+            self.calls = 0
+
+        def run_once(self):
+            self.calls += 1
+            return {"claimed": False, "processed": 0}
+
+    store = AutonomousStore(str(tmp_path / "paused-demo-reconcile.db"))
+    reconciler = FakeDemoReconciler()
+    worker = AutonomousAgent(
+        store,
+        poll_interval_seconds=0.01,
+        demo_reconciler=reconciler,
+    )
+
+    async def run_worker():
+        await worker.start()
+        await asyncio.sleep(0.06)
+        await worker.stop()
+
+    asyncio.run(run_worker())
+
+    assert store.state()["enabled"] == 0
+    assert reconciler.calls >= 1
