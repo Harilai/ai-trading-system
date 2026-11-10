@@ -1555,3 +1555,16 @@ def test_binance_demo_fill_reconciliation_rejects_incomplete_fee_evidence(monkey
     )
     assert response.status_code == 409
     assert store.list_fills("api-fill-missing-fee") == []
+
+
+def test_binance_demo_reconciliation_status_is_owner_authenticated_and_hides_lease_token(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    unauthorized = client.get("/api/demo/binance/spot/reconciliation")
+    assert unauthorized.status_code == 401
+
+    response = client.get("/api/demo/binance/spot/reconciliation", headers=headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert "enabled" in payload
+    assert "schedule" in payload
+    assert "lease_token" not in payload["schedule"]
