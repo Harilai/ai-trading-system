@@ -4,7 +4,7 @@
 >
 > **Última revisión del repositorio:** 2026-11-10  
 > **Rama base revisada:** `main`  
-> **Último commit observado en `main`:** `b9dbba57ffcf5c908f318d3962f93407e94cb14f` — merge de PR #54, catálogo persistente de instrumentos.  
+> **Último commit observado en `main`:** `8773d75313aa225a2cd7f0789024c66ab6c2613b` — merge de PR #57, conector Binance Spot de solo lectura.  
 > **Estado de ejecución:** paper trading únicamente; live trading no implementado y deshabilitado.
 
 ## 1. Cómo retomar en una conversación nueva
@@ -166,6 +166,24 @@ La forma de trabajo no es opcional ni depende del chat: `docs/AGENT_WORKFLOW.md`
 - Diseño: `docs/INSTRUMENT_CATALOG_DESIGN.md`.
 - Solo discovery de metadatos: no añade ejecución, autenticación privada, derivados, wallets ni live trading.
 
+### Fase completada — preparación operativa 24/7 (PR #56)
+
+- Merge commit: `c892ff35b292515624629d783becc17a9ff60f1b`.
+- 330 pruebas Python correctas; Compose, build API y ejecución non-root correctos.
+- Healthcheck de backups; reintentos cortos ante fallos locales/off-host; rotación de logs.
+- Runbook `docs/VPS_DEPLOYMENT_RUNBOOK.md` y unidad systemd `deploy/ai-trading-compose.service`.
+- No se ha aprovisionado ni desplegado todavía un VPS.
+
+### Fase completada — Binance Spot read-only (PR #57)
+
+- Merge commit: `8773d75313aa225a2cd7f0789024c66ab6c2613b`.
+- Head validado: `b1b7b8a07490ba401ace8908a80b40e87be2bf09`.
+- 345 pruebas Python correctas; Compose, build API y ejecución non-root correctos.
+- Endpoints owner-authenticated: `GET /api/accounts` y `GET /api/accounts/binance/spot/balances`.
+- Solo usa `fetch_balance()`; balances devueltos como strings decimales; secretos `SecretStr`; errores externos sanitizados.
+- El conector no verifica permisos reales de la API key (`account_key_permissions_verified=false`); el propietario debe crear una clave solo lectura, sin trading, transferencias ni retiradas.
+- No hay órdenes reales, ni sincronización con la cartera paper, ni claves configuradas en el VPS.
+
 ## 5. Objetivo de producto y siguientes fases
 
 El objetivo final no es un bot exclusivamente crypto. Debe evolucionar a una plataforma multiactivo y multi-venue preparada para capital real: conectar exchanges como Binance, brokers y wallets, y descubrir/operar los instrumentos que cada proveedor y cuenta permita. El universo objetivo incluye crypto CEX/DEX, acciones, ETF, FX, futuros, opciones, bonos, materias primas y otros mercados integrables. La disponibilidad depende del proveedor, país, cuenta, API, liquidez y elegibilidad. Descubrir un símbolo no habilita su trading.
@@ -177,9 +195,12 @@ Siguiente secuencia:
 2. **Completado en PR #50 — dashboard ampliado:** velas OHLC, salud de conectores/readiness, investigación, historial de estrategias, intents/fills paper, backup status y retiradas paper.
 3. **Completado — contrato normalizado de instrumentos v2 (PR #52):** precision mode, ticks/steps, límites, venue y metadatos de contratos con validación estricta.
 4. **Completado — catálogo persistente venue-aware (PR #54):** snapshots, first/last seen, identidad canónica paralela, filtros, discovery history y fallos sanitizados.
-5. **Siguiente fase — preparación de operación 24/7:** runbook de despliegue en VPS, gestión de secretos, TLS/reverse proxy, aislamiento, monitorización, alertas, readiness, recuperación y pruebas de reinicio. No desplegar ni activar live sin aprobación explícita.
-6. Añadir supervisión paper de stops/take-profit equity y madurez paper/sandbox por mercado antes de decisiones autónomas o live.
-7. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+5. **Completado — preparación de operación 24/7 (PR #56):** healthcheck del servicio de backups, reintentos acotados, rotación de logs, runbook VPS y unidad systemd. El despliegue real en un VPS todavía no está realizado.
+6. **Completado — conector Binance Spot read-only (PR #57):** balances autenticados bajo owner token, credenciales `SecretStr`, importes como strings decimales y sin métodos de órdenes/transferencias/retiradas. La API key no está configurada en el entorno operativo.
+7. **Siguiente fase — snapshots y conciliación de cuentas reales en modo lectura:** persistir observaciones inmutables por cuenta/venue, detectar cambios y discrepancias sin mezclarlas con la cartera paper ni ejecutar operaciones.
+8. Después, construir adaptador Binance Spot testnet/sandbox y validar lifecycle, fills parciales, cancelación y conciliación antes de considerar cualquier live.
+9. Añadir supervisión paper de stops/take-profit equity y madurez por mercado antes de decisiones autónomas o live.
+10. Evaluar live limitado por venue/clase solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## 6. Límites que no se deben saltar
 

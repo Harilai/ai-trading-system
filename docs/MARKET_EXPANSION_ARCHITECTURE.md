@@ -58,6 +58,8 @@ No se salta una etapa por disponer de una API key o porque el proveedor permita 
 
 ## Estado actual y alcance inmediato
 
-La implementación actual continúa paper-only. CCXT proporciona datos públicos de crypto spot; Twelve Data proporciona datos/FX para investigación y órdenes manuales paper de cash equities/ETF USD. La PR #44 añadió ciclo de vida paper de órdenes, conciliación contra el ledger y fencing de leases. Todavía no hay broker execution, CEX authenticated trading, wallet signing, DEX execution ni live trading.
+La ejecución continúa siendo paper-only. CCXT proporciona datos públicos de crypto spot; Twelve Data proporciona datos/FX para investigación y órdenes manuales paper de cash equities/ETF USD. El sistema ya dispone de ciclo de vida paper de órdenes y conciliación, catálogo persistente venue-aware, backups off-host, dashboard y contrato normalizado de instrumentos.
 
-Las copias externas verificables, el dashboard de supervisión y el contrato normalizado de instrumentos v2 están implementados. La fase actual construye el catálogo persistente con identidad venue-aware, snapshots de discovery, first/last seen, restricciones y fallos; después se incorporarán adaptadores por clase/venue. No declarar soporte de un mercado hasta que su adaptador, datos, contabilidad, riesgo y matriz de capacidades estén implementados y probados.
+La PR #57 añade un conector autenticado Binance Spot de solo lectura para consultar balances reales, protegido por owner token. No expone órdenes, transferencias, retiradas ni firma; no sincroniza esos balances con la cartera paper y no demuestra ni verifica los permisos de la API key. Todavía no hay ejecución autenticada de órdenes CEX/broker, wallet signing, DEX execution ni live trading.
+
+La preparación operativa VPS está documentada, pero no se ha desplegado un host real. La siguiente fase debe persistir snapshots inmutables de cuentas y conciliar cambios en modo lectura; después se validarán adaptadores sandbox/testnet por venue/clase. No declarar soporte de un mercado hasta que su adaptador, datos, contabilidad, riesgo y matriz de capacidades estén implementados y probados.
