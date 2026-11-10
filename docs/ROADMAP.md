@@ -28,7 +28,7 @@ Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de 
 | Registro de proveedores y capability matrix | Implementado |
 | Descubrimiento multi-provider para adaptadores configurados | Implementado en datos; actualmente un proveedor por defecto |
 | Router de ejecución normalizado | Contrato inicial; ningún adaptador live |
-| Perfiles de riesgo por clase/tipo de mercado | Contratos implementados; solo crypto spot habilitado |
+| Perfiles de riesgo por clase/tipo de mercado | Crypto spot autónomo y cash equity/ETF USD manual-only paper habilitados; margin/derivados deshabilitados |
 | Indicadores técnicos | Implementado |
 | Contabilidad de comisiones en coste base y P/L realizado | Implementado |
 | Validación de datos obsoletos y órdenes | Implementado |
