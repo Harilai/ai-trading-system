@@ -655,3 +655,20 @@ def test_expired_lease_cannot_be_renewed_or_completed_before_reclaim(tmp_path):
     assert store.extend_task_lease(task["id"], claimed["lease_token"], 120) is False
     assert store.finish_task(task["id"], {"ok": True}, claimed["lease_token"]) is False
     assert store.fail_task(claimed, "late failure") is False
+
+
+def test_legacy_task_table_migrates_lease_token_column(tmp_path):
+    import sqlite3
+
+    path = str(tmp_path / "legacy-agent.db")
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "CREATE TABLE agent_tasks ("
+            "id TEXT PRIMARY KEY,kind TEXT NOT NULL,payload TEXT NOT NULL,status TEXT NOT NULL,"
+            "due_at TEXT NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,lease_until TEXT,"
+            "result TEXT,error TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)"
+        )
+    store = AutonomousStore(path)
+    with store.connect() as db:
+        columns = {row["name"] for row in db.execute("PRAGMA table_info(agent_tasks)")}
+    assert "lease_token" in columns
