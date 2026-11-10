@@ -197,3 +197,114 @@ def test_provider_registry_rejects_future_and_malformed_timestamps():
     assert ProviderRegistry.is_stale({"timestamp": float("nan")}, 60) is True
     assert ProviderRegistry.is_stale({}, 60) is True
     assert ProviderRegistry.is_stale({"timestamp": now_ms - 1000}, 60) is False
+
+
+def test_market_instrument_normalizes_full_contract_constraints():
+    from app.providers.base import PrecisionMode
+
+    instrument = MarketInstrument(
+        provider_id="ccxt:example",
+        symbol="BTC/EUR",
+        asset_class="crypto",
+        market_type="spot",
+        base="BTC",
+        quote="EUR",
+        active=True,
+        venue_id="example",
+        native_symbol="BTC/EUR",
+        precision_mode="tick_size",
+        price_tick="0.01",
+        amount_step="0.0001",
+        min_amount="0.00001",
+        max_amount="10",
+        min_cost="5",
+        max_cost="100000",
+        contract_type="spot",
+        trading_status="active",
+    )
+
+    assert instrument.precision_mode is PrecisionMode.TICK_SIZE
+    assert instrument.price_tick == pytest.approx(0.01)
+    assert instrument.amount_step == pytest.approx(0.0001)
+    assert instrument.min_amount == pytest.approx(0.00001)
+    assert instrument.max_amount == pytest.approx(10)
+    assert instrument.venue_id == "example"
+    assert instrument.native_symbol == "BTC/EUR"
+    assert instrument.instrument_id == "ccxt:example:spot:BTC/EUR"
+
+
+def test_market_instrument_requires_complete_option_contract_identity():
+    import pytest
+
+    with pytest.raises(ValueError, match="require expiry"):
+        MarketInstrument(
+            provider_id="options:venue", symbol="BTC-20270101-100000-C",
+            asset_class=AssetClass.OPTION, market_type=MarketType.OPTIONS,
+            base="BTC", quote="USD", active=True,
+        )
+
+    option = MarketInstrument(
+        provider_id="options:venue", symbol="BTC-20270101-100000-C",
+        asset_class=AssetClass.OPTION, market_type=MarketType.OPTIONS,
+        base="BTC", quote="USD", active=True,
+        expiry="2027-01-01", strike=100000, option_type="CALL",
+        underlying="BTC", contract_size=1,
+    )
+    assert option.option_type == "call"
+    assert option.strike == pytest.approx(100000)
+
+
+def test_market_instrument_rejects_invalid_precision_and_market_limits():
+    import pytest
+
+    with pytest.raises(ValueError, match="price_tick must be positive"):
+        MarketInstrument(
+            provider_id="ccxt:example", symbol="BTC/EUR",
+            asset_class=AssetClass.CRYPTO, market_type=MarketType.SPOT,
+            base="BTC", quote="EUR", active=True, price_tick=0,
+        )
+
+    with pytest.raises(ValueError, match="max_amount cannot be below min_amount"):
+        MarketInstrument(
+            provider_id="ccxt:example", symbol="BTC/EUR",
+            asset_class=AssetClass.CRYPTO, market_type=MarketType.SPOT,
+            base="BTC", quote="EUR", active=True, min_amount=2, max_amount=1,
+        )
+
+
+def test_ccxt_discovery_maps_tick_size_and_order_limits():
+    import ccxt
+    from app.providers.ccxt_spot import CcxtSpotProvider
+    from app.providers.base import PrecisionMode
+
+    class FakeExchange:
+        precisionMode = ccxt.TICK_SIZE
+
+    provider = CcxtSpotProvider.__new__(CcxtSpotProvider)
+    provider.provider_id = "ccxt:fake"
+    provider.exchange_id = "fake"
+    provider._markets = {
+        "BTC/EUR": {
+            "spot": True, "active": True, "base": "BTC", "quote": "EUR",
+            "precision": {"price": 0.01, "amount": 0.0001},
+            "limits": {
+                "amount": {"min": 0.00001, "max": 5},
+                "cost": {"min": 5, "max": 50000},
+            },
+            "maker": 0.001, "taker": 0.002, "contractSize": None,
+        },
+    }
+    provider.exchange = FakeExchange()
+
+    instruments = provider.discover_markets()
+    assert len(instruments) == 1
+    instrument = instruments[0]
+    assert instrument.precision_mode is PrecisionMode.TICK_SIZE
+    assert instrument.price_tick == pytest.approx(0.01)
+    assert instrument.amount_step == pytest.approx(0.0001)
+    assert instrument.min_amount == pytest.approx(0.00001)
+    assert instrument.max_amount == pytest.approx(5)
+    assert instrument.min_cost == pytest.approx(5)
+    assert instrument.max_cost == pytest.approx(50000)
+    assert instrument.venue_id == "fake"
+    assert instrument.contract_type == "spot"
