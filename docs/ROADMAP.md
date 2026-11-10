@@ -20,15 +20,20 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 4. **Completado en PR #50 — dashboard ampliado:** velas OHLC, salud/readiness de conectores, investigación de acciones/ETF, historial de estrategias, intentos/fills paper, backup status y gestión contable de retiradas paper. No hay transferencia real.
 5. **Completado — contrato normalizado de instrumentos v2 (PR #52):** venue/native symbol, precision mode, tick/step, amount/cost bounds, contract size, settlement, expiry, strike, option right, underlying y trading status. No añade aún ejecución de nuevos mercados.
 6. **Completado — catálogo persistente y venue-aware identity (PR #54):** snapshots, first/last seen, filtros, discovery history, fallos sanitizados e identidad canónica paralela al ID histórico.
-7. **Siguiente — preparación de operación 24/7:** runbook VPS, secretos, TLS/reverse proxy, aislamiento, monitorización, alertas, readiness, recuperación y pruebas de reinicio; sin despliegue automático.
-8. **Madurez por mercado:** paper/backtest y sandbox/testnet para cada venue/clase; implementar supervisión paper de stops/take-profit equity antes de decisiones autónomas equity.
-9. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
+7. **Completado — preparación de operación 24/7 (PR #56):** healthcheck de backups, reintentos, rotación de logs, runbook VPS y systemd unit. El VPS real aún no está desplegado.
+8. **Completado — Binance Spot read-only (PR #57):** consulta autenticada de balances con permisos mínimos, sin órdenes ni retiradas; requiere configurar una API key read-only en el servidor.
+9. **Siguiente — account snapshot ledger y conciliación read-only:** historial inmutable por cuenta/venue, snapshots por activo, detección de diferencias y reconciliación sin alterar la cartera paper.
+10. **Sandbox/testnet por venue/clase:** validar adaptadores de órdenes, partial fills, cancel/replace, idempotencia y conciliación antes de cualquier ejecución real.
+11. **Live controlado por venue/clase:** solo tras sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario.
 
 ## Estado integrado
 
 | Área | Estado |
 |---|---|
 | Catálogo persistente de instrumentos | Implementado y fusionado en PR #54 (`b9dbba5`); 323 tests y Docker hardening correctos |
+| Preparación operativa 24/7 | Implementada en PR #56 (`c892ff3`); 330 tests y Docker hardening correctos; VPS pendiente |
+| Binance Spot account connector (read-only) | Implementado en PR #57 (`8773d75`); 345 tests y Docker hardening correctos; API key no configurada |
+
 | Contrato normalizado de instrumentos v2 | Implementado y fusionado en PR #52 (`1d6ad47`); 312 tests y Docker hardening correctos; no habilita trading de derivados |
 | Dashboard de supervisión y operaciones paper | Implementado y fusionado en PR #50 (`848d1d3`); 305 tests y Docker hardening correctos |
 | Backups externos S3-compatible y restore candidate verificado | Implementado y fusionado en PR #48 (`ed08cec`); off-host desactivado por defecto hasta configurar `.env.backup`; 304 tests y Docker hardening correctos |
