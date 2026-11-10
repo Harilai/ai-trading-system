@@ -202,3 +202,48 @@ def test_periodic_reconciler_quarantines_unexpected_state_after_partial_fill(tmp
 
     assert result["results"][0]["status"] == "reconciliation_required"
     assert store.get_order("periodic-unexpected-1")["status"] == "reconciliation_required"
+
+
+def test_periodic_reconciler_continues_batch_after_one_order_lookup_fails(tmp_path):
+    store = BinanceDemoOrderStore(str(tmp_path / "periodic-batch-isolation.db"))
+    create_open_order(store, "periodic-batch-open")
+    store.prepare_intent({
+        "client_order_id": "periodic-batch-filled",
+        "symbol": "ETH/USDT", "side": "buy",
+        "amount": "0.01", "price": "2000", "quote_asset": "USDT",
+    })
+    store.transition("periodic-batch-filled", "submission_unknown")
+    store.transition(
+        "periodic-batch-filled", "filled",
+        exchange_order_id="exchange-periodic-filled",
+        filled="0.01", remaining="0", average="2000",
+    )
+
+    class PartiallyFailingAccount:
+        def fetch_order_by_client_id(self, **kwargs):
+            raise BinanceDemoError("temporary status lookup failure")
+
+        def fetch_order_fills(self, **kwargs):
+            return {
+                "fills": [{
+                    "trade_id": "filled-batch-trade",
+                    "exchange_order_id": "exchange-periodic-filled",
+                    "symbol": "ETH/USDT", "side": "buy",
+                    "amount": "0.01", "price": "2000", "cost": "20",
+                    "fee_cost": "0", "fee_currency": "USDT",
+                    "timestamp_ms": 1794312000000,
+                }],
+                "complete": True, "returned_count": 1, "limit": 1000,
+            }
+
+    reconciler = BinanceDemoOrderReconciler(
+        store, PartiallyFailingAccount(),
+        interval_seconds=15, lease_seconds=30, max_orders_per_cycle=2,
+    )
+    result = reconciler.run_once()
+
+    assert result["claimed"] is True
+    assert result["processed"] == 2
+    assert result["failed"] is True
+    assert store.get_order("periodic-batch-open")["status"] == "open"
+    assert len(store.list_fills("periodic-batch-filled")) == 1
