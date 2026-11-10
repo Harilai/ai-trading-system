@@ -449,11 +449,81 @@ class AccountProviderRegistry:
                 snapshot[optional] = bool(raw[optional])
         return snapshot
 
+    def fetch_positions(
+        self, provider_id: str, account_alias: str | None = None, *, market_type: str | None = None,
+    ) -> list[dict]:
+        provider, capabilities, lock = self._resolve(provider_id, account_alias)
+        if not capabilities.positions:
+            raise UnsupportedAccountCapability("Account provider does not declare position support")
+        selected_market = market_type
+        if selected_market is None:
+            if len(capabilities.market_types) != 1:
+                raise AccountProviderError("market_type is required for a multi-market account")
+            selected_market = capabilities.market_types[0]
+        if selected_market not in capabilities.market_types:
+            raise UnsupportedAccountCapability("Requested market_type is not declared by this account")
+        try:
+            with lock:
+                raw_positions = provider.fetch_positions()
+        except AccountProviderError:
+            raise
+        except Exception as exc:
+            raise AccountProviderError(f"Account position request failed ({type(exc).__name__})") from None
+        if not isinstance(raw_positions, list):
+            raise AccountProviderError("Account provider returned an invalid positions collection")
+        normalized = []
+        seen = set()
+        for raw in raw_positions:
+            position = AccountPosition.normalize(raw)
+            if position.market_type != selected_market:
+                raise AccountProviderError("Position market_type conflicts with requested account market")
+            key = (position.instrument_id, position.side)
+            if key in seen:
+                raise AccountProviderError("Account provider returned duplicate instrument/side positions")
+            seen.add(key)
+            normalized.append(position.to_dict())
+        return sorted(normalized, key=lambda item: (item["instrument_id"], item["side"]))
+
+    def fetch_account_snapshot(
+        self, provider_id: str, account_alias: str | None = None, *, market_type: str | None = None,
+    ) -> dict:
+        capabilities = self.capabilities(provider_id, account_alias)
+        if not capabilities.balances and not capabilities.positions:
+            raise UnsupportedAccountCapability("Account provider exposes no snapshot data")
+        balance_snapshot = self.fetch_balances(provider_id, account_alias) if capabilities.balances else None
+        selected_market = balance_snapshot["market_type"] if balance_snapshot is not None else market_type
+        if selected_market is None:
+            if len(capabilities.market_types) != 1:
+                raise AccountProviderError("market_type is required for a multi-market account")
+            selected_market = capabilities.market_types[0]
+        if selected_market not in capabilities.market_types:
+            raise UnsupportedAccountCapability("Requested market_type is not declared by this account")
+        if balance_snapshot is not None and balance_snapshot["market_type"] != selected_market:
+            raise AccountProviderError("Balance and position snapshots cannot mix market types")
+        positions = self.fetch_positions(provider_id, account_alias, market_type=selected_market) if capabilities.positions else []
+        timestamp = balance_snapshot["fetched_at"] if balance_snapshot is not None else datetime.now(timezone.utc).isoformat()
+        return {
+            "provider_id": capabilities.provider_id,
+            "account_alias": capabilities.account_alias,
+            "market_type": selected_market,
+            "environment": capabilities.environment,
+            "venue_type": capabilities.venue_type,
+            "fetched_at": timestamp,
+            "read_only": capabilities.read_only,
+            "execution_enabled": capabilities.order_submission,
+            "withdrawals_enabled": capabilities.withdrawals,
+            "transfers_enabled": capabilities.transfers,
+            "wallet_signing_enabled": capabilities.wallet_signing,
+            "permissions_verified": capabilities.permissions_verified,
+            "balances": balance_snapshot["balances"] if balance_snapshot else [],
+            "positions": positions,
+        }
     def record_read_only_snapshot(
         self,
         provider_id: str,
         snapshot_store: Any,
         account_alias: str | None = None,
+        market_type: str | None = None,
     ) -> dict:
         capabilities = self.capabilities(provider_id, account_alias)
         if not capabilities.read_only or any((
@@ -465,5 +535,5 @@ class AccountProviderRegistry:
             capabilities.wallet_signing,
         )):
             raise UnsupportedAccountCapability("Only explicitly read-only accounts can be snapshotted")
-        snapshot = self.fetch_balances(provider_id, account_alias)
+        snapshot = self.fetch_account_snapshot(provider_id, account_alias, market_type=market_type)
         return snapshot_store.record_snapshot(snapshot)
