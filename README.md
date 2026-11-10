@@ -160,9 +160,10 @@ El dashboard muestra cartera, posiciones, operaciones, heartbeat, tareas y contr
 - `GET /api/providers` — proveedores configurados y capability matrix. Twelve Data aparece si `TWELVE_DATA_API_KEY` está configurada.
 - `GET /api/accounts` — estado y capacidades de conectores de cuenta; requiere `X-Agent-Token`.
 - `GET /api/accounts/{provider_id}/balances?account_alias=...` — balances normalizados por proveedor/cuenta; requiere `X-Agent-Token`.
+- `GET /api/accounts/{provider_id}/positions?account_alias=...&market_type=...` — posiciones normalizadas cuando el adaptador declara esa capability; requiere `X-Agent-Token`.
 - El conector CCXT read-only permite añadir un CEX compatible (Kraken por defecto) mediante `CCXT_READONLY_EXCHANGE_ID`, `CCXT_READONLY_API_KEY` y `CCXT_READONLY_API_SECRET`; solo consulta balances Spot y no expone métodos de trading.
-- `POST /api/accounts/{provider_id}/snapshots?account_alias=...` — snapshot inmutable solo para cuentas Spot declaradas explícitamente read-only; rechaza cuentas Demo/trading-enabled.
-- `GET /api/accounts` también devuelve `normalized_accounts` con capacidades y permisos declarados. `permissions_verified=false` indica que el software no ha verificado los scopes reales de la API key; el operador debe crearla con privilegios mínimos.
+- `POST /api/accounts/{provider_id}/snapshots?account_alias=...&market_type=...` — snapshot inmutable de balances y posiciones para cuentas declaradas explícitamente read-only; rechaza cuentas Demo/trading-enabled.
+- `GET /api/accounts` también devuelve `normalized_accounts` con capacidades y permisos declarados. El ledger admite snapshots separados por entorno y market type (`spot`, `cash_equity`, `margin`, `futures`, `options`, `forex`, `onchain`); no mezcla cuentas ni modifica la cartera paper. `permissions_verified=false` indica que el software no ha verificado los scopes reales de la API key; el operador debe crearla con privilegios mínimos.
 - `GET /api/accounts/binance/spot/balances` — balances reales de Binance Spot, solo lectura y sin persistencia; requiere `X-Agent-Token`.
 - `GET /api/demo/binance/spot/balances` — balances virtuales de Binance Spot Demo Trading; requiere `X-Agent-Token` y configuración demo explícita.
 - `GET /api/demo/binance/spot/markets` — catálogo de mercados Spot disponibles en Demo Trading; requiere `X-Agent-Token`.
