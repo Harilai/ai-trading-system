@@ -172,6 +172,25 @@ def run_backup_cycle(
         except OSError:
             logger.exception("Unable to apply backup retention to %s", old_backup)
 
+    unverified_local = []
+    if external_enabled:
+        for local_backup in destination_dir.glob("*.sqlite3"):
+            record = uploaded_sources.get(local_backup.name)
+            if not record or record.get("key") not in remote_keys:
+                try:
+                    unverified_local.append({
+                        "name": local_backup.name,
+                        "size_bytes": local_backup.stat().st_size,
+                    })
+                except OSError:
+                    unverified_local.append({"name": local_backup.name, "size_bytes": 0})
+        if unverified_local:
+            logger.warning(
+                "%s local SQLite snapshots (%s bytes) do not yet have verified off-host copies",
+                len(unverified_local),
+                sum(item["size_bytes"] for item in unverified_local),
+            )
+
     external_status = "disabled"
     if external_enabled:
         if external_failures:
@@ -187,6 +206,8 @@ def run_backup_cycle(
             "created": [path.name for path in created],
             "failures": local_failures,
             "retention_days": retention_days,
+            "unverified_offsite_count": len(unverified_local),
+            "unverified_offsite_bytes": sum(item["size_bytes"] for item in unverified_local),
         },
         "external": {
             "enabled": external_enabled,
