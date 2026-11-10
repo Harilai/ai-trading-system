@@ -84,10 +84,16 @@ def risk_profiles():
 @app.get("/api/markets")
 def markets():
     instruments, failures = market.discover_markets()
+    try:
+        catalogue_sync = instrument_catalog.record_discovery(instruments, failures)
+    except InstrumentCatalogError as exc:
+        raise HTTPException(503, "Unable to persist the instrument discovery snapshot") from exc
     return {
         "discovered": len(instruments),
+        "catalogue_sync": catalogue_sync,
         "instruments": [
             {
+                "catalogue_id": instrument_catalog.catalogue_id(item),
                 "instrument_id": item.instrument_id,
                 "provider_id": item.provider_id,
                 "symbol": item.symbol,
@@ -121,7 +127,7 @@ def markets():
             }
             for item in instruments
         ],
-        "provider_failures": [instrument_catalog._safe_failure(item) for item in failures],
+        "provider_failures": catalogue_sync["failures"],
     }
 
 
