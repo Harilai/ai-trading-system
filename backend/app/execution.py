@@ -35,6 +35,14 @@ class ExecutionRouter:
         """Return an explicitly registered execution adapter, never a market-data provider."""
         return self.providers.get(provider_id)
 
+    def supports_instrument(self, provider_id: str, asset_class: str, market_type: str) -> bool:
+        capabilities = self.capabilities_for(provider_id)
+        if capabilities is None:
+            return False
+        declared_assets = {item.value for item in capabilities.asset_classes}
+        declared_markets = {item.value for item in capabilities.market_types}
+        return asset_class in declared_assets and market_type in declared_markets
+
     def capabilities_for(self, provider_id: str):
         provider = self.get_provider(provider_id)
         if provider is None:
