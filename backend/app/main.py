@@ -268,6 +268,13 @@ def create_coordinated_account_snapshot(
 ):
     require_order_control_token(x_agent_token)
     try:
+        existing = coordinated_account_snapshot_store.get_by_request_id(request_id)
+        if existing is not None:
+            if (existing["provider_id"], existing["account_alias"], existing["market_type"]) != (
+                provider_id, account_alias or existing["account_alias"], market_type.lower()
+            ):
+                raise CoordinatedSnapshotError("Capture request_id is already bound to a different account scope")
+            return existing
         balances, positions = account_provider_registry.fetch_coordinated_snapshot(
             provider_id, account_alias, market_type=market_type,
         )
