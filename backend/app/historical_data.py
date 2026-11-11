@@ -420,7 +420,7 @@ class HistoricalQuoteStore:
         with self.connect() as db:
             rows = db.execute(
                 "SELECT * FROM historical_quotes WHERE " + " AND ".join(clauses)
-                + " ORDER BY timestamp_ms DESC,retrieved_at_ms DESC,id DESC LIMIT ?",
+                + " ORDER BY retrieved_at_ms DESC,timestamp_ms DESC,id DESC LIMIT ?",
                 params,
             ).fetchall()
         return [
