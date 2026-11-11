@@ -219,6 +219,7 @@ def test_sync_cycle_applies_kraken_720_candle_history_cap_and_request_limit(tmp_
         exchange=Exchange(),
         capabilities=lambda: SimpleNamespace(
             supports_historical_ohlcv=True,
+            ohlcv_pagination_mode="since",
             supported_ohlcv_timeframes=("1m", "1h"),
             max_ohlcv_request_limit=720,
             max_historical_ohlcv_bars=720,
@@ -265,6 +266,7 @@ def test_sync_cycle_rejects_timeframe_not_declared_by_provider(tmp_path):
         exchange=Exchange(),
         capabilities=lambda: SimpleNamespace(
             supports_historical_ohlcv=True,
+            ohlcv_pagination_mode="since",
             supported_ohlcv_timeframes=("1m", "1h"),
             max_ohlcv_request_limit=720,
             max_historical_ohlcv_bars=720,
@@ -334,3 +336,81 @@ def test_provider_history_cap_clamps_existing_cursor_without_restarting_backfill
     assert updated["initial_since_ms"] == 5000
     assert updated["next_since_ms"] == 5000
     assert updated["history_window_limited"] == 1
+
+
+@pytest.mark.parametrize(
+    "capabilities, expected_error",
+    [
+        (
+            SimpleNamespace(
+                supports_historical_ohlcv=True,
+                supported_ohlcv_timeframes=(),
+                ohlcv_pagination_mode="since",
+                max_ohlcv_request_limit=720,
+                max_historical_ohlcv_bars=720,
+            ),
+            "supported OHLCV timeframes",
+        ),
+        (
+            SimpleNamespace(
+                supports_historical_ohlcv=True,
+                supported_ohlcv_timeframes=("1m",),
+                ohlcv_pagination_mode="cursor",
+                max_ohlcv_request_limit=720,
+                max_historical_ohlcv_bars=720,
+            ),
+            "pagination mode",
+        ),
+        (
+            SimpleNamespace(
+                supports_historical_ohlcv=True,
+                supported_ohlcv_timeframes=("1m",),
+                ohlcv_pagination_mode="since",
+                max_ohlcv_request_limit=1.5,
+                max_historical_ohlcv_bars=720,
+            ),
+            "request limit",
+        ),
+        (
+            SimpleNamespace(
+                supports_historical_ohlcv=True,
+                supported_ohlcv_timeframes=("1m",),
+                ohlcv_pagination_mode="since",
+                max_ohlcv_request_limit=720,
+                max_historical_ohlcv_bars=True,
+            ),
+            "historical bars capability",
+        ),
+    ],
+)
+def test_sync_cycle_fails_closed_on_incomplete_or_invalid_capabilities(
+    tmp_path, capabilities, expected_error,
+):
+    path = str(tmp_path / "trading.sqlite")
+    store = HistoricalCandleStore(path)
+    state = HistoricalSyncStateStore(path)
+    target = HistoricalSyncTarget("ccxt:kraken", "BTC/EUR", "1m")
+
+    class Exchange:
+        @staticmethod
+        def parse_timeframe(timeframe):
+            return 60
+
+        def fetch_ohlcv(self, *args, **kwargs):
+            raise AssertionError("Invalid provider capabilities must block OHLCV requests")
+
+    provider = SimpleNamespace(
+        exchange=Exchange(),
+        capabilities=lambda: capabilities,
+        discover_markets=lambda: [SimpleNamespace(
+            symbol="BTC/EUR", active=True,
+            instrument_id="ccxt:kraken:spot:BTC/EUR",
+        )],
+    )
+    result = run_sync_cycle(
+        [target], {"ccxt:kraken": provider}, store, state,
+        now_ms=86_500_000, lookback_days=1,
+    )
+    assert result[0]["status"] == "error"
+    assert expected_error in result[0]["error"] or "historical sync target failed" in result[0]["error"]
+    assert state.list_targets() == []
