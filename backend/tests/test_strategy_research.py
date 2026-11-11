@@ -433,6 +433,7 @@ def test_backtest_applies_observed_half_spread_on_entry_and_exit():
     quotes = [
         {
             "timestamp_ms": candles[index]["timestamp"],
+            "retrieved_at_ms": candles[index]["timestamp"],
             "bid": 99.0,
             "ask": 101.0,
             "timestamp_source": "exchange",
@@ -464,6 +465,7 @@ def test_backtest_never_uses_a_quote_timestamped_after_execution():
     quotes = [
         {
             "timestamp_ms": entry_time + 1,
+            "retrieved_at_ms": entry_time + 1,
             "bid": 99.0,
             "ask": 101.0,
             "timestamp_source": "exchange",
@@ -471,6 +473,7 @@ def test_backtest_never_uses_a_quote_timestamped_after_execution():
         },
         {
             "timestamp_ms": exit_time,
+            "retrieved_at_ms": exit_time,
             "bid": 99.0,
             "ask": 101.0,
             "timestamp_source": "exchange",
@@ -502,6 +505,7 @@ def test_research_requires_complete_observed_spread_for_promotion():
     quotes = [
         {
             "timestamp_ms": row["timestamp"],
+            "retrieved_at_ms": row["timestamp"],
             "bid": row["close"] * 0.999,
             "ask": row["close"] * 1.001,
             "timestamp_source": "exchange",
@@ -511,6 +515,7 @@ def test_research_requires_complete_observed_spread_for_promotion():
     ]
     quotes.append({
         "timestamp_ms": rows[-1]["timestamp"] + 3_600_000,
+        "retrieved_at_ms": rows[-1]["timestamp"] + 3_600_000,
         "bid": rows[-1]["close"] * 0.999,
         "ask": rows[-1]["close"] * 1.001,
         "timestamp_source": "exchange",
@@ -538,6 +543,7 @@ def test_research_rejects_non_chronological_or_invalid_quote_snapshots():
     rows = candles_from_closes([100.0 + index * 0.01 for index in range(120)])
     quote = {
         "timestamp_ms": rows[0]["timestamp"],
+        "retrieved_at_ms": rows[0]["timestamp"],
         "bid": 99.0,
         "ask": 101.0,
         "timestamp_source": "exchange",
@@ -550,3 +556,57 @@ def test_research_rejects_non_chronological_or_invalid_quote_snapshots():
     invalid = {**quote, "ask": 98.0}
     with pytest.raises(ValueError, match="invalid"):
         StrategyResearchAgent().research(rows, quote_snapshots=[invalid])
+
+
+def test_backtest_rejects_quote_received_after_execution_even_if_exchange_timestamp_is_earlier():
+    candles = candles_from_closes([100.0] * 5)
+    entry_time = candles[1]["timestamp"]
+    exit_time = candles[2]["timestamp"]
+    quotes = [
+        {
+            "timestamp_ms": entry_time,
+            "retrieved_at_ms": entry_time + 1,
+            "bid": 99.0,
+            "ask": 101.0,
+            "timestamp_source": "exchange",
+            "source": "test",
+        },
+        {
+            "timestamp_ms": exit_time,
+            "retrieved_at_ms": exit_time,
+            "bid": 99.0,
+            "ask": 101.0,
+            "timestamp_source": "exchange",
+            "source": "test",
+        },
+    ]
+    result = StrategyResearchAgent(fee_rate=0.0, slippage_rate=0.0)._backtest(
+        candles,
+        lambda closes, index, in_position: index == 0 and not in_position,
+        0,
+        0,
+        len(candles),
+        quote_snapshots=quotes,
+        max_quote_age_ms=60_000,
+        candle_interval_ms=3_600_000,
+    )
+
+    assert result["spread_execution_count"] == 2
+    assert result["spread_observed_execution_count"] == 1
+    assert result["spread_missing_execution_count"] == 1
+    assert result["spread_coverage_complete"] is False
+
+
+def test_research_requires_quote_retrieval_timestamp_for_lookahead_safety():
+    rows = candles_from_closes([100.0 + index * 0.01 for index in range(120)])
+    with pytest.raises(ValueError, match="retrieval timestamp"):
+        StrategyResearchAgent().research(
+            rows,
+            quote_snapshots=[{
+                "timestamp_ms": rows[0]["timestamp"],
+                "bid": 99.0,
+                "ask": 101.0,
+                "timestamp_source": "exchange",
+                "source": "test",
+            }],
+        )
