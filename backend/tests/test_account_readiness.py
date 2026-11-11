@@ -118,3 +118,26 @@ def test_preflight_rejects_negative_or_inconsistent_cash_balance(tmp_path, monke
 
     assert result["status"] == "blocked"
     assert "balance_values_inconsistent" in result["blockers"]
+
+
+
+def test_preflight_keeps_same_instrument_id_isolated_across_providers(tmp_path, monkeypatch):
+    from dataclasses import replace
+    from app.execution_adapters import ScopedPosition
+
+    _, adapter, service = make_service(tmp_path)
+    original = adapter.fetch_snapshot
+
+    def multi_provider_snapshot():
+        snapshot = original()
+        positions = (
+            ScopedPosition("ccxt:kraken", "shared-id", "BTC/EUR", "0.1", "50000", "EUR"),
+            ScopedPosition("ccxt:coinbase", "shared-id", "BTC/EUR", "0.2", "51000", "EUR"),
+        )
+        return replace(snapshot, positions=positions)
+
+    monkeypatch.setattr(adapter, "fetch_snapshot", multi_provider_snapshot)
+
+    result = service.evaluate(side="buy")
+
+    assert result["status"] == "ready"
