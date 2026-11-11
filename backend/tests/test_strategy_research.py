@@ -319,3 +319,32 @@ def test_backtest_reports_undefined_risk_adjusted_metrics_without_variation():
     assert result["return_volatility_per_bar"] == 0
     assert result["sharpe_per_bar"] is None
     assert result["sortino_per_bar"] is None
+
+
+def test_research_reports_candle_history_depth_and_regular_cadence():
+    closes = [100.0 + index * 0.01 for index in range(240)]
+    result = StrategyResearchAgent().research(candles_from_closes(closes))
+    quality = result["data_quality"]
+
+    assert quality["status"] == "available"
+    assert quality["bars"] == 240
+    assert quality["history_span_days"] == pytest.approx(239 / 24)
+    assert quality["median_candle_interval_seconds"] == 3600
+    assert quality["maximum_candle_interval_seconds"] == 3600
+    assert quality["gap_count"] == 0
+    assert quality["largest_gap_seconds"] == 0
+    assert quality["out_of_sample_bars"] == 72
+    assert len(quality["walk_forward_evaluation_bars"]) == 3
+
+
+def test_research_detects_missing_candle_intervals_without_reordering_data():
+    rows = candles_from_closes([100.0 + index * 0.01 for index in range(240)])
+    rows = rows[:120] + rows[121:]
+    result = StrategyResearchAgent().research(rows)
+    quality = result["data_quality"]
+
+    assert quality["bars"] == 239
+    assert quality["median_candle_interval_seconds"] == 3600
+    assert quality["gap_count"] == 1
+    assert quality["largest_gap_seconds"] == 7200
+    assert quality["calendar_adjustment"] is False
