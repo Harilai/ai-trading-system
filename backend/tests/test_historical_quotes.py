@@ -1,3 +1,5 @@
+import sqlite3
+
 import pytest
 
 from app.historical_data import (
@@ -109,3 +111,27 @@ def test_quote_store_filters_by_receipt_time_independently_of_exchange_time(tmp_
         received_until_ms=1_700_000_030_000,
     )
     assert before_receipt == []
+
+
+def test_quote_store_migration_does_not_backdate_unknown_retrieval_time(tmp_path):
+    path = str(tmp_path / "legacy.sqlite")
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "CREATE TABLE historical_quotes ("
+            "provider_id TEXT NOT NULL, instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, "
+            "timestamp_ms INTEGER NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL, "
+            "timestamp_source TEXT NOT NULL, source TEXT NOT NULL, retrieved_at TEXT NOT NULL, "
+            "PRIMARY KEY(provider_id,instrument_id,timestamp_ms))"
+        )
+        db.execute(
+            "INSERT INTO historical_quotes VALUES(?,?,?,?,?,?,?,?,?)",
+            (
+                "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+                1_700_000_000_000, "100", "101", "exchange", "public_ticker",
+                "not-a-valid-retrieval-time",
+            ),
+        )
+
+    store = HistoricalQuoteStore(path)
+    row = store.get("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR")[0]
+    assert row["retrieved_at_ms"] == 0
