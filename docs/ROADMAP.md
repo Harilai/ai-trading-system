@@ -324,6 +324,7 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - Se añadió `list_unresolved_order_intents()` para consultar todos los intents no terminales sin ocultar pendientes antiguos por paginación.
 - Pruebas adversas: scope/cuenta errónea, snapshot caducado, balance inválido, intents pendientes, reanudación, evidencia stale, entorno incorrecto, ventas de reducción, API auth y perfil PAPER conservador.
 - PR CI exacta: 718 passed, 1 warning; Docker hardening passed. CI post-merge de `main` run `43054150372`: Python tests y Docker build/runtime hardening success.
+- PR #138 actualiza esta continuidad y el siguiente bloque; merge squash `23f437ebc2e3a9a06c2f0c8f5f822178714fba83`. CI post-merge run `43054569103`: Python tests y Docker build/runtime hardening success.
 - No se activó Binance Demo genérico, no se enviaron órdenes externas y LIVE continúa deshabilitado.
 
 ## Siguiente bloque — identidad y posiciones Binance Spot Demo

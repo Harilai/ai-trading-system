@@ -222,6 +222,7 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - Añadido `PaperPortfolio.list_unresolved_order_intents()` para inventario completo sin límite de paginación.
 - La CI de PR #137 está verde (718 tests, 1 warning; Docker hardening success). CI post-merge de main run `43054150372`: Python tests y Docker build/runtime hardening success.
 - No se ejecutaron tests locales. No se utilizaron credenciales externas ni se enviaron órdenes. LIVE sigue deshabilitado.
-- `main` y `demo` se sincronizaron tras el merge a `e3158a8999a7571dce79aa40809beddbbff792f5`; volver a comprobar tras la PR documental de este handoff.
+- PR #138 documental integrada por squash en `23f437ebc2e3a9a06c2f0c8f5f822178714fba83`; CI post-merge run `43054569103` (Python tests y Docker hardening) success.
+- `main` y `demo` se sincronizaron al SHA `23f437ebc2e3a9a06c2f0c8f5f822178714fba83`; compare verificado `identical` (0 ahead/behind).
 - Próximo bloque: identidad verificable de cuenta Binance Spot Demo, mapeo balances→posiciones por instrumento con valoración/timestamps y cobertura, manteniendo UNKNOWN cuando no haya evidencia.
 
