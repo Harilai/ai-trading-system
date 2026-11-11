@@ -39,8 +39,13 @@ def resolve_taker_fee(
     quote = quote_currency
     if not isinstance(source, str) or not source.strip():
         raise FeeScheduleError("Fee schedule source is required")
-    if not isinstance(fee_currency, str) or not isinstance(quote, str):
+    if (
+        not isinstance(fee_currency, str) or not fee_currency.strip()
+        or not isinstance(quote, str) or not quote.strip()
+    ):
         raise FeeScheduleError("Fee and quote currencies are required")
+    fee_currency = fee_currency.strip()
+    quote = quote.strip()
     if fee_currency.upper() != quote.upper():
         raise FeeScheduleError("Only quote-denominated fees are supported by this cost model")
 
