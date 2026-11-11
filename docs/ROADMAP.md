@@ -425,5 +425,5 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - Strategy Research admite un intervalo de vela esperado explícito, distingue su origen de cadencia del heurístico basado en mediana y estima intervalos ausentes.
 - Scout transmite el timeframe configurado y etiqueta su universo actual como crypto 24/7. No se interpreta que el modelo 24/7 sea válido para acciones/FX; esos mercados requieren calendarios y sesiones de proveedor antes de habilitar diagnósticos equivalentes.
 - No se modifican señales, parámetros, promotion gates, costes, riesgo ni ejecución.
-- Pendiente: CI del head final, revisar dashboard/persistencia para que las nuevas métricas de cobertura lleguen a la UI y comprobar demo=main después de integrar.
+- Dashboard actualizado para mostrar gaps, intervalos ausentes estimados, fuente de cadencia y modelo de calendario. Pendiente: CI del head final y comprobar demo=main después de integrar.
 - LIVE deshabilitado.
