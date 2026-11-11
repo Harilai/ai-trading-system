@@ -173,3 +173,14 @@ def test_errors_do_not_include_credentials():
 
     assert "test-key" not in str(error.value)
     assert "test-secret" not in str(error.value)
+
+
+
+def test_injected_client_cannot_override_fixed_paper_host():
+    client = httpx.Client(base_url="https://api.alpaca.markets")
+
+    with pytest.raises(AlpacaPaperAccountError, match="fixed Paper API host"):
+        AlpacaPaperReadOnlyAccount(
+            "test-key", "test-secret", expected_account_id="paper-account-123", client=client,
+        )
+    client.close()
