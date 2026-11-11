@@ -2,7 +2,7 @@
 
 > Continuity between ChatGPT sessions: read [`docs/SESSION_HANDOFF.md`](SESSION_HANDOFF.md) for project state and [`docs/AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) for the mandatory multi-agent development method.
 
-Actualizado: 2026-11-11 (PR #142–#146 integradas; métricas de investigación y primera capa de histórico OHLCV persistente/paginado). main y demo sincronizadas. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
+Actualizado: 2026-11-11 (PR #142–#148 integradas; métricas de investigación y histórico OHLCV persistente/paginado con consultas corregidas). main y demo sincronizadas. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
 ## Completado — promoción de snapshots y reconciliación de ramas (#99–#106)
 
@@ -365,13 +365,13 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 5. Validar en ventanas holdout posteriores no usadas para seleccionar parámetros; conservar los gates actuales hasta disponer de evidencia suficiente.
 
 
-## Completado — histórico persistente y paginado (PR #146)
+## Completado — histórico persistente y paginado (PR #146, fix #148)
 
-- PR #146 integrada por squash en `main`, merge SHA `db83df4f0de25c9c24bdf96263cbab1a96567e89`; sincronizada a `demo` con el mismo SHA.
+- PR #146 integrada por squash en `main` (merge SHA `db83df4f0de25c9c24bdf96263cbab1a96567e89`). PR #148 corrige consultas limitadas, canonicalización decimal y timestamps fraccionarios (merge SHA `094df642ee1366f63c80c48f1a99bbbfe21d9161`). `demo` sincronizada con el SHA final.
 - `HistoricalCandleStore` persiste OHLCV en SQLite con clave compuesta proveedor/instrumento/timeframe/timestamp, valores decimales como texto, consultas por rango y resumen de cobertura.
 - La ingesta es idempotente. Las velas provisionales pueden actualizarse; las velas finalizadas no se sobrescriben ni se degradan a provisionales. Una discrepancia final genera conflicto y rollback transaccional.
 - `PaginatedCandleCollector` pagina por `since`/timestamp, valida orden y progreso, limita páginas y devuelve cursor de reanudación si el rango queda incompleto.
 - API autenticada `POST /api/market-data/history/sync` y `GET /api/market-data/history`; sync exige instrumento activo del catálogo del proveedor y reutiliza el rate limiter de CCXT.
-- CI del head exacto del PR #146 (`47dcb8f6a8b1f47cc4a21875363b48b7b3fff1f2`): 741 tests Python passed, 1 warning; Docker build/runtime hardening passed. La CI post-merge de main debe quedar verificada por separado.
+- CI del head exacto del PR #146 (`47dcb8f6a8b1f47cc4a21875363b48b7b3fff1f2`): 741 tests Python passed, 1 warning; Docker build/runtime hardening passed. PR #148: 744 tests Python passed, 1 warning; Docker build/runtime hardening passed. CI post-merge de #148 pendiente de comprobación final.
 - No se activa sincronización automática ni se habilitan nuevas estrategias/gates. La implementación actual de sync está conectada al adaptador CCXT; otros proveedores requieren un contrato de paginación explícito.
 - LIVE permanece deshabilitado y no se han ejecutado operaciones financieras.
