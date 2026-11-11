@@ -14,10 +14,12 @@ def test_quote_store_persists_ordered_decimal_observations_and_provenance(tmp_pa
     first = store.record(
         "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR", 1_700_000_000_000,
         "100.10", "100.30", timestamp_source="retrieved_at",
+        retrieved_at_ms=1_700_000_000_000,
     )
     second = store.record(
         "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR", 1_700_000_060_000,
         "100.20", "100.40", timestamp_source="exchange",
+        retrieved_at_ms=1_700_000_060_000,
     )
 
     assert first["status"] == "inserted"
