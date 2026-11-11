@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from .config import settings
 from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
 from .market_data import MarketDataError
+from .historical_data import HistoricalCandleStore, HistoricalDataError, HistoricalDataConflict, PaginatedCandleCollector
 from .providers.ccxt_spot import CcxtSpotProvider
 from .providers.twelve_data import TwelveDataProvider
 from .providers.base import AssetClass
@@ -92,6 +93,8 @@ coordinated_cash_snapshot_store = CoordinatedCashSnapshotStore(
     settings.database_path, financial_metrics_store, position_snapshot_store,
 )
 demo_order_store = BinanceDemoOrderStore(settings.database_path)
+historical_candle_store = HistoricalCandleStore(settings.database_path)
+historical_candle_collector = PaginatedCandleCollector(historical_candle_store)
 
 _binance_key = settings.binance_readonly_api_key.get_secret_value().strip()
 _binance_secret = settings.binance_readonly_api_secret.get_secret_value().strip()
@@ -1721,3 +1724,73 @@ async def lifespan(app: FastAPI):
 
 app.router.lifespan_context = lifespan
 app.include_router(agent_router)
+
+
+@app.get("/api/market-data/history")
+def get_historical_market_data(
+    provider_id: str,
+    instrument_id: str,
+    timeframe: str,
+    since_ms: int | None = Query(default=None, ge=1),
+    until_ms: int | None = Query(default=None, ge=1),
+    limit: int = Query(5000, ge=1, le=100000),
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        items = historical_candle_store.get(
+            provider_id, instrument_id, timeframe,
+            since_ms=since_ms, until_ms=until_ms, limit=limit,
+        )
+        return {
+            "items": items,
+            "count": len(items),
+            "coverage": historical_candle_store.coverage(provider_id, instrument_id, timeframe),
+        }
+    except HistoricalDataError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@app.post("/api/market-data/history/sync")
+def sync_historical_market_data(
+    provider_id: str,
+    symbol: str,
+    timeframe: str,
+    since_ms: int = Query(..., ge=1),
+    until_ms: int = Query(..., ge=1),
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        provider = market.get(provider_id)
+        exchange = getattr(provider, "exchange", None)
+        if exchange is None or not callable(getattr(exchange, "fetch_ohlcv", None)):
+            raise HTTPException(409, "Configured provider does not expose paginated OHLCV history")
+        instrument = next(
+            (item for item in provider.discover_markets() if item.symbol == symbol and item.active),
+            None,
+        )
+        if instrument is None:
+            raise HTTPException(404, "Active instrument was not found in the selected provider catalogue")
+        interval_seconds = exchange.parse_timeframe(timeframe)
+        if not isinstance(interval_seconds, (int, float)) or interval_seconds <= 0:
+            raise HTTPException(422, "Unsupported OHLCV timeframe")
+        interval_ms = int(interval_seconds * 1000)
+        finalized_before_ms = int(datetime.now(timezone.utc).timestamp() * 1000) - interval_ms
+        result = historical_candle_collector.collect(
+            provider_id, instrument.instrument_id, symbol, timeframe,
+            since_ms, until_ms, exchange.fetch_ohlcv,
+            candle_interval_ms=interval_ms,
+            finalized_before_ms=finalized_before_ms,
+            source="ccxt_public_market_data",
+        )
+        return result
+    except HTTPException:
+        raise
+    except HistoricalDataConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except (HistoricalDataError, ValueError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except Exception as exc:
+        # Do not expose provider exception text, which may contain request details.
+        raise HTTPException(502, f"Historical market-data request failed ({type(exc).__name__})") from exc
