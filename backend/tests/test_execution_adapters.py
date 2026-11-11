@@ -89,11 +89,13 @@ def test_paper_wrapper_exposes_internal_ledger_scope_and_snapshot(tmp_path):
     assert snapshot.scope.account_id == "paper-primary"
     eur = next(item for item in snapshot.balances if item.asset == "EUR")
     assert eur.total == "250.0"
-    assert adapter.account_identity_verified is True
+    assert adapter.account_identity_verified is False
     capabilities = adapter.capabilities()
     assert capabilities.supports("balances")
     assert capabilities.supports("positions")
     assert capabilities.supports("order_reconciliation")
+    assert capabilities.asset_classes == ("crypto",)
+    assert capabilities.order_types == ("market",)
     assert capabilities.partial_fills.state is CapabilityState.UNSUPPORTED
 
 
