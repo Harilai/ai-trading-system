@@ -10,36 +10,32 @@ from app.execution_registry import CapabilityState, ExecutionEnvironment
 from app.portfolio import PaperPortfolio
 
 
-class FakeBinanceDemo:
-    provider_id = "ccxt:binance-demo"
-
-    def describe(self):
-        return {
-            "provider_id": self.provider_id,
-            "account_alias": "binance-spot-demo",
-            "environment": "demo",
-            "demo_only": True,
-            "production_endpoint_allowed": False,
-        }
-
-    def fetch_balances(self):
-        return {
-            "provider_id": self.provider_id,
-            "environment": "demo",
-            "market_type": "spot",
-            "demo_only": True,
-            "withdrawals_enabled": False,
-            "fetched_at": "2026-11-11T10:00:00+00:00",
-            "balances": [
-                {"asset": "EUR", "free": "100", "used": "0", "total": "100"},
-                {"asset": "BTC", "free": "0.01", "used": "0", "total": "0.01"},
-            ],
-        }
-
+def make_binance_demo_account():
+    account = object.__new__(BinanceSpotDemoExecution)
+    account.describe = lambda: {
+        "provider_id": "ccxt:binance-demo",
+        "account_alias": "binance-spot-demo",
+        "environment": "demo",
+        "demo_only": True,
+        "production_endpoint_allowed": False,
+    }
+    account.fetch_balances = lambda: {
+        "provider_id": "ccxt:binance-demo",
+        "environment": "demo",
+        "market_type": "spot",
+        "demo_only": True,
+        "withdrawals_enabled": False,
+        "fetched_at": "2026-11-11T10:00:00+00:00",
+        "balances": [
+            {"asset": "EUR", "free": "100", "used": "0", "total": "100"},
+            {"asset": "BTC", "free": "0.01", "used": "0", "total": "0.01"},
+        ],
+    }
+    return account
 
 def test_binance_demo_wrapper_requires_explicit_account_scope():
     with pytest.raises(ScopedAccountAdapterError, match="account scope"):
-        BinanceSpotDemoScopedAdapter(FakeBinanceDemo(), account_id="")
+        BinanceSpotDemoScopedAdapter(make_binance_demo_account(), account_id="")
 
 
 def test_binance_demo_wrapper_rejects_non_demo_or_production_capability():
@@ -68,7 +64,6 @@ def test_binance_demo_wrapper_scopes_balance_snapshot_and_does_not_infer_positio
 def test_binance_demo_wrapper_rejects_snapshot_scope_mismatch():
     account = FakeBinanceDemo()
     account.fetch_balances = lambda: {
-        **FakeBinanceDemo.fetch_balances(account),
         "environment": "live",
     }
     adapter = BinanceSpotDemoScopedAdapter(account, account_id="binance-demo-account")
