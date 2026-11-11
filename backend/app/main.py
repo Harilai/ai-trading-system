@@ -1034,7 +1034,7 @@ def refresh_instrument_catalogue(
     started_at = datetime.now(timezone.utc)
     instruments, failures = market.discover_markets(
         asset_classes=_parse_discovery_asset_class(asset_class),
-        provider_ids=(provider_id,) if provider_id else None,
+        provider_ids=_parse_discovery_provider_id(provider_id),
     )
     return instrument_catalog.record_discovery(
         instruments,
