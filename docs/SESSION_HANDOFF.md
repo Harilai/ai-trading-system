@@ -2,10 +2,10 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
- > **Último cambio integrado:** PR #131 (elegibilidad conservadora de instrumentos), merge SHA `9c0bca72e13ecd2edb8b2ff0649a42b0458c6940`.
-> **`main` y `demo`:** sincronizar y verificar al cerrar el bloque documental de PR #131.
+> **Último cambio integrado:** PR #131 (elegibilidad conservadora de instrumentos), merge SHA `9c0bca72e13ecd2edb8b2ff0649a42b0458c6940`.
+> **`main` y `demo`:** ambos sincronizados a `13cbd0282e3b885c2ad41278414296b47f0bf986`; PR #131 y documentación posterior ya integradas.
 > **Historial previo de demo:** preservado en `archive/demo-before-main-sync-2026-11-11`; no se integró en main porque main es la fuente de verdad.
-> **PR abiertas:** ninguna tras integrar PR #131 (verificar GitHub al retomar).
+> **PR abiertas:** ninguna en la última consulta.
 > **Operación:** paper trading y Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
 ## Integraciones recientes verificadas
@@ -148,3 +148,13 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - Evaluador read-only y endpoint `GET /api/instruments/{catalogue_id}/eligibility` integrados.
 - La API no marca instrumentos como operables porque no tiene un registro de adaptadores de ejecución conectado a este evaluador; `execution_adapter_configured=false` de forma explícita.
 - Siguiente bloque: conectar una fuente verificable de capacidades de ejecución y requisitos de mercado al gate de elegibilidad sin duplicar el registro de adaptadores; después validar integración Demo/Paper con mocks y preflight. LIVE permanece deshabilitado.
+
+
+## Master plan — prioridades inmediatas tras PR #131
+
+1. Conectar el evaluador de elegibilidad a una fuente de verdad de adaptadores de ejecución, sin duplicar el ProviderRegistry ni confundirlo con el registro de market data.
+2. Normalizar y verificar capacidades de ejecución por proveedor/venue/market type, incluyendo account scope, order types, idempotency, partial fills, cancel, reconciliation, balances/positions y restricciones.
+3. Completar requisitos por instrumento (tick/lot/min notional, fees, sesiones, expiry/contracts, settlement) y enlazar la decisión de elegibilidad al RiskManager/ExecutionRouter con fail-closed.
+4. Validar Paper/Demo con mocks y preflight; ejecutar smoke test real de Binance Demo solo con autorización y credenciales configuradas por el propietario en su servidor.
+5. Después ampliar proveedores/mercados y realizar backtests fuera de muestra con costes; VPS/backup restore drill siguen pendientes.
+6. LIVE queda fuera de alcance hasta aprobación explícita, auditoría, sandbox, conciliación y pruebas adversas completas.
