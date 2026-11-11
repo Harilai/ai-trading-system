@@ -214,3 +214,30 @@ def test_quote_store_keeps_repeated_exchange_timestamp_as_separate_receipts(tmp_
     )
     assert len(rows) == 2
     assert [row["retrieved_at_ms"] for row in rows] == [base + 1_000, base + 2_000]
+
+
+def test_quote_store_keeps_repeated_exchange_timestamps_with_distinct_receipt_times(tmp_path):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    instrument_id = "ccxt:kraken:spot:BTC/EUR"
+    event_time = 1_700_000_000_000
+    first = store.record(
+        "ccxt:kraken", instrument_id, "BTC/EUR", event_time,
+        "100", "101", timestamp_source="exchange",
+        retrieved_at_ms=event_time + 100,
+    )
+    second = store.record(
+        "ccxt:kraken", instrument_id, "BTC/EUR", event_time,
+        "100.1", "101.1", timestamp_source="exchange",
+        retrieved_at_ms=event_time + 200,
+    )
+
+    assert first["status"] == "inserted"
+    assert second["status"] == "inserted"
+    rows = store.get(
+        "ccxt:kraken", instrument_id,
+        received_since_ms=event_time, received_until_ms=event_time + 500,
+    )
+    assert len(rows) == 2
+    assert [row["retrieved_at_ms"] for row in rows] == [
+        event_time + 100, event_time + 200,
+    ]
