@@ -557,7 +557,7 @@ def test_research_reports_missing_spread_and_blocks_promotion():
     )
 
     assert result["spread_coverage"]["status"] == "unavailable"
-    assert "must_have_complete_observed_spread_coverage" not in result["promotion_gates"]
+    assert result["promotion_gates"]["must_have_complete_observed_spread_coverage"] is True
     for candidate in result["candidates"]:
         assert candidate["out_of_sample"]["spread_coverage_complete"] is False
         assert candidate["spread_coverage_complete_across_oos_and_walk_forward"] is False
