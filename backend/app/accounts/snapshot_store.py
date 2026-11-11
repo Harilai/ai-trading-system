@@ -235,7 +235,7 @@ class AccountSnapshotStore:
             })
         return changes
 
-    def record_snapshot(self, snapshot: dict) -> dict:
+    def _record_snapshot_in_transaction(self, snapshot: dict, db) -> str:
         normalized, balances = self._normalize(snapshot)
         recorded_at = datetime.now(timezone.utc).isoformat()
         snapshot_id = str(uuid4())
@@ -245,57 +245,60 @@ class AccountSnapshotStore:
         account_alias = normalized["account_alias"]
         market_type = normalized["market_type"]
 
+        previous_row = db.execute(
+            """
+            SELECT snapshot_id,fetched_at FROM account_snapshots
+            WHERE provider_id=? AND account_alias=? AND market_type=?
+            ORDER BY fetched_at DESC, recorded_at DESC, snapshot_id DESC LIMIT 1
+            """,
+            (provider_id, account_alias, market_type),
+        ).fetchone()
+        previous_id = previous_row["snapshot_id"] if previous_row else None
+        if previous_row and normalized["fetched_at"] < previous_row["fetched_at"]:
+            raise AccountSnapshotError(
+                "Account snapshot is older than the latest stored observation"
+            )
+        previous_balances = {}
+        if previous_id:
+            rows = db.execute(
+                "SELECT asset,free,used,total FROM account_snapshot_balances WHERE snapshot_id=?",
+                (previous_id,),
+            ).fetchall()
+            previous_balances = {row["asset"]: dict(row) for row in rows}
+        current_balances = {item["asset"]: item for item in balances}
+        changes = self._diff(previous_balances, current_balances) if previous_id else []
+        change_count = sum(item["state"] != "unchanged" for item in changes)
+        status = "initial" if previous_id is None else ("changed" if change_count else "unchanged")
+        db.execute(
+            """
+            INSERT INTO account_snapshots(
+                snapshot_id,provider_id,account_alias,market_type,fetched_at,recorded_at,
+                previous_snapshot_id,reconciliation_status,change_count,balance_count,content_hash
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                snapshot_id, provider_id, account_alias, market_type,
+                normalized["fetched_at"], recorded_at, previous_id,
+                status, change_count, len(balances), content_hash,
+            ),
+        )
+        db.executemany(
+            """
+            INSERT INTO account_snapshot_balances(snapshot_id,asset,free,used,total)
+            VALUES(?,?,?,?,?)
+            """,
+            [
+                (snapshot_id, item["asset"], item["free"], item["used"], item["total"])
+                for item in balances
+            ],
+        )
+    return self.get_snapshot(snapshot_id)
+        return snapshot_id
+
+    def record_snapshot(self, snapshot: dict) -> dict:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            previous_row = db.execute(
-                """
-                SELECT snapshot_id,fetched_at FROM account_snapshots
-                WHERE provider_id=? AND account_alias=? AND market_type=?
-                ORDER BY fetched_at DESC, recorded_at DESC, snapshot_id DESC LIMIT 1
-                """,
-                (provider_id, account_alias, market_type),
-            ).fetchone()
-            previous_id = previous_row["snapshot_id"] if previous_row else None
-            if previous_row and normalized["fetched_at"] < previous_row["fetched_at"]:
-                raise AccountSnapshotError(
-                    "Account snapshot is older than the latest stored observation"
-                )
-            previous_balances = {}
-            if previous_id:
-                rows = db.execute(
-                    "SELECT asset,free,used,total FROM account_snapshot_balances WHERE snapshot_id=?",
-                    (previous_id,),
-                ).fetchall()
-                previous_balances = {row["asset"]: dict(row) for row in rows}
-            current_balances = {item["asset"]: item for item in balances}
-            changes = self._diff(previous_balances, current_balances) if previous_id else []
-            change_count = sum(item["state"] != "unchanged" for item in changes)
-            status = "initial" if previous_id is None else ("changed" if change_count else "unchanged")
-
-            db.execute(
-                """
-                INSERT INTO account_snapshots(
-                    snapshot_id,provider_id,account_alias,market_type,fetched_at,recorded_at,
-                    previous_snapshot_id,reconciliation_status,change_count,balance_count,content_hash
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    snapshot_id, provider_id, account_alias, market_type,
-                    normalized["fetched_at"], recorded_at, previous_id,
-                    status, change_count, len(balances), content_hash,
-                ),
-            )
-            db.executemany(
-                """
-                INSERT INTO account_snapshot_balances(snapshot_id,asset,free,used,total)
-                VALUES(?,?,?,?,?)
-                """,
-                [
-                    (snapshot_id, item["asset"], item["free"], item["used"], item["total"])
-                    for item in balances
-                ],
-            )
-
+            snapshot_id = self._record_snapshot_in_transaction(snapshot, db)
         return self.get_snapshot(snapshot_id)
 
     def list_snapshots(
