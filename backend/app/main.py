@@ -918,6 +918,15 @@ def _parse_discovery_asset_class(asset_class: str | None) -> tuple[AssetClass, .
         raise HTTPException(422, f"Unsupported asset_class; allowed values: {allowed}") from exc
 
 
+def _parse_discovery_provider_id(provider_id: str | None) -> tuple[str, ...] | None:
+    if provider_id is None:
+        return None
+    normalized = provider_id.strip().lower()
+    if not normalized:
+        raise HTTPException(422, "provider_id must not be empty")
+    return (normalized,)
+
+
 @app.get("/api/markets")
 def markets(
     provider_id: str | None = None,
@@ -925,7 +934,7 @@ def markets(
 ):
     instruments, failures = market.discover_markets(
         asset_classes=_parse_discovery_asset_class(asset_class),
-        provider_ids=(provider_id,) if provider_id else None,
+        provider_ids=_parse_discovery_provider_id(provider_id),
     )
     try:
         catalogue_sync = instrument_catalog.record_discovery(instruments, failures)
