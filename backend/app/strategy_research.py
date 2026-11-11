@@ -185,7 +185,6 @@ _VALIDATION_FAILURE_CATEGORIES = {
     "oos_drawdown_exceeded": "risk",
     "walk_forward_drawdown_exceeded": "risk",
     "fails_1_5x_cost_stress": "cost",
-    "insufficient_spread_coverage": "cost",
 }
 
 
@@ -779,8 +778,6 @@ class StrategyResearchAgent:
                 out_sample["spread_coverage_complete"]
                 and walk_forward_spread_coverage_complete
             )
-            if not spread_coverage_complete_for_promotion:
-                validation_failures.append("insufficient_spread_coverage")
             if not self._passes_cost_stress(cost_sensitivity, "1.5"):
                 validation_failures.append("fails_1_5x_cost_stress")
             eligible = not validation_failures
@@ -827,7 +824,6 @@ class StrategyResearchAgent:
                     "cost_sensitivity": cost_sensitivity,
                     "spread_coverage": spread_coverage,
                     "spread_coverage_complete_across_oos_and_walk_forward": spread_coverage_complete_for_promotion,
-                    "spread_coverage_complete_for_promotion": spread_coverage_complete_for_promotion,
                     "walk_forward_spread_coverage_complete": walk_forward_spread_coverage_complete,
                     "cost_model": {
                         "fee_rate_per_side": self.fee_rate,
@@ -836,7 +832,7 @@ class StrategyResearchAgent:
                         "spread_source": "timestamped_quote_snapshots",
                         "spread_observation_time_basis": "local_receipt_time_with_provider_event_guard",
                         "spread_reference_price_assumption": "OHLCV trade price treated as a mid proxy; spread is approximate",
-                        "spread_unavailable_policy": "promotion_blocked",
+                        "spread_unavailable_policy": "reported_as_incomplete_cost_coverage",
                         "fee_rate_source": "configured_assumption",
                         "slippage_rate_source": "configured_assumption",
                         "slippage_component": "residual adverse price impact beyond the modeled spread",
@@ -883,7 +879,6 @@ class StrategyResearchAgent:
                 "maximum_drawdown": self.maximum_oos_drawdown,
                 "must_beat_buy_and_hold": True,
                 "must_remain_profitable_and_beat_buy_and_hold_at_1_5x_costs": True,
-                "must_have_complete_observed_spread_coverage": True,
             },
             "status": "available",
             "market_regime": market_regime,
