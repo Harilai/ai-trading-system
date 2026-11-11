@@ -6,7 +6,7 @@ from app.execution_adapters import (
     PaperPortfolioScopedAdapter,
     ScopedAccountAdapterError,
 )
-from app.execution_registry import CapabilityState, ExecutionEnvironment
+from app.execution_registry import CapabilityState, ExecutionAdapterRegistry, ExecutionEnvironment
 from app.portfolio import PaperPortfolio
 
 
@@ -98,3 +98,30 @@ def test_paper_wrapper_requires_explicit_account_scope(tmp_path):
     portfolio = PaperPortfolio(str(tmp_path / "paper.sqlite"), initial_cash=20)
     with pytest.raises(ScopedAccountAdapterError, match="account scope"):
         PaperPortfolioScopedAdapter(portfolio, account_id=" ")
+
+
+
+def test_binance_demo_readiness_fails_closed_until_positions_are_modeled():
+    adapter = BinanceSpotDemoScopedAdapter(
+        make_binance_demo_account(),
+        account_id="binance-demo-account",
+    )
+    registry = ExecutionAdapterRegistry()
+    registry.register(adapter.scope, adapter.capabilities(), adapter)
+    assert not registry.supports_instrument(
+        adapter.scope,
+        asset_class="crypto",
+        order_type="limit",
+    )
+
+
+def test_paper_readiness_fails_closed_until_partial_fill_and_cancel_semantics_exist(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "paper.sqlite"), initial_cash=250)
+    adapter = PaperPortfolioScopedAdapter(portfolio, account_id="paper-primary")
+    registry = ExecutionAdapterRegistry()
+    registry.register(adapter.scope, adapter.capabilities(), adapter)
+    assert not registry.supports_instrument(
+        adapter.scope,
+        asset_class="crypto",
+        order_type="limit",
+    )
