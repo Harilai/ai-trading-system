@@ -545,15 +545,20 @@ def test_research_rejects_non_chronological_or_invalid_quote_snapshots():
     rows = candles_from_closes([100.0 + index * 0.01 for index in range(120)])
     quote = {
         "timestamp_ms": rows[0]["timestamp"],
-        "retrieved_at_ms": rows[0]["timestamp"],
+        "retrieved_at_ms": rows[0]["timestamp"] + 2_000,
         "bid": 99.0,
         "ask": 101.0,
         "timestamp_source": "exchange",
         "source": "test",
     }
-    with pytest.raises(ValueError, match="strictly increasing"):
+    earlier_receipt = {
+        **quote,
+        "timestamp_ms": rows[0]["timestamp"] + 1_000,
+        "retrieved_at_ms": rows[0]["timestamp"] + 1_000,
+    }
+    with pytest.raises(ValueError, match="receipt timestamps"):
         StrategyResearchAgent().research(
-            rows, quote_snapshots=[quote, quote],
+            rows, quote_snapshots=[quote, earlier_receipt],
         )
     invalid = {**quote, "ask": 98.0}
     with pytest.raises(ValueError, match="invalid"):
