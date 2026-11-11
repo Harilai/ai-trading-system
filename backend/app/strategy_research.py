@@ -879,6 +879,7 @@ class StrategyResearchAgent:
                 "maximum_drawdown": self.maximum_oos_drawdown,
                 "must_beat_buy_and_hold": True,
                 "must_remain_profitable_and_beat_buy_and_hold_at_1_5x_costs": True,
+                "must_have_complete_observed_spread_coverage": True,
             },
             "status": "available",
             "market_regime": market_regime,
