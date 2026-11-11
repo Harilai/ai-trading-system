@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import sqlite3
 
 from .agents.charts import ChartsAgent
 from .agents.contracts import MarketAnalysis
@@ -26,6 +27,8 @@ class ScoutAgent:
     ):
         if max_symbols < 1:
             raise ValueError("max_symbols must be positive")
+        if not 1 <= research_history_limit <= 100_000:
+            raise ValueError("research_history_limit must be between 1 and 100000")
         self.market_data = market_data
         self.charts = charts or ChartsAgent()
         self.max_symbols = max_symbols
@@ -151,7 +154,7 @@ class ScoutAgent:
                         if persisted_bars > len(candles):
                             research_candles = stored_candles
                             history_source = "persistent_finalized_ohlcv"
-                    except (OSError, ValueError, KeyError, TypeError):
+                    except (OSError, sqlite3.Error, ValueError, KeyError, TypeError):
                         # Research falls back to the live provider sample; chart
                         # analysis and execution are not affected by store outages.
                         history_source = "provider_recent_store_unavailable"
