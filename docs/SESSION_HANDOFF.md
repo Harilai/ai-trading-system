@@ -248,3 +248,16 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 5. Validación holdout independiente antes de cambiar cualquier promoción o habilitar PAPER experimental adicional.
 
 LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe permanecer idéntica a `main`.
+
+
+## Bloque en desarrollo — histórico persistente/paginado (2026-11-11)
+
+- Rama: `feat/persistent-paginated-market-history`.
+- Store SQLite independiente para velas OHLCV, con identidad provider/instrument/timeframe, rangos temporales, decimales exactos en texto, idempotencia y cobertura.
+- Velas abiertas/provisionales se pueden refrescar; una vela ya finalizada es inmutable y una discrepancia provoca conflicto/rollback, evitando reescrituras históricas silenciosas.
+- Colector paginado usa `since`, `limit`, cursor monotónico y máximo de páginas; devuelve `next_since_ms` si el rango queda incompleto. El adaptador CCXT ya tiene rate limiting activado y la ingesta lo reutiliza.
+- Endpoints autenticados: `POST /api/market-data/history/sync` y `GET /api/market-data/history`. Solo sincroniza instrumentos activos descubiertos por el proveedor configurado.
+- Tests nuevos cubren persistencia/replay, aislamiento de identidad/timeframe, vela provisional/final, conflictos atómicos, datos inválidos, paginación, límite/reanudación, cursor no progresivo, cobertura y autenticación API.
+- Validación local pendiente; ejecutar CI en el head exacto del PR. No declarar el bloque validado hasta que pasen Python tests y Docker build/runtime hardening.
+- Pendiente después de este bloque: política explícita de retención, scheduler de backfill incremental, normalización de límites/timeframes por proveedor y soporte paginado para proveedores no CCXT. La frecuencia multi-timeframe se habilitará solo cuando cada adaptador declare sus límites.
+- No se ejecutaron operaciones ni se habilitó LIVE.
