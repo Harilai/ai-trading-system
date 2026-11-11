@@ -1,99 +1,43 @@
 # Session handoff — AI Trading System
 
 > **Última revisión del repositorio:** 2026-11-11 Europe/Madrid
-> **Rama base revisada:** `main`
-> **Último commit integrado en `main`:** `66914385d5ae6802bfa6e06b84ced971a100e254` — PR #100.
-> **Rama `demo`:** `34b589be83b4e35125182b511d249faf565314d7`, sincronizada con `main` mediante PR #101.
-> **Estado de ejecución:** paper trading únicamente; Binance Spot Demo aislado; live trading no implementado ni habilitado.
+> **Rama base:** `main`
+> **Último commit integrado en `main`:** `54518975048f22e2d672ec4f01afd0d1b0a9103f` — PR #103.
+> **Rama `demo`:** `34b589be83b4e35125182b511d249faf565314d7` — sincronizada mediante PR #101; contiene las fases de ejecución Demo y el ledger de posiciones.
+> **Modo de ejecución:** paper trading; Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
 ## Estado actual — 11 de noviembre de 2026
 
+- PR #77 fusionada: monitor paper de stop-loss/take-profit para acciones/ETF USD de Twelve Data; CI exacto: 524 tests y Docker hardening correctos.
 - PR #78 fusionada: contratos normalizados de órdenes y fills.
-- PR #79 fusionada: ledger SQLite append-only de órdenes y ejecuciones individuales, idempotencia, aislamiento por cuenta/entorno/mercado y cobertura explícita.
-- PR #80 fusionada: historial de fills con completitud explícita y reconciliación read-only de órdenes conocidas; no envía, cancela ni reintenta órdenes.
-- PR #77 fusionada: monitor paper de stop-loss/take-profit para acciones/ETF USD de Twelve Data; 524 tests passed y Docker hardening passed.
-- PR #99 fusionada: ledger append-only de snapshots externos de posiciones, con cobertura complete/partial, aislamiento por cuenta/entorno/mercado y decimales exactos. No hay adaptador de producción con `positions=true` todavía.
-- PR #96 fusionada: lectura de posiciones con scope market_type, soporte position-only y coverage_status=unknown para el contrato legacy.
-- PR #100 fusionada: trazabilidad de estrategias experimentales, diagnósticos de Chief y salidas por estrategia solo ante señal booleana False explícita; Risk Manager sigue obligatorio.
-- PR #101 sincronizó `demo` con `main`; ambos árboles contienen las funcionalidades integradas. PR #74 se cerró como implementación sustituida y su requisito de snapshot combinado queda diferido. PR #97 se cerró sin merge porque su primer intento de sincronización tenía conflictos; #101 resolvió después la divergencia mediante un merge con ambos padres.
-- No se ha levantado ni reiniciado una demo local en esta sesión; no se han usado credenciales ni fondos reales.
+- PR #79 fusionada: ledger SQLite append-only de órdenes/fills, idempotencia y aislamiento por cuenta, entorno y mercado.
+- PR #80 fusionada: historial de fills con completitud explícita y reconciliación read-only; no envía, cancela ni reintenta órdenes.
+- PR #96 fusionada: lectura de posiciones con scope `market_type`, soporte de conectores position-only y `coverage_status=unknown` para el contrato legacy.
+- PR #99 fusionada: ledger append-only de snapshots externos de posiciones, decimales exactos, hash, orden temporal y cobertura complete/partial. Una captura parcial no marca ausencias como cierres.
+- PR #100 fusionada: trazabilidad experimental, diagnósticos Chief y salidas por estrategia solo ante señal booleana `False` explícita; Risk Manager sigue obligatorio.
+- PR #101 sincronizó `demo` con `main`. PR #74 se cerró como implementación sustituida; su requisito de snapshot coordinado balances+posiciones sigue en roadmap y no se descarta.
+- PR #103 fusionada: preflight Binance Demo de solo lectura, tres GET autenticados y validación explícita de identidad Demo, permisos y catálogo; CI exacto: 568 tests passed, 1 warning, Docker hardening passed.
+- No se ha ejecutado el smoke test contra una cuenta Binance Demo real en esta sesión. No se han usado credenciales, fondos reales ni operaciones de exchange.
 
-## Siguiente acción
+## Siguiente acción inmediata
 
-PR #77–#80 y #96, #99–#101 completadas. Siguiente: implementar el primer adaptador real read-only de posiciones para un mercado concreto, con cobertura verificable, permisos mínimos, tests de identidad/frescura y sin métodos de escritura. Después ampliar por venue/asset class. Mantener paper-only y no habilitar live trading.
+Ejecutar el preflight en el servidor después de que el propietario configure allí credenciales **Binance Spot Demo** y un owner token. No enviar claves ni tokens por chat ni GitHub. Solo si el preflight pasa, seguir el runbook con una orden limit pequeña no marketable, comprobar idempotencia, persistencia tras restart, conciliación, cancelación y ledger de fills/comisiones. No afirmar que el smoke test real está completado hasta disponer de evidencia real de cada paso. Los partial fills dependen del mercado y pueden quedar como validación no observada si no ocurren.
 
-## Fase completada — Demo local paper (PR #75)
+Después del smoke test: implementar el primer adaptador real read-only de posiciones para un mercado concreto, únicamente si el proveedor ofrece cobertura verificable, timestamp de origen, identidad de cuenta/entorno/mercado y permisos mínimos. Mantener separado el snapshot ledger de posiciones del paper portfolio. Diseñar el snapshot coordinado balances+posiciones sin duplicar persistencia.
 
-- Compose independiente `docker-compose.demo.yml`: solo API, publicación en `127.0.0.1`, volumen persistente propio, 10.000 EUR virtuales, mercado público Kraken y hardening del contenedor. No lee `.env` de producción ni inicia el servicio de backups.
-- Binance read-only, CCXT autenticado, Binance Spot Demo y backups externos quedan forzados desactivados y sin claves. Solo se puede añadir opcionalmente `TWELVE_DATA_API_KEY` para datos de cotizaciones, en `.env.demo` ignorado por Git.
-- Arranque documentado: `docker compose -f docker-compose.demo.yml up --build`; dashboard local en `/dashboard`. Las órdenes paper existentes siguen protegidas por Risk Manager y token.
-- Añadida validación de configuración del Compose demo a CI. En el SHA `7abd5f527612d0c593e93d8a94852cc29d0a72d8`, `Python tests` pasó con **460 tests** y `Docker build and runtime hardening` pasó, incluida la validación de los Compose base y demo.
-- Entorno de trabajo actual no tiene Docker ni intérprete Python disponibles, así que no es posible ejecutar localmente `docker compose config` ni `pytest -q`; ejecutar ambos gates en GitHub Actions.
-- Sin credenciales reales, fondos, despliegue ni conexión de ejecución a producción.
+## Seguridad y límites operativos
 
-## Siguiente acción
+- No introducir secretos en el repositorio, issues, logs, capturas ni conversaciones. Las claves deben permanecer en el servidor, con permisos mínimos.
+- Binance Spot Demo debe usar únicamente credenciales Demo y `demo-api.binance.com`; nunca cambiar el host a producción.
+- El conector Demo permite exclusivamente limit orders en el entorno virtual y no expone transferencias, retiradas ni firma.
+- Los adaptadores de cuentas production existentes son read-only por implementación, pero el software no verifica independientemente los scopes reales de las API keys.
+- No hay live trading habilitado ni debe activarse como parte de esta fase.
+- No se ha levantado ni reiniciado una demo local en esta sesión.
 
-Obtener CI verde y revisión independiente para PR #78–#80 sobre los heads exactos. Después, diseñar un adaptador read-only de reconciliación basado en historial explícitamente completo, sin alterar Binance Demo ni habilitar producción.
+## Cómo retomar
 
-## 1. Cómo retomar en una conversación nueva
-
-Antes de modificar código, leer este documento, `docs/AGENT_WORKFLOW.md`, `docs/ROADMAP.md`, `README.md` y la arquitectura multi-activo. Comprobar siempre el estado vivo de `main`, PR abiertas, CI y commits. El repositorio es la fuente de verdad.
-
-Trabajar en ramas por cambio lógico, seguir los roles y gates de calidad del workflow, añadir pruebas, revisar el diff y exigir CI verde sobre el SHA exacto antes de mergear. Actualizar este handoff y el roadmap al cerrar cada fase.
-
-## 2. Estado integrado y verificado
-
-- **PR #71 — contratos normalizados de cuenta:** merge commit `a7a9bb8487e7935f791cc6034dee8fd10e24ec6d`; registry por `provider_id + account_alias`, capabilities/permisos explícitos, balances normalizados y endpoints autenticados.
-- **PR #72 — adaptador genérico CCXT read-only:** merge commit `c44bc9741ecc9856625133b938548192a25f8eb9`; exchange configurable (Kraken por defecto), consulta balances Spot autenticados y no expone operaciones de escritura. El software no verifica los scopes reales de la API key.
-- **PR #73 — contrato de posiciones normalizadas:** merge commit `d9fefaf80d3a9dec4f7f5c73b42530917433cdaf`; añade `AccountPosition.normalize`, snapshot inmutable, validación decimal estricta, identidad de instrumento, asset class, market type, side y moneda quote, detección de duplicados y endpoint owner-authenticated `GET /api/accounts/{provider_id}/positions?account_alias=...`.
-- **CI PR #73:** los jobs `Python tests` y `Docker build and runtime hardening` terminaron con `success` en el head exacto `253bb828d4d13a10638d64b89d58d56d46890745`. El merge fue squash y el commit resultante es el indicado arriba.
-- Los conectores Binance production read-only y CCXT genérico declaran actualmente `positions=false`. Por tanto el endpoint devuelve HTTP 409 para ellos hasta que un adaptador concreto implemente lectura de posiciones.
-- No se crean posiciones artificiales convirtiendo balances spot en posiciones. Binance Demo orders/fills tampoco se tratan como posiciones abiertas sin reconciliación/contabilidad específica.
-- El contrato de cuenta, balances y posiciones conserva aislamiento entre proveedor, alias de cuenta, entorno y tipo de mercado.
-- PR #68 ya incorpora conciliación periódica Demo con leases SQLite, fencing, backoff, recuperación tras reinicio y conciliación de fills; solo lectura y no reenvía órdenes.
-
-## 3. Siguiente fase obligatoria
-
-**Crear el ledger persistente append-only de snapshots de posiciones multi-venue.**
-
-Alcance recomendado:
-
-1. Almacenar snapshots por `provider_id + account_alias + environment + market_type`, con timestamp externo, timestamp de captura, hash del contenido y referencia al snapshot anterior.
-2. Almacenar posiciones por identidad estable de instrumento/cuenta, incluyendo cantidad, lado, coste/entry, mark, market value, P&L no realizado y moneda quote/base cuando estén disponibles.
-3. Comparar snapshots sin interpretar la ausencia de una posición como liquidación/cantidad cero si el proveedor devolvió un resultado parcial, error o conjunto incompleto. Incorporar estado de cobertura/completitud explícito.
-4. Decimal strings exactos, timestamps con zona horaria, validación stale/future, idempotencia, detección de duplicados y triggers append-only.
-5. Endpoint autenticado para persistir snapshot solo desde proveedores con capability `positions=true`; endpoints de historial/detalle y diffs por cuenta.
-6. No mezclar los snapshots de cuentas externas con la cartera paper; no convertir balances en posiciones ni estimar precios/P&L sin evidencia con fuente y timestamp.
-7. Añadir pruebas de concurrencia, duplicados, rollback, orden temporal, snapshots parciales, posición añadida/ausente/cambiada y separación de cuentas/entornos.
-
-Después del ledger, implementar adaptadores específicos de posiciones para exchanges/brokers que ofrezcan API de posiciones. CCXT general Spot balance-only debe seguir declarando `positions=false` salvo que se pruebe un método compatible con el mercado correspondiente.
-
-## 4. Límites y requisitos de seguridad
-
-- Paper trading continúa siendo el único modo disponible para operaciones generales.
-- Binance Spot Demo solo usa el entorno virtual demo, limit orders y controles fail-closed; no hay fallback a producción.
-- Binance Spot producción y CCXT genérico son solo lectura de balances. El software no verifica la configuración real de permisos de API keys (`permissions_verified=false`).
-- No solicitar ni almacenar en Git/chat/frontend/logs API secrets, claves privadas ni seed phrases.
-- No dar permisos de retirada o transferencia a claves de trading.
-- No activar live execution por configuración accidental, agente o dashboard. Cualquier futura ejecución real exige diseño aislado, autorización explícita, límites por instrumento/cuenta, sandbox, conciliación, pruebas adversas, auditoría y revisión independiente.
-- No habilitar margen, futuros, opciones, forex trading, DEX o DeFi solo por aparecer en catálogo.
-- Un instrumento solo podrá valorarse/negociarse si hay identidad estable, datos frescos, divisa, costes, reglas de mercado, elegibilidad y riesgo compatibles.
-- Una fuente desconocida, obsoleta o contradictoria debe producir estado incompleto/bloqueado, no un cero ni una posición inventada.
-
-## 5. Operativa pendiente del propietario
-
-- Configurar credenciales Binance Spot Demo únicamente en el servidor y ejecutar `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md`; todavía no hay evidencia de una smoke test contra la cuenta Demo real.
-- Configurar credenciales read-only de Binance/CCXT en el servidor, con privilegios mínimos y sin trading, transferencias ni retiradas.
-- Desplegar el VPS real, configurar backup S3-compatible y realizar ejercicios de restauración. No afirmar disponibilidad 24/7 hasta medirla.
-
-## 6. Referencias
-
-- PR #71: https://github.com/Harilai/ai-trading-system/pull/71
-- PR #72: https://github.com/Harilai/ai-trading-system/pull/72
-- PR #73: https://github.com/Harilai/ai-trading-system/pull/73
-- Arquitectura multiactivo: `docs/MARKET_EXPANSION_ARCHITECTURE.md`
-- Contratos de cuenta: `docs/ACCOUNT_PROVIDER_CONTRACTS.md`
-- Contrato de instrumentos: `docs/INSTRUMENT_CONTRACT_V2.md`
-- Workflow de agentes: `docs/AGENT_WORKFLOW.md`
-
-**Regla de continuidad:** la siguiente conversación debe comenzar comprobando el estado vivo de GitHub y continuar el ledger persistente de snapshots de posiciones, no reimplementar PR #71–#73.
+1. Leer `docs/ROADMAP.md`, `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md` y `docs/ACCOUNT_PROVIDER_CONTRACTS.md`.
+2. Confirmar los heads de `main` y `demo` y el estado de CI antes de editar.
+3. No cerrar PRs por limpieza: evaluar dependencias, requisitos únicos y solapamientos antes de cualquier decisión.
+4. Ejecutar cambios en ramas acotadas, pruebas, revisión independiente y CI exacto antes de squash merge.
+5. Mantener el sistema paper/demo-only hasta que exista una fase live separada, aprobada y revisada.
