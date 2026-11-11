@@ -591,6 +591,15 @@ class PaperPortfolio:
             ).fetchall()
         return [self._decode_order_intent(row) for row in rows]
 
+    def list_unresolved_order_intents(self) -> list[dict]:
+        """Return every non-terminal intent; never hide an old unresolved intent behind a page limit."""
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM order_intents WHERE status NOT IN ('filled','rejected','expired') "
+                "ORDER BY created_at ASC, client_order_id ASC"
+            ).fetchall()
+        return [self._decode_order_intent(row) for row in rows]
+
     def reject_order_intent(self, client_order_id: str, reason: str) -> None:
         if not isinstance(reason, str) or not reason.strip():
             raise PortfolioError("Order rejection requires a reason")

@@ -308,3 +308,16 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - PR #133, #134 y #135 están integradas. #134 integró los adaptadores scoped y la validación Decimal; #135 consolidó el estado de continuidad y gobernanza.
 - CI de PR #134, post-merge #134, PR #135 y post-merge #135 terminó con Python tests y Docker build/runtime hardening en success.
 - `main` y `demo` se sincronizaron y el compare se verificó como `identical`, sin commits ahead/behind. Verificar el SHA actual en GitHub al iniciar cada sesión.
+
+
+## Account readiness preflight for internal PAPER — implementation in PR
+
+- Added `PaperAccountReadiness` over the existing `PaperPortfolioScopedAdapter`; it verifies the fixed internal ledger scope (`internal:paper-portfolio / internal-ledger / paper-primary / PAPER / spot`), snapshot source and timezone-aware freshness (60 seconds), finite/non-negative Decimal balances, EUR cash presence, position identity/quantities, and order-intent reconciliation.
+- The identity claim is deliberately local: `identity_basis=local_internal_paper_ledger`, `remote_identity_verified=false`. It is not a broker account identity assertion.
+- The internal PAPER adapter is explicitly registered in the scoped execution registry. Its atomic-fill profile continues to declare partial fills and exchange cancellation UNSUPPORTED; it therefore cannot pass generic exchange readiness and is not wired into the generic ExecutionRouter.
+- Added authenticated `POST /api/execution/preflight` for diagnostics. Manual PAPER buy paths (crypto and Twelve Data cash equity/ETF) require readiness at entry and recheck immediately before the ledger execution. Sells retain position/shorting controls and are not blocked by entry preflight.
+- Autonomous Chief entry decisions receive readiness evidence; production Chief is configured to require it. The worker rechecks immediately before new entries and before resuming a persisted buy intent. A failed recheck rejects/expires the pending intent without executing. Position exits remain available through the separate risk-reduction path.
+- RiskManager validates exact PAPER account scope, local identity basis, reconciliation-clear state, and fresh timezone-aware evidence for configured new entries. The requirement is enabled in the production Chief and order API paths; standalone risk calculations remain usable in unit tests and non-execution contexts.
+- Tests added for stale/wrong-scope snapshots, invalid balances, unresolved intents, resume exclusion, risk gate failures, account/environment mismatch, risk-reducing sells, API authentication, and conservative PAPER capability registration.
+- Safety: no Binance Demo or LIVE adapter is activated; no exchange order submission is added. Generic execution eligibility remains fail-closed.
+- Validation status: implementation committed on `feat/paper-account-readiness-preflight`; CI is pending PR creation. No local pytest execution has been claimed.

@@ -37,6 +37,7 @@ class ChiefAgent:
         estimated_slippage_rate: float = 0.0005,
         minimum_order_value_eur: float = 1.0,
         allow_experimental_strategies: bool = False,
+        require_account_readiness: bool = False,
     ):
         if not 0 < max_order_fraction <= 1:
             raise ValueError("max_order_fraction must be in (0, 1]")
@@ -63,6 +64,7 @@ class ChiefAgent:
         self.estimated_slippage_rate = estimated_slippage_rate
         self.minimum_order_value_eur = minimum_order_value_eur
         self.allow_experimental_strategies = bool(allow_experimental_strategies)
+        self.require_account_readiness = bool(require_account_readiness)
 
     @staticmethod
     def _instrument_identity(provider_id: str, instrument_id: str | None, symbol: str) -> str:
@@ -96,7 +98,13 @@ class ChiefAgent:
             None,
         )
 
-    def decide(self, scan: dict[str, Any], portfolio: dict[str, Any]) -> ChiefDecision:
+    def decide(
+        self,
+        scan: dict[str, Any],
+        portfolio: dict[str, Any],
+        *,
+        account_readiness: dict[str, Any] | None = None,
+    ) -> ChiefDecision:
         if portfolio.get("valuation_complete") is False:
             return ChiefDecision(
                 rationale="Portfolio valuation is incomplete; no autonomous order is permitted",
@@ -353,7 +361,12 @@ class ChiefAgent:
             if proposal is None:
                 diagnostics["sniper_no_proposal"] += 1
                 continue
-            risk = self.risk_manager.evaluate(proposal, context)
+            risk = self.risk_manager.evaluate(
+                proposal,
+                context,
+                account_readiness=account_readiness,
+                require_account_readiness=self.require_account_readiness,
+            )
             if risk.accepted:
                 return ChiefDecision(
                     action="buy",

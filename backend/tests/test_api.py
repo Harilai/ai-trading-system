@@ -2135,10 +2135,81 @@ def test_execution_registry_endpoint_requires_control_token(monkeypatch):
     assert response.status_code == 401
 
 
-def test_execution_registry_endpoint_is_empty_and_authenticated(monkeypatch):
+def test_execution_registry_endpoint_lists_scoped_paper_adapter_and_is_authenticated(monkeypatch):
     headers = configure_order_auth(monkeypatch)
     response = client.get("/api/execution/registrations", headers=headers)
     assert response.status_code == 200
-    assert response.json() == {"items": []}
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["scope"] == {
+        "provider_id": "internal:paper-portfolio",
+        "venue_id": "internal-ledger",
+        "account_id": "paper-primary",
+        "environment": "paper",
+        "market_type": "spot",
+    }
+    assert items[0]["capabilities"]["partial_fills"]["state"] == "unsupported"
+    assert items[0]["capabilities"]["cancellation"]["state"] == "unsupported"
 
 
+
+
+
+def test_execution_preflight_endpoint_requires_control_token(monkeypatch):
+    monkeypatch.setattr("app.main.settings.agent_control_token", "test-control-token")
+    response = client.post("/api/execution/preflight", json={"side": "buy"})
+    assert response.status_code == 401
+
+
+def test_execution_preflight_endpoint_returns_scoped_paper_readiness(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    monkeypatch.setattr(
+        "app.main.paper_account_readiness.evaluate",
+        lambda **kwargs: {
+            "status": "ready",
+            "scope": {
+                "provider_id": "internal:paper-portfolio",
+                "venue_id": "internal-ledger",
+                "account_id": "paper-primary",
+                "environment": "paper",
+                "market_type": "spot",
+            },
+            "blockers": [],
+        },
+    )
+
+    response = client.post("/api/execution/preflight", json={"side": "buy"}, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+    assert response.json()["scope"]["environment"] == "paper"
+
+
+
+def test_manual_buy_is_blocked_when_account_preflight_is_not_ready(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    monkeypatch.setattr(
+        "app.main.paper_account_readiness.evaluate",
+        lambda **kwargs: {
+            "status": "blocked",
+            "blockers": ["unresolved_paper_order_intents"],
+        },
+    )
+    monkeypatch.setattr(
+        "app.main.market.ticker",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("market quote must not be requested")),
+    )
+
+    response = client.post(
+        "/api/orders",
+        json={
+            "symbol": "BTC/EUR",
+            "side": "buy",
+            "quantity": 0.001,
+            "stop_loss": 9800,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 503
+    assert "preflight" in response.json()["detail"]["message"].lower()

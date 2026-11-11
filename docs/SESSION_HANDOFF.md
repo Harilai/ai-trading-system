@@ -207,3 +207,18 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - La cantidad de posiciones PAPER se valida con Decimal finito, sin filtrar cantidades positivas mediante float; tests cubren cantidades positivas diminutas y valores no finitos.
 - `main` y `demo` están sincronizadas y el compare se verificó como `identical` (0 ahead/behind). Consultar el SHA actual directamente en GitHub al iniciar la siguiente sesión.
 - No se han enviado órdenes ni realizado acciones financieras. LIVE permanece deshabilitado.
+
+
+## Continuity update — account readiness preflight block (2026-11-11)
+
+- Base at block start: `main=demo=c7c2b729873cb4e11067ea546d4d3bf00fdd7be1`; no open PRs.
+- Working branch: `feat/paper-account-readiness-preflight`.
+- Added `backend/app/account_readiness.py` with fail-closed preflight for the internal PAPER ledger. It verifies exact internal scope, local identity basis, source, snapshot timestamp/freshness, Decimal cash/position integrity, EUR cash existence, and order-intent reconciliation.
+- Registered only `PaperPortfolioScopedAdapter` in the scoped execution registry. Its profile still declares partial fills and exchange cancellation UNSUPPORTED, so it cannot pass generic exchange readiness or route through the generic ExecutionRouter.
+- Added authenticated `POST /api/execution/preflight`.
+- Manual buy orders (crypto PAPER and Twelve Data USD cash equity/ETF PAPER) now require account readiness, pass evidence into RiskManager, and recheck immediately before execution. Sells retain the existing exact-position/no-shorting checks and do not require entry preflight.
+- Production Chief requires account readiness for new entries. Autonomous worker preflights before Chief entry selection, rechecks before executing new buys, and rechecks persisted buy-intent resumes. Failed rechecks reject/expire the intent without executing. Existing position exits are not blocked by entry readiness.
+- RiskManager validates the exact `paper-primary` internal ledger scope, local identity basis (not remote account verification), reconciliation state, and evidence freshness.
+- New tests cover readiness, stale/mismatched snapshots, bad balances, unresolved intents, resume exclusions, risk gate behavior, API auth/blocked buys, conservative registry capabilities, and sell preservation.
+- PR/CI status: implementation branch in progress; PR not yet opened at this handoff point. No local test run claimed. Next: inspect diff, open PR, verify exact-head Python/Docker CI, fix any failures, review and merge, then sync `demo` to `main` and verify identical SHA.
+- No external account credentials used, no Binance Demo orders sent, and LIVE remains disabled.

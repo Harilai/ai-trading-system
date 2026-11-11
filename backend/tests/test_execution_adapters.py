@@ -193,3 +193,17 @@ def test_paper_wrapper_rejects_non_finite_position_quantity(tmp_path):
     adapter = PaperPortfolioScopedAdapter(portfolio, account_id="paper-primary")
     with pytest.raises(ScopedAccountAdapterError, match="finite"):
         adapter.fetch_snapshot()
+
+
+
+def test_registered_paper_adapter_never_satisfies_exchange_order_readiness(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "paper.sqlite"), initial_cash=250)
+    adapter = PaperPortfolioScopedAdapter(portfolio, account_id="paper-primary")
+    registry = ExecutionAdapterRegistry()
+    registry.register(adapter.scope, adapter.capabilities(), adapter)
+
+    assert not registry.supports_instrument(
+        adapter.scope,
+        asset_class="crypto",
+        order_type="market",
+    )

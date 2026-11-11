@@ -126,3 +126,97 @@ def test_risk_manager_requires_explicit_execution_adapter_configuration():
     )
     assert decision.accepted is False
     assert "adapter" in decision.reason.lower()
+
+
+
+def paper_account_readiness(**overrides):
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).isoformat()
+    result = {
+        "status": "ready",
+        "evaluated_at": now,
+        "scope": {
+            "provider_id": "internal:paper-portfolio",
+            "venue_id": "internal-ledger",
+            "account_id": "paper-primary",
+            "environment": "paper",
+            "market_type": "spot",
+        },
+        "snapshot": {
+            "fetched_at": now,
+            "identity_basis": "local_internal_paper_ledger",
+            "remote_identity_verified": False,
+        },
+        "reconciliation": {
+            "status": "clear",
+            "reconciliation_required": 0,
+            "unresolved_intents": 0,
+        },
+        "blockers": [],
+    }
+    result.update(overrides)
+    return result
+
+
+def test_risk_manager_requires_fresh_account_readiness_when_configured_for_new_entries():
+    manager = RiskManager()
+    missing = manager.evaluate(proposal(), risk_context(), require_account_readiness=True)
+    ready = manager.evaluate(
+        proposal().model_copy(update={"provider_id": "twelve_data"}),
+        risk_context(),
+        account_readiness=paper_account_readiness(),
+        require_account_readiness=True,
+    )
+    blocked = manager.evaluate(
+        proposal(),
+        risk_context(),
+        account_readiness=paper_account_readiness(status="blocked"),
+        require_account_readiness=True,
+    )
+
+    assert missing.accepted is False
+    assert "preflight" in missing.reason.lower()
+    assert ready.accepted is True
+    assert blocked.accepted is False
+
+
+def test_risk_manager_rejects_wrong_account_environment_and_unreconciled_evidence():
+    manager = RiskManager()
+    wrong_scope = paper_account_readiness()
+    wrong_scope["scope"] = {**wrong_scope["scope"], "environment": "live"}
+    unresolved = paper_account_readiness()
+    unresolved["reconciliation"] = {
+        "status": "blocked",
+        "reconciliation_required": 1,
+        "unresolved_intents": 1,
+    }
+
+    for evidence in (wrong_scope, unresolved):
+        decision = manager.evaluate(
+            proposal(),
+            risk_context(),
+            account_readiness=evidence,
+            require_account_readiness=True,
+        )
+        assert decision.accepted is False
+
+
+def test_risk_manager_keeps_risk_reducing_sell_independent_of_entry_preflight():
+    from app.agents.contracts import TradeProposal
+
+    sell = TradeProposal(
+        **{
+            **proposal().model_copy(update={"provider_id": "twelve_data"}).model_dump(),
+            "side": "sell",
+            "stop_loss": None,
+            "take_profit": None,
+        }
+    )
+    context = risk_context().model_copy(update={"positions": {"broker-x:cash_equity:ACME": 1.0}})
+    decision = RiskManager().evaluate(
+        sell,
+        context,
+        require_account_readiness=True,
+    )
+    assert decision.accepted is True

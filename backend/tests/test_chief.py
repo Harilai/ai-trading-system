@@ -210,3 +210,39 @@ def test_chief_blocks_orders_when_multicurrency_valuation_is_incomplete():
     assert decision.action == "hold"
     assert decision.proposal is None
     assert "valuation is incomplete" in decision.rationale.lower()
+
+
+
+def test_chief_requires_account_readiness_for_entries_but_not_position_exits():
+    ready = {
+        "status": "ready",
+        "evaluated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+        "scope": {
+            "provider_id": "internal:paper-portfolio",
+            "venue_id": "internal-ledger",
+            "account_id": "paper-primary",
+            "environment": "paper",
+            "market_type": "spot",
+        },
+        "snapshot": {
+            "fetched_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+            "identity_basis": "local_internal_paper_ledger",
+            "remote_identity_verified": False,
+        },
+        "reconciliation": {"status": "clear", "reconciliation_required": 0, "unresolved_intents": 0},
+        "blockers": [],
+    }
+    guarded = ChiefAgent(require_account_readiness=True)
+    blocked_entry = guarded.decide(eligible_scan(), portfolio())
+    approved_entry = guarded.decide(eligible_scan(), portfolio(), account_readiness=ready)
+    exit_decision = guarded.decide(
+        eligible_scan(entry=False, hold=False),
+        portfolio(positions=[{"symbol": "BTC/EUR", "quantity": 0.25}]),
+    )
+
+    assert blocked_entry.action == "hold"
+    assert blocked_entry.risk is not None and blocked_entry.risk.accepted is False
+    assert approved_entry.action == "buy"
+    assert approved_entry.risk is not None and approved_entry.risk.accepted is True
+    assert exit_decision.action == "sell"
+    assert exit_decision.risk is not None and exit_decision.risk.accepted is True

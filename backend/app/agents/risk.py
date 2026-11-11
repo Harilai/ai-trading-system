@@ -12,7 +12,52 @@ class RiskManager:
         context: RiskContext,
         *,
         instrument_eligibility: dict | None = None,
+        account_readiness: dict | None = None,
+        require_account_readiness: bool = False,
     ) -> RiskDecision:
+        # Account readiness is a separate, account-scoped precondition for new
+        # entries. Risk-reducing sells retain their independent position checks.
+        if proposal.side == "buy" and (require_account_readiness or account_readiness is not None):
+            if not isinstance(account_readiness, dict) or account_readiness.get("status") != "ready":
+                return RiskDecision(accepted=False, reason="Account preflight is missing or blocked")
+            scope = account_readiness.get("scope")
+            snapshot = account_readiness.get("snapshot")
+            reconciliation = account_readiness.get("reconciliation")
+            if not isinstance(scope, dict) or (
+                scope.get("provider_id") != "internal:paper-portfolio"
+                or scope.get("venue_id") != "internal-ledger"
+                or scope.get("environment") != "paper"
+                or scope.get("market_type") != "spot"
+                or not isinstance(scope.get("account_id"), str)
+                or scope.get("account_id") != "paper-primary"
+            ):
+                return RiskDecision(accepted=False, reason="Account preflight scope is invalid")
+            if not isinstance(snapshot, dict) or (
+                snapshot.get("identity_basis") != "local_internal_paper_ledger"
+                or snapshot.get("remote_identity_verified") is not False
+            ):
+                return RiskDecision(accepted=False, reason="Account snapshot identity evidence is invalid")
+            if account_readiness.get("blockers") != []:
+                return RiskDecision(accepted=False, reason="Account preflight contains unresolved blockers")
+            if not isinstance(reconciliation, dict) or (
+                reconciliation.get("status") != "clear"
+                or reconciliation.get("reconciliation_required") != 0
+                or reconciliation.get("unresolved_intents") != 0
+            ):
+                return RiskDecision(accepted=False, reason="Account reconciliation is not clear")
+            try:
+                from datetime import datetime, timezone
+                fetched_at = datetime.fromisoformat(str(snapshot.get("fetched_at")).replace("Z", "+00:00"))
+                evaluated_at = datetime.fromisoformat(str(account_readiness.get("evaluated_at")).replace("Z", "+00:00"))
+                now = datetime.now(timezone.utc)
+                if fetched_at.tzinfo is None or evaluated_at.tzinfo is None:
+                    raise ValueError("timezone required")
+                age = (now - fetched_at.astimezone(timezone.utc)).total_seconds()
+                evidence_age = (now - evaluated_at.astimezone(timezone.utc)).total_seconds()
+                if age < -5 or age > 60 or evidence_age < -5 or evidence_age > 60:
+                    raise ValueError("stale evidence")
+            except (TypeError, ValueError, OverflowError):
+                return RiskDecision(accepted=False, reason="Account preflight evidence is stale or malformed")
         # When an execution-readiness assessment is supplied, it is a mandatory
         # precondition. Missing, malformed, stale or non-supported evidence fails closed.
         if instrument_eligibility is not None:
