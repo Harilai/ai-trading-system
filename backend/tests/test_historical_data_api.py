@@ -97,3 +97,20 @@ def test_history_sync_rejects_provider_without_paginated_ohlcv(monkeypatch):
         headers=headers,
     )
     assert response.status_code == 409
+
+
+def test_history_scheduler_status_is_authenticated_and_reports_storage_policy(monkeypatch):
+    headers = auth(monkeypatch)
+    response = client.get("/api/market-data/history/scheduler", headers=headers)
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["enabled"] is False
+    assert payload["targets_configured"] is False
+    assert payload["storage"]["retention_policy"] == "retain_indefinitely"
+    assert payload["storage"]["automatic_pruning"] is False
+
+
+def test_history_scheduler_status_requires_control_token(monkeypatch):
+    monkeypatch.setattr("app.main.settings.agent_control_token", "history-test-token")
+    response = client.get("/api/market-data/history/scheduler")
+    assert response.status_code == 401
