@@ -913,7 +913,8 @@ class StrategyResearchAgent:
             ),
             "experimental_promotion_note": (
                 "Experimental candidates are paper-only and are not validated for profitability; "
-                "they may underperform buy-and-hold or lose money."
+                "they may underperform buy-and-hold or lose money. Incomplete observed-spread coverage "
+                "blocks promotion even when a candidate is eligible for experimental paper evaluation."
             ),
             "candidates": results,
             "execution": "research_only",
