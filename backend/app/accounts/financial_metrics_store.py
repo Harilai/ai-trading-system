@@ -208,6 +208,17 @@ class AccountFinancialMetricsStore:
             ).fetchone()
             return self._result(row)
 
+    def get_by_request_id(self, request_id: str, *, provider_id: str, account_alias: str) -> dict | None:
+        if not isinstance(request_id, str) or not _IDENTIFIER.fullmatch(request_id):
+            raise FinancialMetricsError("Financial metrics request_id is invalid")
+        with self.connect() as db:
+            row = db.execute(
+                """SELECT * FROM account_financial_metric_snapshots
+                   WHERE provider_id=? AND account_alias=? AND environment='paper' AND request_id=?""",
+                (provider_id, account_alias, request_id),
+            ).fetchone()
+        return self._result(row) if row else None
+
     def list_snapshots(
         self, *, provider_id: str | None = None, account_alias: str | None = None,
         environment: str | None = None, limit: int = 50,
