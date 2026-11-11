@@ -29,7 +29,7 @@ class RiskManager:
                 or scope.get("environment") != "paper"
                 or scope.get("market_type") != "spot"
                 or not isinstance(scope.get("account_id"), str)
-                or not scope.get("account_id", "").strip()
+                or scope.get("account_id") != "paper-primary"
             ):
                 return RiskDecision(accepted=False, reason="Account preflight scope is invalid")
             if not isinstance(snapshot, dict) or (
