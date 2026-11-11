@@ -2,12 +2,33 @@
 
  > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
- > **Último cambio integrado:** PR #152, merge SHA `d2bd60484a121bd1c93bf643c418233a12191be8`.
-> **main y demo:** mismo SHA `d2bd60484a121bd1c93bf643c418233a12191be8`; compare verificado como identical.
-> **PR abiertas:** ninguna tras integrar PR #152.
-> **CI:** PR #152 head: 763 Python tests passed, 1 warning; Docker build/runtime hardening passed. Post-merge run 43074905339: ambos jobs success.
+ > **Último cambio integrado:** PR #155, merge SHA `23dcac3b65c46a59d3e24edf487cefe88ffc88fd`.
+> **main y demo:** mismo SHA `23dcac3b65c46a59d3e24edf487cefe88ffc88fd`; compare verificado como identical.
+> **PR abiertas:** ninguna tras integrar PR #155.
+> **CI:** PR #155 head `4c4d30b781012c477f9f2c14fb35455bea00df8f`: 778 Python tests passed, 1 warning; Docker build/runtime hardening passed (run `43080178575`). Post-merge main CI run `43080343137` estaba en curso al actualizar este handoff.
 > **Validación local:** no se pudo clonar el repositorio desde el shell por falta de resolución de GitHub; no afirmar tests locales. La validación ejecutada fue GitHub Actions.
 > **Operación:** investigación y PAPER; LIVE sigue deshabilitado. No ejecutar operaciones reales ni usar credenciales productivas.
+
+## Integración más reciente — PR #155: capacidades históricas por proveedor
+
+- PR #155 integrada por squash en `main`; merge SHA `23dcac3b65c46a59d3e24edf487cefe88ffc88fd`.
+- `main` y `demo` se compararon después de la integración como identical; `demo` se actualizó por fast-forward con expected SHA para preservar exactamente el mismo commit.
+- CI del head exacto de PR `4c4d30b781012c477f9f2c14fb35455bea00df8f`: 778 tests Python passed, 1 warning; Docker build/runtime hardening passed. No tests locales ejecutados.
+- Nuevo contrato `ProviderCapabilities`: histórico OHLCV, timeframes, paginación, máximo por petición y profundidad histórica.
+- Kraken Spot declara 720 velas máximas por intervalo y por petición. Los demás proveedores no heredan ese límite; la profundidad desconocida se conserva como desconocida.
+- El scheduler falla de forma cerrada ante capacidades ausentes, nulas, con identidad incorrecta o inválidas. Persiste requested/effective range y migración compatible de estado.
+- Runbook actualizado en `docs/HISTORICAL_DATA_SYNC.md`.
+- No se usaron credenciales privadas, no se enviaron órdenes y LIVE sigue deshabilitado.
+- Post-merge CI de `main`: run `43080343137`, pendiente al escribir esta nota.
+
+## Siguiente bloque recomendado — costes de ejecución y robustez cuantitativa
+
+1. Auditar el modelo actual de fees y slippage del backtester; evitar duplicar costes ya aplicados.
+2. Incorporar spread bid-ask observable con timestamp y procedencia; no inventar spread cuando falten bid/ask.
+3. Separar spread observado, fee del proveedor, slippage modelado y coste de liquidez/impacto estimado.
+4. Asegurar que cada backtest usa solo información disponible en el timestamp de decisión (sin look-ahead).
+5. Añadir escenarios de sensibilidad y holdouts temporales independientes sin relajar gates.
+6. Mantener LIVE deshabilitado y no ejecutar acciones financieras.
 
 ## Integraciones recientes verificadas
 
