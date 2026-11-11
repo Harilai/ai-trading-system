@@ -16,6 +16,16 @@ Actualizado: 2026-11-11. Este documento distingue lo implementado y validado de 
 
 El diseño está documentado en [`COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md`](COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md). PR #113 implementa el `capture_id` común, ledger de referencias sin duplicación, cobertura explícita, identidad proveedor/cuenta/entorno/mercado, timestamp provenance y skew máximo, idempotencia, rollback atómico de ambos ledgers y endpoints autenticados de captura/historial/detalle. El ledger de balances queda aislado por entorno mediante migración compatible (filas legacy -> `production`). CI exacta del head `800f8fd63d87fb8f1c6e2ed5c5bc12adb926b0b0`: 581 tests passed, 1 warning; Docker Compose, build y non-root hardening correctos. La captura real sigue bloqueada hasta que un proveedor declare balances+posiciones y cobertura completa/parcial verificable; los conectores Spot actuales no cumplen. No inventar posiciones a partir de balances o fills.
 
+
+
+## Evaluación de proveedor de posiciones — siguiente integración
+
+- Evaluación inicial de Alpaca Trading API: su endpoint oficial `GET /v2/positions` devuelve las posiciones abiertas de la cuenta y campos normalizables (asset ID, símbolo, clase, cantidad, lado, precio medio, valor de mercado y P/L no realizado). La documentación también confirma que una posición cerrada deja de aparecer.
+- Candidato para una primera integración de posiciones de acciones/ETF en cuenta Paper, con adaptador estrictamente GET/read-only y host Paper fijo por defecto. No se ha implementado ni conectado todavía.
+- Antes de declararlo apto para snapshot coordinado hay que implementar y probar también la lectura de cuenta/balances con semántica contable correcta, validar el entorno y la identidad de cuenta, timestamps/frescura, cobertura y comportamiento ante respuestas vacías, errores, paginación futura y posiciones no soportadas.
+- No representar buying power como efectivo ni derivar posiciones desde balances. No habilitar trading, cancelación, transferencias, retiradas ni credenciales con permisos de escritura. La clave debe crearse con mínimo privilegio y su alcance real no se presume verificado por el adaptador.
+- La implementación actual del snapshot coordinado solo admite `spot`; extenderla a `cash`/equity requiere una decisión de esquema y pruebas específicas, no un bypass del guard.
+
 ## Objetivo de producto
 
 Construir una plataforma algorítmica multiactivo y multi-venue, preparada para capital real y extensible a los instrumentos accesibles mediante los proveedores conectados. El universo objetivo no se limita a crypto spot ni a EUR: incluye crypto CEX/DEX, acciones, ETF, FX, futuros, opciones, bonos, materias primas y otros instrumentos cuando existan adaptador, elegibilidad, datos, contabilidad y perfil de riesgo adecuados.
