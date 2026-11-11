@@ -183,7 +183,7 @@ class PaperAccountReadiness:
             if unresolved:
                 blockers.append("unresolved_paper_order_intents")
             reconciliation_summary = {
-                "status": "clear" if not blockers and not unresolved else "blocked",
+                "status": "clear" if reconciliation_required == 0 and not unresolved else "blocked",
                 "reconciled_filled": int(reconciliation.get("reconciled_filled", 0)),
                 "reconciliation_required": reconciliation_required,
                 "unresolved_intents": len(unresolved),
