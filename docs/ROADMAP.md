@@ -31,7 +31,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 15. **Completado — contratos normalizados de cuenta (PR #71):** registry multi-account, permisos y balances normalizados.
 16. **Completado — adaptador genérico CCXT read-only (PR #72):** CEX Spot configurable por exchange ID, Kraken por defecto; consulta balances sin métodos de escritura.
 17. **Completado — contrato y endpoint de posiciones normalizadas (PR #73):** snapshot tipado por proveedor/cuenta/entorno, validación decimal e identidad de instrumento y capability gate. Los adaptadores actuales siguen declarando `positions=false`; endpoint preparado para proveedores que implementen lectura de posiciones.
-18. **En curso — ledger persistente de posiciones multi-venue (PR #74 abierto, listo para revisión):** snapshots append-only por proveedor/cuenta/instrumento, diferencias sin asumir ausencias como cero, coste/mark/P&L y divisa con procedencia y frescura; pendiente revisión independiente.
+18. **Revisión arquitectónica — snapshots de posiciones multi-venue (PR #74):** su lectura GET con scope `market_type` se extrae a PR #96. El almacenamiento combinado balances/posiciones no se fusiona aún: debe coordinarse con el ledger dedicado y cobertura complete/partial desarrollado en demo (#92–#93), sin duplicar la fuente de verdad.
 19. **Completado en PR #75 — demo local paper:** Compose aislado con 10.000 EUR virtuales, datos públicos Kraken, clave Twelve Data opcional solo para cotizaciones, sin credenciales de cuenta ni ruta de ejecución. CI: 460 tests Python y validación/build Docker correctos en el SHA `7abd5f527612d0c593e93d8a94852cc29d0a72d8`.
 20. Supervisión paper equity y operación 24/7: monitor stop/take equity integrado en paper; VPS real, proveedor de backups externo y drills de restauración siguen pendientes.
 21. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario. Sigue fuera del alcance de esta fase.
@@ -150,7 +150,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [x] Generalizar el portfolio a claves `provider_id + instrument_id`, con migración de datos legacy y aislamiento de símbolos duplicados.
 - [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución (PR #78 normaliza órdenes/fills; PR #79 añade el ledger; PR #80 explicita la completitud de historial; aún faltan adaptadores y worker de conciliación).
 - [x] Añadir contrato y endpoint autenticado para posiciones normalizadas, exigiendo capacidad explícita y sin sintetizarlas desde balances.
-- [ ] Persistir snapshots append-only de posiciones por cuenta/instrumento y conciliar sus cambios con coste, mark, P&L y divisa trazables.
+- [ ] Promover a main el ledger append-only de posiciones de demo (#92–#93) tras sincronizar dependencias y conservar cobertura complete/partial; no duplicar persistencia en AccountSnapshotStore.
 - [ ] Implementar adaptadores FX, índices y commodities solo tras validar APIs y elegibilidad.
 - [ ] Diseñar wallet read-only y blockchain monitoring antes de añadir firma aislada; no usar seeds en agentes.
 - [ ] Implementar DEX swaps con simulación, gas, slippage, MEV y reconciliación antes de habilitar ejecución.

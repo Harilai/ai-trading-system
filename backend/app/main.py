@@ -32,7 +32,7 @@ from .accounts.ccxt_readonly import CcxtReadOnlyAccount, CcxtReadOnlyAccountErro
 from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
 from .accounts.contracts import (
     AccountProviderError, AccountProviderNotFound, AccountProviderRegistry, AmbiguousAccountProvider,
-    UnsupportedAccountCapability,
+    InvalidAccountRequest, UnsupportedAccountCapability,
 )
 from .accounts.binance_demo import BinanceDemoError, BinanceSpotDemoExecution
 from .accounts.demo_order_store import (
@@ -199,7 +199,7 @@ def account_provider_balances(
         return account_provider_registry.fetch_balances(provider_id, account_alias)
     except AccountProviderNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
-    except AmbiguousAccountProvider as exc:
+    except (UnsupportedAccountCapability, AmbiguousAccountProvider) as exc:
         raise HTTPException(409, str(exc)) from exc
     except AccountProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
@@ -209,15 +209,20 @@ def account_provider_balances(
 def account_provider_positions(
     provider_id: str,
     account_alias: str | None = None,
+    market_type: str | None = Query(default=None),
     x_agent_token: str | None = Header(default=None),
 ):
     require_order_control_token(x_agent_token)
     try:
-        return account_provider_registry.fetch_positions(provider_id, account_alias)
+        return account_provider_registry.fetch_positions(
+            provider_id, account_alias, market_type=market_type,
+        )
     except AccountProviderNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
     except (UnsupportedAccountCapability, AmbiguousAccountProvider) as exc:
         raise HTTPException(409, str(exc)) from exc
+    except InvalidAccountRequest as exc:
+        raise HTTPException(422, str(exc)) from exc
     except AccountProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
 

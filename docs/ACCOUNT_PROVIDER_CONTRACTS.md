@@ -7,7 +7,7 @@ Provide a venue-independent account boundary without merging accounts, environme
 ## Contract layers
 
 - `AccountCapabilities`: venue, environment, supported market types, balances, positions, order management/submission/cancellation, reconciliation, read-only connector mode, transfers, withdrawals, wallet signing and whether key permissions have actually been verified.
-- `AccountBalance` / `AccountBalanceSnapshot`: canonical asset codes and decimal-string free/used/total amounts, account identity, market type, environment, timestamp and explicit permission flags.
+- `AccountBalance` / `AccountBalanceSnapshot`: canonical asset codes and decimal-string free/used/total amounts, account identity, market type, environment, timestamp and explicit permission flags. A connector may be position-only; unsupported balance reads return a capability conflict rather than blocking registration.
 - `AccountPosition`: normalized instrument identity, quantity/side, quote currency, entry/mark price, market value and unrealized P&L.
 - `AccountOrder`: normalized order observation keyed by provider/account/environment/market, with exchange/client IDs, instrument, side/type/status, requested/filled/remaining quantities, average fill, quote currency and observation timestamp.
 - `AccountOrderFill`: immutable per-trade execution with stable trade/order IDs, exact decimal amount/price/cost, quote currency, timestamp and explicit fee amount/currency.
@@ -39,7 +39,8 @@ Provide a venue-independent account boundary without merging accounts, environme
 
 - `GET /api/accounts`: existing account summary plus `normalized_accounts`.
 - `GET /api/accounts/{provider_id}/balances?account_alias=...`: normalized balances; owner token required.
+- `GET /api/accounts/{provider_id}/positions?account_alias=...&market_type=...`: normalized positions for an explicitly declared capability; `market_type` is mandatory for multi-market accounts. Legacy list-based providers return `coverage_status=unknown` and `timestamp_source=retrieved_at`; the response timestamp records local retrieval, not an exchange event time. Absence from a current read is not evidence of a flat account or a closed position. Owner token required.
 - `POST /api/accounts/{provider_id}/snapshots?account_alias=...`: immutable balance snapshot for explicitly read-only Spot accounts only; owner token required.
 - Existing Binance-specific endpoints remain available for compatibility.
 
-The snapshot store remains Spot-balance-only. Position and order contracts are foundations for later adapters; they do not imply that positions or orders are available from every current account provider.
+The snapshot store remains Spot-balance-only. The current positions endpoint is a read-only view and does not persist observations. Its legacy list-based provider contract reports unknown coverage; never reconcile absence from that response as a closure. Persistent external position history with explicit complete/partial coverage is being implemented separately on the demo branch (PR #92–#93). No current production adapter declares position support.
