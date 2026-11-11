@@ -469,6 +469,8 @@ class StrategyResearchAgent:
     def research(
         self, candles: Sequence[dict], *, expected_interval_seconds: float | None = None,
         calendar_model: str = "unspecified",
+        quote_snapshots: Sequence[dict] | None = None,
+        max_quote_age_seconds: float = 300.0,
     ) -> dict:
         normalized = []
         for candle in candles:
@@ -502,6 +504,77 @@ class StrategyResearchAgent:
         if len(normalized) < 120:
             raise ValueError("At least 120 candles are required for strategy research")
 
+        if (
+            isinstance(max_quote_age_seconds, bool)
+            or not isinstance(max_quote_age_seconds, (int, float))
+            or not math.isfinite(max_quote_age_seconds)
+            or max_quote_age_seconds <= 0
+        ):
+            raise ValueError("max_quote_age_seconds must be finite and positive")
+        normalized_quotes = []
+        for quote in quote_snapshots or []:
+            timestamp = quote.get("timestamp_ms")
+            if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp <= 0:
+                raise ValueError("Quote timestamp_ms must be a positive integer")
+            try:
+                bid = float(quote["bid"])
+                ask = float(quote["ask"])
+            except (KeyError, TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("Quote bid/ask values must be finite") from exc
+            if not math.isfinite(bid) or not math.isfinite(ask) or bid <= 0 or ask < bid:
+                raise ValueError("Quote bid/ask values are invalid")
+            timestamp_source = quote.get("timestamp_source")
+            source = quote.get("source")
+            if not isinstance(timestamp_source, str) or not timestamp_source.strip():
+                raise ValueError("Quote timestamp source is required")
+            if not isinstance(source, str) or not source.strip():
+                raise ValueError("Quote source is required")
+            if normalized_quotes and timestamp <= normalized_quotes[-1]["timestamp_ms"]:
+                raise ValueError("Quote timestamps must be strictly increasing")
+            normalized_quotes.append({
+                "timestamp_ms": timestamp,
+                "bid": bid,
+                "ask": ask,
+                "timestamp_source": timestamp_source,
+                "source": source,
+            })
+
+        data_quality = _candle_data_quality(
+            normalized, expected_interval_seconds=expected_interval_seconds,
+            calendar_model=calendar_model,
+        )
+        interval_ms = (
+            int(expected_interval_seconds * 1000)
+            if expected_interval_seconds is not None
+            else (
+                int(data_quality["median_candle_interval_seconds"] * 1000)
+                if data_quality["median_candle_interval_seconds"] else None
+            )
+        )
+        final_execution_timestamp_ms = (
+            int(normalized[-1]["timestamp"]) + interval_ms
+            if interval_ms is not None else int(normalized[-1]["timestamp"])
+        )
+        max_quote_age_ms = int(max_quote_age_seconds * 1000)
+        backtest_quote_args = {
+            "quote_snapshots": normalized_quotes,
+            "max_quote_age_ms": max_quote_age_ms,
+            "final_execution_timestamp_ms": final_execution_timestamp_ms,
+        }
+        quote_timestamp_sources = {}
+        for quote in normalized_quotes:
+            source_name = quote["timestamp_source"]
+            quote_timestamp_sources[source_name] = quote_timestamp_sources.get(source_name, 0) + 1
+        spread_coverage = {
+            "status": "available" if normalized_quotes else "unavailable",
+            "observations": len(normalized_quotes),
+            "first_timestamp_ms": normalized_quotes[0]["timestamp_ms"] if normalized_quotes else None,
+            "last_timestamp_ms": normalized_quotes[-1]["timestamp_ms"] if normalized_quotes else None,
+            "timestamp_sources": quote_timestamp_sources,
+            "max_quote_age_seconds": max_quote_age_seconds,
+            "method": "latest_bid_ask_at_or_before_execution_time",
+        }
+
         split = int(len(normalized) * 0.7)
         benchmark = self._backtest(
             normalized,
@@ -509,12 +582,9 @@ class StrategyResearchAgent:
             0,
             split,
             len(normalized),
+            **backtest_quote_args,
         )
         results = []
-        data_quality = _candle_data_quality(
-            normalized, expected_interval_seconds=expected_interval_seconds,
-            calendar_model=calendar_model,
-        )
         market_regime = _market_regime([row["close"] for row in normalized])
         stress_multipliers = (1.5, 2.0)
         benchmark_cost_sensitivity = {}
@@ -527,19 +597,23 @@ class StrategyResearchAgent:
                     "reason": "stressed_cost_rate_out_of_range",
                 }
                 continue
+            stressed_benchmark_result = self._backtest(
+                normalized,
+                lambda closes, index, in_position: True,
+                0,
+                split,
+                len(normalized),
+                fee_rate=stressed_fee,
+                slippage_rate=stressed_slippage,
+                spread_multiplier=multiplier,
+                **backtest_quote_args,
+            )
             benchmark_cost_sensitivity[str(multiplier)] = {
                 "available": True,
                 "fee_rate_per_side": stressed_fee,
                 "slippage_rate_per_side": stressed_slippage,
-                "out_of_sample": self._backtest(
-                    normalized,
-                    lambda closes, index, in_position: True,
-                    0,
-                    split,
-                    len(normalized),
-                    fee_rate=stressed_fee,
-                    slippage_rate=stressed_slippage,
-                ),
+                "spread_multiplier": multiplier,
+                "out_of_sample": stressed_benchmark_result,
             }
         walk_forward_boundaries = [
             (int(len(normalized) * 0.4), int(len(normalized) * 0.6)),
@@ -564,15 +638,21 @@ class StrategyResearchAgent:
             "minimum_walk_forward_bars_per_window": self.minimum_walk_forward_bars,
         }
         for strategy_id, description, signal, warmup in self._specs():
-            in_sample = self._backtest(normalized, signal, warmup, warmup, split)
-            out_sample = self._backtest(normalized, signal, warmup, split, len(normalized))
+            in_sample = self._backtest(
+                normalized, signal, warmup, warmup, split, **backtest_quote_args,
+            )
+            out_sample = self._backtest(
+                normalized, signal, warmup, split, len(normalized), **backtest_quote_args,
+            )
             walk_forward_windows = [
                 {
                     "window": index + 1,
                     "start_index": start,
                     "end_index": end,
                     "evaluation_bars": max(0, end - max(warmup, start) - 1),
-                    **self._backtest(normalized, signal, warmup, start, end),
+                    **self._backtest(
+                        normalized, signal, warmup, start, end, **backtest_quote_args,
+                    ),
                 }
                 for index, (start, end) in enumerate(walk_forward_boundaries)
                 if end - max(warmup, start) >= 2
@@ -609,6 +689,8 @@ class StrategyResearchAgent:
                     len(normalized),
                     fee_rate=stressed_fee,
                     slippage_rate=stressed_slippage,
+                    spread_multiplier=multiplier,
+                    **backtest_quote_args,
                 )
                 stressed_excess = (
                     stressed_result["net_return"]
@@ -618,6 +700,8 @@ class StrategyResearchAgent:
                     "available": True,
                     "fee_rate_per_side": stressed_fee,
                     "slippage_rate_per_side": stressed_slippage,
+                    "spread_multiplier": multiplier,
+                    "spread_coverage_complete": stressed_result["spread_coverage_complete"],
                     "out_of_sample": stressed_result,
                     "benchmark_excess_return": stressed_excess,
                     "beats_buy_and_hold": stressed_excess > 0,
@@ -650,6 +734,11 @@ class StrategyResearchAgent:
                 validation_failures.append("walk_forward_drawdown_exceeded")
             if benchmark_excess_return <= 0:
                 validation_failures.append("does_not_beat_buy_and_hold")
+            if (
+                not out_sample["spread_coverage_complete"]
+                or any(not window["spread_coverage_complete"] for window in walk_forward_windows)
+            ):
+                validation_failures.append("insufficient_spread_coverage")
             if not self._passes_cost_stress(cost_sensitivity, "1.5"):
                 validation_failures.append("fails_1_5x_cost_stress")
             eligible = not validation_failures
@@ -715,6 +804,9 @@ class StrategyResearchAgent:
             "cost_model": {
                 "fee_rate_per_side": self.fee_rate,
                 "slippage_rate_per_side": self.slippage_rate,
+                "spread_method": "observed_best_bid_ask_full_spread_half_per_side",
+                "spread_source": "timestamped_quote_snapshots",
+                "max_quote_age_seconds": max_quote_age_seconds,
                 "max_position_fraction": self.max_position_fraction,
             },
             "promotion_gates": {
@@ -725,6 +817,7 @@ class StrategyResearchAgent:
                 "maximum_drawdown": self.maximum_oos_drawdown,
                 "must_beat_buy_and_hold": True,
                 "must_remain_profitable_and_beat_buy_and_hold_at_1_5x_costs": True,
+                "must_have_complete_observed_spread_coverage": True,
             },
             "status": "available",
             "market_regime": market_regime,
@@ -736,6 +829,7 @@ class StrategyResearchAgent:
                 )
                 for category in ("sample", "performance", "risk", "cost", "other")
             },
+            "spread_coverage": spread_coverage,
             "data_quality": {
                 **data_quality,
                 "out_of_sample_bars": len(normalized) - split,
