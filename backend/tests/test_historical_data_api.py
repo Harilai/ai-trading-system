@@ -20,7 +20,7 @@ def test_history_sync_endpoint_paginates_and_persists_provider_scoped_candles(mo
     monkeypatch.setattr("app.main.historical_candle_store", store)
     monkeypatch.setattr("app.main.historical_candle_collector", __import__(
         "app.historical_data", fromlist=["PaginatedCandleCollector"]
-    ).PaginatedCandleCollector(store))
+    ).PaginatedCandleCollector(store, page_limit=2))
 
     rows = [
         [1000, 10, 12, 9, 11, 100],
