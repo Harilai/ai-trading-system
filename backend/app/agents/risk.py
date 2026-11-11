@@ -22,9 +22,7 @@ class RiskManager:
                 return RiskDecision(accepted=False, reason="Instrument is not eligible for execution")
             if instrument_eligibility.get("provider_id") != proposal.provider_id:
                 return RiskDecision(accepted=False, reason="Instrument eligibility provider identity mismatch")
-            if proposal.instrument_id and instrument_eligibility.get("instrument_id") not in {
-                proposal.instrument_id, instrument_eligibility.get("catalogue_id")
-            }:
+            if proposal.instrument_id and instrument_eligibility.get("instrument_id") != proposal.instrument_id:
                 return RiskDecision(accepted=False, reason="Instrument eligibility identity mismatch")
             if instrument_eligibility.get("execution_adapter_configured") is not True:
                 return RiskDecision(accepted=False, reason="Execution adapter is not explicitly configured")
