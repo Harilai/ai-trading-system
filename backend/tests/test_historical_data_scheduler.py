@@ -311,3 +311,26 @@ def test_sync_state_store_migrates_existing_scheduler_schema(tmp_path):
     assert row["max_history_bars"] == 720
     assert row["history_window_limited"] == 1
     assert row["history_limit_status"] == "provider_limit_applied"
+
+
+def test_provider_history_cap_clamps_existing_cursor_without_restarting_backfill(tmp_path):
+    path = str(tmp_path / "trading.sqlite")
+    state = HistoricalSyncStateStore(path)
+    instrument_id = "ccxt:kraken:spot:BTC/EUR"
+    state.ensure_target(
+        "ccxt:kraken", instrument_id, "BTC/EUR", "1h", 1000,
+    )
+    state.record_result(
+        "ccxt:kraken", instrument_id, "1h",
+        {"next_since_ms": 2000, "pages": 1, "received": 500, "inserted": 500, "updated": 0},
+        status="backfill_in_progress",
+    )
+    updated, created = state.ensure_target(
+        "ccxt:kraken", instrument_id, "BTC/EUR", "1h", 5000,
+        requested_since_ms=1000, max_history_bars=720,
+        history_window_limited=True, history_limit_status="provider_limit_applied",
+    )
+    assert created is False
+    assert updated["initial_since_ms"] == 5000
+    assert updated["next_since_ms"] == 5000
+    assert updated["history_window_limited"] == 1
