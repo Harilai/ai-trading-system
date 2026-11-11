@@ -21,7 +21,7 @@ Each feature has an explicit state and provenance:
 - `unknown`: not evidenced or not currently verifiable.
 - `not_configured`: required configuration is absent.
 
-Execution features (order types, idempotency, partial fills, cancellation, order reconciliation) are separate from account read features (balances and positions). Withdrawals and transfers are separate, explicit capabilities and remain unsupported by default. Capability evidence includes source and optional timezone-aware verification timestamp.
+Execution features (order types, idempotency, partial fills, cancellation, order reconciliation) are separate from account read features (balances and positions). New-entry readiness requires all six: client-order idempotency, partial-fill handling, cancellation, reconciliation, balances, and positions. Withdrawals and transfers are separate, explicit capabilities and remain unsupported by default. Capability evidence includes source and timezone-aware verification timestamp; readiness rejects missing, future, or older-than-24-hour evidence by default.
 
 A supported status is not inferred from a connected market-data provider, a populated instrument catalogue, or account snapshots.
 
@@ -34,7 +34,7 @@ A supported status is not inferred from a connected market-data provider, a popu
 
 ## Readiness policy
 
-A new-entry readiness check requires exact scope identity, supported asset class/order type, client-order idempotency, partial-fill handling, cancellation, and order reconciliation. Balances and positions are evidence inputs for account risk and preflight; a caller requiring either must additionally require its corresponding capability. Unknown or missing evidence fails closed.
+A new-entry readiness check requires exact scope identity, supported asset class/order type, client-order idempotency, partial-fill handling, cancellation, order reconciliation, balances, and positions. These minimum controls cannot be removed by callers; additional requirements can only make the gate stricter. Unknown, missing, stale, or future evidence fails closed.
 
 ## Safety
 
