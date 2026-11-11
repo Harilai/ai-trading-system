@@ -60,6 +60,9 @@ class HistoricalSyncStateStore:
                 "CREATE TABLE IF NOT EXISTS historical_sync_state ("
                 "provider_id TEXT NOT NULL, instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, "
                 "timeframe TEXT NOT NULL, initial_since_ms INTEGER NOT NULL, next_since_ms INTEGER, "
+                "requested_since_ms INTEGER, max_history_bars INTEGER, "
+                "history_window_limited INTEGER NOT NULL DEFAULT 0, "
+                "history_limit_status TEXT NOT NULL DEFAULT 'unknown', "
                 "last_started_at TEXT, last_finished_at TEXT, last_success_at TEXT, "
                 "last_status TEXT NOT NULL DEFAULT 'pending', last_error TEXT, "
                 "last_pages INTEGER NOT NULL DEFAULT 0, last_received INTEGER NOT NULL DEFAULT 0, "
@@ -67,6 +70,20 @@ class HistoricalSyncStateStore:
                 "updated_at TEXT NOT NULL, "
                 "PRIMARY KEY(provider_id,instrument_id,timeframe))"
             )
+            existing_columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(historical_sync_state)")
+            }
+            migrations = {
+                "requested_since_ms": "INTEGER",
+                "max_history_bars": "INTEGER",
+                "history_window_limited": "INTEGER NOT NULL DEFAULT 0",
+                "history_limit_status": "TEXT NOT NULL DEFAULT 'unknown'",
+            }
+            for column, definition in migrations.items():
+                if column not in existing_columns:
+                    db.execute(
+                        f"ALTER TABLE historical_sync_state ADD COLUMN {column} {definition}"
+                    )
 
     def connect(self):
         db = sqlite3.connect(self.path, timeout=10)
@@ -75,18 +92,38 @@ class HistoricalSyncStateStore:
 
     def ensure_target(
         self, provider_id: str, instrument_id: str, symbol: str,
-        timeframe: str, initial_since_ms: int,
+        timeframe: str, initial_since_ms: int, *,
+        requested_since_ms: int | None = None,
+        max_history_bars: int | None = None,
+        history_window_limited: bool = False,
+        history_limit_status: str = "unknown",
     ) -> tuple[dict, bool]:
         now = datetime.now(timezone.utc).isoformat()
+        requested_since_ms = initial_since_ms if requested_since_ms is None else requested_since_ms
         with self.connect() as db:
             cursor = db.execute(
                 "INSERT OR IGNORE INTO historical_sync_state "
                 "(provider_id,instrument_id,symbol,timeframe,initial_since_ms,next_since_ms,"
-                "last_status,updated_at) VALUES(?,?,?,?,?,?,?,?)",
+                "requested_since_ms,max_history_bars,history_window_limited,history_limit_status,"
+                "last_status,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (provider_id, instrument_id, symbol, timeframe, initial_since_ms,
-                 initial_since_ms, "pending", now),
+                 initial_since_ms, requested_since_ms, max_history_bars,
+                 int(history_window_limited), history_limit_status, "pending", now),
             )
             created = cursor.rowcount == 1
+            if not created:
+                db.execute(
+                    "UPDATE historical_sync_state SET "
+                    "initial_since_ms=MAX(initial_since_ms,?),"
+                    "next_since_ms=CASE WHEN next_since_ms IS NOT NULL AND next_since_ms<? "
+                    "THEN ? ELSE next_since_ms END,"
+                    "requested_since_ms=?,max_history_bars=?,history_window_limited=?,"
+                    "history_limit_status=?,updated_at=? "
+                    "WHERE provider_id=? AND instrument_id=? AND timeframe=?",
+                    (initial_since_ms, initial_since_ms, initial_since_ms, requested_since_ms,
+                     max_history_bars, int(history_window_limited), history_limit_status, now,
+                     provider_id, instrument_id, timeframe),
+                )
             row = db.execute(
                 "SELECT * FROM historical_sync_state WHERE provider_id=? AND instrument_id=? AND timeframe=?",
                 (provider_id, instrument_id, timeframe),
