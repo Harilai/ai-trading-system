@@ -1,11 +1,23 @@
 from __future__ import annotations
 
 from typing import Any
+import re
 import sqlite3
 
 from .agents.charts import ChartsAgent
 from .agents.contracts import MarketAnalysis
 from .strategy_research import StrategyResearchAgent
+
+_TIMEFRAME_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+
+def _timeframe_seconds(value: str) -> int | None:
+    match = re.fullmatch(r"([1-9][0-9]*)([smhdw])", value or "")
+    if not match:
+        return None
+    return int(match.group(1)) * _TIMEFRAME_SECONDS[match.group(2)]
+
+
 from .market_data import MarketDataError
 
 
@@ -159,7 +171,11 @@ class ScoutAgent:
                         # analysis and execution are not affected by store outages.
                         history_source = "provider_recent_store_unavailable"
                 try:
-                    research = self.strategy_research.research(research_candles)
+                    research = self.strategy_research.research(
+                        research_candles,
+                        expected_interval_seconds=_timeframe_seconds(self.timeframe),
+                        calendar_model="crypto_24x7" if _timeframe_seconds(self.timeframe) else "unspecified",
+                    )
                 except ValueError as exc:
                     insufficient_history = "At least 120 candles are required" in str(exc)
                     research = {
