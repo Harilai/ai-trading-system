@@ -417,3 +417,13 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 2. Añadir cobertura/gap diagnostics conscientes del calendario de cada venue; el detector crypto 24/7 no debe aplicarse a equities/FX.
 3. Integrar spread y costes observables y ampliar holdout independiente antes de añadir estrategias nuevas.
 4. Mantener gates y límites de riesgo actuales hasta disponer de evidencia suficiente.
+
+
+## Bloque en desarrollo — cobertura de histórico consciente de la cadencia
+
+- Base: main=demo 41e069fd4f20f6a2ed70587df3c0665725857402. PR #150, #152 y documentación #153 integradas; CI #153 success en head f709ed682c6be7c0fc13aaa7b942fad0adbad4a2.
+- Strategy Research admite un intervalo de vela esperado explícito, distingue su origen de cadencia del heurístico basado en mediana y estima intervalos ausentes.
+- Scout transmite el timeframe configurado y etiqueta su universo actual como crypto 24/7. No se interpreta que el modelo 24/7 sea válido para acciones/FX; esos mercados requieren calendarios y sesiones de proveedor antes de habilitar diagnósticos equivalentes.
+- No se modifican señales, parámetros, promotion gates, costes, riesgo ni ejecución.
+- Pendiente: CI del head final, revisar dashboard/persistencia para que las nuevas métricas de cobertura lleguen a la UI y comprobar demo=main después de integrar.
+- LIVE deshabilitado.
