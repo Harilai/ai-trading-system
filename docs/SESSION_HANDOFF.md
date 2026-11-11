@@ -311,9 +311,9 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 ## Bloque en desarrollo — cobertura de histórico consciente de la cadencia (2026-11-11)
 
 - Estado base verificado: main y demo identical en 41e069fd4f20f6a2ed70587df3c0665725857402; PR abiertas 0 tras PR #153.
-- PR #153 documenta la integración de #152 y su evidencia CI: 763 tests Python y Docker hardening correctos; run post-merge #153 aún pendiente al iniciar este bloque.
+- PR #153 documenta la integración de #152 y su evidencia CI: 763 tests Python y Docker hardening correctos; run post-merge #153 (43075325981) finalizado correctamente.
 - En rama feat/venue-aware-research-coverage se añade expected_interval_seconds opcional a StrategyResearchAgent; el diagnóstico explicita cadence_source, expected interval, estimated_missing_intervals y calendar_model.
 - Scout transmite la cadencia derivada de timeframe para su universo crypto spot EUR y declara crypto_24x7 solo para ese universo. Timeframes calendario/mes no se convierten a duración fija.
 - Se mantiene calendar_adjustment=false: esto detecta desviaciones de cadencia, no aplica calendario bursátil ni prueba que el dato ausente sea negociable.
-- Tests añadidos para huecos con cadencia explícita, estimación de barras ausentes y rechazo de intervalos cero/NaN/Inf/bool. CI pendiente; no tests locales.
+- Tests añadidos para huecos con cadencia explícita, estimación de barras ausentes y rechazo de intervalos cero/NaN/Inf/bool. CI pendiente para el head final; no tests locales.
 - No se cambian estrategias ni gates. LIVE deshabilitado.
