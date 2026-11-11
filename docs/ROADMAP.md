@@ -307,3 +307,12 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - Los wrappers no se registran automáticamente, no se conectan a API/endpoint y no envían órdenes. LIVE continúa deshabilitado.
 - Tests añadidos para scope obligatorio, separación DEMO/LIVE, timestamp con zona, balances/posiciones y gates fail-closed. Resultado CI pendiente en PR #134.
 - Próximo: definir posición Spot por activo/instrumento con valoración fresca; implementar semántica PAPER de fills/cancelación simulados o excluir explícitamente esos requisitos solo para entorno PAPER con un perfil de capacidades distinto; después enlazar snapshot y readiness al RiskManager/preflight.
+
+
+## Gobernanza de PR y continuidad — vigente 2026-11-11
+
+- El propietario delega en el Engineering Lead la revisión técnica integral, la decisión de aprobación, la publicación y el merge de PR rutinarias. No solicitar al propietario revisión, aprobación o merge.
+- Cada PR debe pasar revisión interna completa del diff, tests adecuados, CI verde sobre el SHA exacto y evaluación de seguridad/regresiones antes de fusionarse.
+- No autoaprobar mediante la API de reviews de GitHub ni omitir branch protection. Si GitHub exige una aprobación de otra cuenta, documentar únicamente ese bloqueo de plataforma.
+- PR #133 ya está integrada en `main` (merge `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`). PR #134 está abierta sobre `main`; su CI del head `a7e4b035a04bb3961697f9528865438e34db1511` pasó (run `43049679926`). La revisión técnica completa y decisión de merge corresponden al Engineering Lead.
+- Última comparación observada: `main` = `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`; `demo` = `4ea6f3525c7b6a2826b8025d5916714179ecbde6`. Sincronizar demo al SHA final de main y verificar identidad exacta.
