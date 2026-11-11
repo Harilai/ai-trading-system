@@ -118,6 +118,11 @@ class BinanceSpotDemoScopedAdapter:
         ):
             raise ScopedAccountAdapterError("Binance account is not positively identified as isolated Demo")
         self.account = account
+        # The alias supplied by configuration scopes local state, but Binance
+        # Spot account responses do not expose a stable account ID here.
+        # Do not register this scope as identity-verified until a separate
+        # provider identity proof is implemented.
+        self.account_identity_verified = False
         self.scope = ExecutionScope(
             provider_id=account.provider_id,
             venue_id="binance",
@@ -128,6 +133,8 @@ class BinanceSpotDemoScopedAdapter:
 
     def fetch_snapshot(self) -> ScopedAccountSnapshot:
         raw = self.account.fetch_balances()
+        if not isinstance(raw, dict):
+            raise ScopedAccountAdapterError("Binance Demo returned an invalid balance snapshot")
         if (
             raw.get("provider_id") != self.scope.provider_id
             or raw.get("environment") != self.scope.environment.value
@@ -136,6 +143,18 @@ class BinanceSpotDemoScopedAdapter:
             or raw.get("withdrawals_enabled") is not False
         ):
             raise ScopedAccountAdapterError("Binance Demo balance response does not match the registered scope")
+        raw_balances = raw.get("balances")
+        if not isinstance(raw_balances, list):
+            raise ScopedAccountAdapterError("Binance Demo balance collection is invalid")
+        fetched_at = raw.get("fetched_at")
+        if not isinstance(fetched_at, str):
+            raise ScopedAccountAdapterError("Binance Demo snapshot timestamp is missing")
+        try:
+            parsed_timestamp = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ScopedAccountAdapterError("Binance Demo snapshot timestamp is invalid") from exc
+        if parsed_timestamp.tzinfo is None:
+            raise ScopedAccountAdapterError("Binance Demo snapshot timestamp must include a timezone")
         balances = tuple(
             ScopedBalance(
                 asset=item["asset"],
@@ -143,11 +162,14 @@ class BinanceSpotDemoScopedAdapter:
                 used=item.get("used"),
                 total=item.get("total"),
             )
-            for item in raw.get("balances", [])
+            for item in raw_balances
+            if isinstance(item, dict)
         )
+        if len(balances) != len(raw_balances):
+            raise ScopedAccountAdapterError("Binance Demo balance record is malformed")
         return ScopedAccountSnapshot(
             scope=self.scope,
-            fetched_at=raw["fetched_at"],
+            fetched_at=parsed_timestamp.astimezone(timezone.utc).isoformat(),
             balances=balances,
             # Spot token balances are not silently re-labelled as broker positions.
             positions=(),
@@ -183,6 +205,7 @@ class PaperPortfolioScopedAdapter:
         if not isinstance(account_id, str) or not account_id.strip():
             raise ScopedAccountAdapterError("An explicit PAPER account scope is required")
         self.portfolio = portfolio
+        self.account_identity_verified = True
         self.scope = ExecutionScope(
             provider_id="internal:paper-portfolio",
             venue_id="internal-ledger",
