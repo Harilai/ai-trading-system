@@ -338,7 +338,7 @@ class HistoricalQuoteStore:
         HistoricalCandleStore._identity(provider_id, instrument_id, "quote", "quote")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100_000:
             raise HistoricalDataError("quote limit must be between 1 and 100000")
-        clauses = ["provider_id=?", "instrument_id=?"]
+        clauses = ["provider_id=?", "instrument_id=?", "retrieved_at_ms>0"]
         params: list = [provider_id, instrument_id]
         if since_ms is not None:
             if isinstance(since_ms, bool) or not isinstance(since_ms, int) or since_ms <= 0:
@@ -394,16 +394,21 @@ class HistoricalQuoteStore:
         HistoricalCandleStore._identity(provider_id, instrument_id, "quote", "quote")
         with self.connect() as db:
             row = db.execute(
-                "SELECT COUNT(*) AS observations,MIN(timestamp_ms) AS first_ms,"
-                "MAX(timestamp_ms) AS last_ms FROM historical_quotes "
-                "WHERE provider_id=? AND instrument_id=?",
+                "SELECT COUNT(*) AS observations,"
+                "SUM(CASE WHEN retrieved_at_ms>0 THEN 1 ELSE 0 END) AS valid_observations,"
+                "SUM(CASE WHEN retrieved_at_ms<=0 OR retrieved_at_ms IS NULL THEN 1 ELSE 0 END) AS invalid_observations,"
+                "MIN(CASE WHEN retrieved_at_ms>0 THEN timestamp_ms END) AS first_ms,"
+                "MAX(CASE WHEN retrieved_at_ms>0 THEN timestamp_ms END) AS last_ms "
+                "FROM historical_quotes WHERE provider_id=? AND instrument_id=?",
                 (provider_id, instrument_id),
             ).fetchone()
         return {
-            "observations": row["observations"],
+            "observations": row["valid_observations"] or 0,
+            "invalid_observations": row["invalid_observations"] or 0,
+            "total_observations": row["observations"] or 0,
             "first_timestamp_ms": row["first_ms"],
             "last_timestamp_ms": row["last_ms"],
-            "status": "available" if row["observations"] else "empty",
+            "status": "available" if row["valid_observations"] else "empty",
         }
 
 
