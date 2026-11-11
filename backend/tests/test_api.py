@@ -2037,3 +2037,20 @@ def test_instrument_refresh_rejects_unknown_asset_class(monkeypatch):
 
     assert response.status_code == 422
     assert "Unsupported asset_class" in response.json()["detail"]
+
+
+
+def test_instrument_refresh_rejects_empty_provider_filter(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+
+    def unexpected_discovery(**kwargs):
+        raise AssertionError("An empty provider filter must never become unfiltered discovery")
+
+    monkeypatch.setattr("app.main.market.discover_markets", unexpected_discovery)
+    response = client.post(
+        "/api/instruments/refresh?provider_id=%20%20%20",
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "provider_id must not be empty"
