@@ -44,6 +44,9 @@ class AlpacaPaperReadOnlyAccount:
         if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)) or not 0 < timeout_seconds <= 60:
             raise AlpacaPaperAccountError("Alpaca request timeout is invalid")
 
+        if client is not None and (client.base_url.scheme != "https" or client.base_url.host != "paper-api.alpaca.markets"):
+            raise AlpacaPaperAccountError("Alpaca client must target the fixed Paper API host")
+
         self.account_alias = account_alias.strip()
         self.expected_account_id = expected_account_id.strip()
         self._client = client or httpx.Client(
