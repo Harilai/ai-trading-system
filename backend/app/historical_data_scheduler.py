@@ -191,8 +191,15 @@ def run_sync_cycle(
             )
             if created:
                 cursor = initial_since_ms
-            elif latest and not latest[-1]["is_final"]:
-                # Re-fetch the last provisional candle until it becomes immutable.
+            elif (
+                latest and not latest[-1]["is_final"]
+                and (
+                    state["next_since_ms"] is None
+                    or int(state["next_since_ms"]) > int(latest[-1]["timestamp_ms"])
+                )
+            ):
+                # Re-fetch the last provisional candle only after the backfill
+                # cursor has reached/passed it; do not skip older missing history.
                 cursor = int(latest[-1]["timestamp_ms"])
             elif state["next_since_ms"] is not None:
                 cursor = int(state["next_since_ms"])
