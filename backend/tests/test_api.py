@@ -885,7 +885,7 @@ def test_markets_api_exposes_normalized_instrument_contract_fields(monkeypatch, 
     monkeypatch.setattr("app.main.instrument_catalog", InstrumentCatalog(str(tmp_path / "markets.db")))
     monkeypatch.setattr(
         "app.main.market.discover_markets",
-        lambda: ([instrument], [{"provider_id": "bad-provider", "reason": "api_key=must-not-leak"}]),
+        lambda **kwargs: ([instrument], [{"provider_id": "bad-provider", "reason": "api_key=must-not-leak"}]),
     )
 
     response = client.get("/api/markets")
@@ -941,7 +941,7 @@ def test_instrument_catalogue_refresh_requires_owner_token(monkeypatch, tmp_path
     from app.instrument_catalog import InstrumentCatalog
 
     monkeypatch.setattr("app.main.instrument_catalog", InstrumentCatalog(str(tmp_path / "refresh.db")))
-    monkeypatch.setattr("app.main.market.discover_markets", lambda: ([], []))
+    monkeypatch.setattr("app.main.market.discover_markets", lambda **kwargs: ([], []))
     monkeypatch.setattr("app.main.settings.agent_control_token", "test-control-token")
 
     unauthorized = client.post("/api/instruments/refresh")
