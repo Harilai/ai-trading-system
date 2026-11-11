@@ -302,7 +302,7 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - Rama: `feat/scoped-account-adapters`; base temporal: `feat/scoped-execution-registry-v2` (PR #133). No integrar #134 en `main` hasta que #133 esté aprobada y fusionada.
 - Añadidos wrappers de snapshots para Binance Spot Demo y el ledger interno PAPER.
 - Binance: scope DEMO/Spot y balance snapshot verificados contra la respuesta; las tenencias Spot no se etiquetan falsamente como posiciones. La identidad de cuenta suministrada es un alias de configuración, no un ID remoto verificado (`account_identity_verified=false`). La capacidad positions queda UNKNOWN y bloquea readiness.
-- PAPER: scope explícito `internal:paper-portfolio / internal-ledger / PAPER / spot`; adapta balances y posiciones del ledger interno. La identidad del ledger es local y declarada, no una cuenta de broker.
+- PAPER: scope explícito `internal:paper-portfolio / internal-ledger / PAPER / spot`; adapta balances y posiciones del ledger interno. La identidad del ledger es un alias local declarado, no una cuenta de broker (`account_identity_verified=false`). El wrapper solo declara crypto Spot y órdenes market simuladas.
 - El motor PAPER sigue siendo atómico: partial fills y cancelación de órdenes de exchange quedan UNSUPPORTED; por ello el readiness genérico sigue bloqueado. No se simulan capacidades inexistentes.
 - Los wrappers no se registran automáticamente, no se conectan a API/endpoint y no envían órdenes. LIVE continúa deshabilitado.
 - Tests añadidos para scope obligatorio, separación DEMO/LIVE, timestamp con zona, balances/posiciones y gates fail-closed. Resultado CI pendiente en PR #134.
