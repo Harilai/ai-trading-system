@@ -128,3 +128,13 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - `main` y `demo` sincronizadas al SHA `98760e46740556144478623929ed233f7e7402bd`; compare `main...demo` verificado como `identical` (0 ahead/behind, 0 commits).
 - No había PR abiertas en la última consulta.
 - Próximo bloque: revisar cobertura real de los adaptadores y diseñar el siguiente proveedor/clase de activo a partir de capacidades verificadas. No inferir soporte por catálogo de enum; no habilitar ejecución por el mero hecho de descubrir instrumentos.
+
+
+## Bloque en curso — elegibilidad de instrumentos
+
+- Rama feat/instrument-trading-eligibility.
+- Se añade un evaluador read-only para diferenciar soporte de datos, soporte declarado de trading, configuración del adaptador de ejecución y completitud de metadatos.
+- Se bloquea el estado supported si faltan capacidades de idempotencia, fills parciales, cancelación, conciliación, balances o posiciones.
+- API GET /api/instruments/{catalogue_id}/eligibility.
+- Tests unitarios y de API añadidos; pendientes CI y revisión.
+- No cambia el comportamiento de órdenes ni activa LIVE.
