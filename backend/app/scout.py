@@ -104,6 +104,8 @@ class ScoutAgent:
                 except (TypeError, ValueError, OverflowError):
                     bid_value = ask_value = float(last)
                     quote_observed = False
+                if not quote_observed:
+                    bid_value = ask_value = float(last)
                 midpoint = (bid_value + ask_value) / 2 if quote_observed else None
                 candidates.append({
                     "symbol": normalized,
