@@ -14,6 +14,8 @@
 - PR #77 en revisión: monitor paper de stop-loss/take-profit para acciones/ETF USD de Twelve Data. Fusionada en `0c5c9b402557af49746e8f0d37f23eab4a4a2681`; CI exacto: 524 tests passed y Docker hardening passed. El monitor exige instrumento, cotización, FX y sesión válidos; mantiene los datos de procedencia y el dashboard de estrategias.
 - En `demo`, PR #91 endurece salidas paper y PR #92–#93 incorporan snapshots externos append-only e integración API. Los adaptadores existentes aún declaran `positions=false`; no hay captura real habilitada en esos conectores.
 - PR #96 fusionada: lectura de posiciones con scope market_type, soporte position-only y coverage_status=unknown para el contrato legacy. PR #74 cerrada como implementación sustituida; el requisito de snapshot combinado balances/posiciones queda diferido en roadmap. PR #97 de sync masiva main→demo cerrada sin merge por conflictos de interfaces; ambas ramas permanecen intactas.
+
+- PR #100 fusiona en `main` las mejoras de trazabilidad experimental y diagnósticos de Chief procedentes de #89/#91: estado legacy explícito, evidencia de decisiones hold y salida por estrategia solo ante señal booleana False explícita; Risk Manager sigue obligatorio.
 - No se ha levantado ni reiniciado una demo local en esta sesión; no se han usado credenciales ni fondos reales.
 
 ## Siguiente acción

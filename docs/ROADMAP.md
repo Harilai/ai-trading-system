@@ -41,6 +41,13 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 
 23. **En curso — cobertura explícita e ingestión read-only de órdenes (PR #80, apilado sobre #79):** `AccountFillHistory` declara ámbito, timestamp y completitud; el servicio actualiza una orden conocida y persiste fills verificados. No añade adaptadores, scheduler ni envío de órdenes.
 
+## Completado — trazabilidad experimental paper y salidas seguras de Chief (#100)
+
+- Persiste aptitud experimental, motivos de validación, puntuación y señales actuales de entrada/mantenimiento dentro de la evidencia de investigación.
+- Los registros antiguos se exponen como `experimental_status=legacy` y `experimental_eligible=null`; no se convierten silenciosamente en no aptos.
+- Chief expone diagnósticos de candidatos, señales, exclusiones y rechazos. Las salidas por estrategia requieren `current_hold_signal is False` explícito; señal ausente o malformada equivale a mantener.
+- Stops/take-profits persistidos siguen siendo salidas válidas, pero todas las ventas pasan por Risk Manager. Paper-only; no se relajan gates ni límites.
+
 ## Estado integrado
 
 | Área | Estado |

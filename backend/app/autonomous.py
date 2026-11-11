@@ -432,6 +432,14 @@ class AutonomousStore:
                 "walk_forward": candidate.get("walk_forward"),
                 "cost_sensitivity": candidate.get("cost_sensitivity"),
                 "score": candidate.get("score"),
+                "experimental_eligible": candidate.get("experimental_eligible"),
+                "experimental_validation_failures": candidate.get("experimental_validation_failures"),
+                "experimental_score": candidate.get("experimental_score"),
+                "current_entry_signal": candidate.get("current_entry_signal"),
+                "current_hold_signal": candidate.get("current_hold_signal"),
+                "recommended_experimental_strategy": research.get("recommended_experimental_strategy"),
+                "experimental_candidate_count": research.get("experimental_candidate_count"),
+                "experimental_status_registered": "experimental_eligible" in candidate,
                 "market_regime": research.get("market_regime"),
             }
             rows.append((
@@ -492,6 +500,16 @@ class AutonomousStore:
             row["eligible"] = bool(row["eligible"])
             row["validation_failures"] = json.loads(row["validation_failures"])
             row["result"] = json.loads(row["result"])
+            # Older rows predate experimental-paper persistence. Preserve an
+            # unknown state instead of silently interpreting it as ineligible.
+            experimental_recorded = (
+                "experimental_eligible" in row["result"]
+                and row["result"].get("experimental_status_registered") is not False
+            )
+            row["experimental_eligible"] = (
+                row["result"].get("experimental_eligible") if experimental_recorded else None
+            )
+            row["experimental_status"] = "recorded" if experimental_recorded else "legacy"
         return rows
 
     def overview(self) -> dict[str, Any]:
