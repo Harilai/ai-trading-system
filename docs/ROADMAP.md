@@ -2,7 +2,7 @@
 
 > Continuity between ChatGPT sessions: read [`docs/SESSION_HANDOFF.md`](SESSION_HANDOFF.md) for project state and [`docs/AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) for the mandatory multi-agent development method.
 
-Actualizado: 2026-11-11 (PR #132 integrada; main/demo sincronizadas tras documentación). Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
+Actualizado: 2026-11-11 (PR #137 integrada; account readiness PAPER conectada y main/demo sincronizadas). Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
 ## Completado — promoción de snapshots y reconciliación de ramas (#99–#106)
 
@@ -310,14 +310,27 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - `main` y `demo` se sincronizaron y el compare se verificó como `identical`, sin commits ahead/behind. Verificar el SHA actual en GitHub al iniciar cada sesión.
 
 
-## Account readiness preflight for internal PAPER — implementation in PR
+## Account readiness preflight — integrado (PR #137)
 
-- Added `PaperAccountReadiness` over the existing `PaperPortfolioScopedAdapter`; it verifies the fixed internal ledger scope (`internal:paper-portfolio / internal-ledger / paper-primary / PAPER / spot`), snapshot source and timezone-aware freshness (60 seconds), finite/non-negative Decimal balances, EUR cash presence, position identity/quantities, and order-intent reconciliation.
-- The identity claim is deliberately local: `identity_basis=local_internal_paper_ledger`, `remote_identity_verified=false`. It is not a broker account identity assertion.
-- The internal PAPER adapter is explicitly registered in the scoped execution registry. Its atomic-fill profile continues to declare partial fills and exchange cancellation UNSUPPORTED; it therefore cannot pass generic exchange readiness and is not wired into the generic ExecutionRouter.
-- Added authenticated `POST /api/execution/preflight` for diagnostics. Manual PAPER buy paths (crypto and Twelve Data cash equity/ETF) require readiness at entry and recheck immediately before the ledger execution. Sells retain position/shorting controls and are not blocked by entry preflight.
-- Autonomous Chief entry decisions receive readiness evidence; production Chief is configured to require it. The worker rechecks immediately before new entries and before resuming a persisted buy intent. A failed recheck rejects/expires the pending intent without executing. Position exits remain available through the separate risk-reduction path.
-- RiskManager validates exact PAPER account scope, local identity basis, reconciliation-clear state, and fresh timezone-aware evidence for configured new entries. The requirement is enabled in the production Chief and order API paths; standalone risk calculations remain usable in unit tests and non-execution contexts.
-- Tests added for stale/wrong-scope snapshots, invalid balances, unresolved intents, resume exclusion, risk gate failures, account/environment mismatch, risk-reducing sells, API authentication, and conservative PAPER capability registration.
-- Safety: no Binance Demo or LIVE adapter is activated; no exchange order submission is added. Generic execution eligibility remains fail-closed.
-- Validation status: implementation committed on `feat/paper-account-readiness-preflight`; CI is pending PR creation. No local pytest execution has been claimed.
+- PR #137: https://github.com/Harilai/ai-trading-system/pull/137
+- Merge squash: `e3158a8999a7571dce79aa40809beddbbff792f5`.
+- Head validado: `8c7ecea237d52d6a12bddc7d569b83dd5a2d6eaa`; CI run `43053950094`: **718 Python tests passed, 1 warning**; Docker build/runtime hardening passed.
+- Añadido `PaperAccountReadiness` sobre `PaperPortfolioScopedAdapter`: scope fijo del ledger interno, procedencia, timestamp timezone-aware con máximo 60 s, balances Decimal finitos/no negativos/coherentes, EUR cash, identidad y cantidades de posiciones, e inventario completo de intents no terminales.
+- Identidad declarada como local (`local_internal_paper_ledger`), no identidad remota de broker. Cuenta interna configurada: `paper-primary`.
+- El adaptador PAPER se registra en el registry scoped. Sigue declarando partial fills y cancelación de exchange UNSUPPORTED, por lo que no pasa generic exchange readiness ni se conecta al ExecutionRouter.
+- Endpoint autenticado `POST /api/execution/preflight`.
+- Las compras manuales PAPER (crypto y Twelve Data cash equity/ETF) pasan preflight, entregan evidencia al RiskManager y repiten preflight inmediatamente antes de ejecutar. Las ventas conservan controles de posición/shorting y no quedan bloqueadas por el gate de nuevas entradas.
+- Chief de producción requiere evidencia de readiness para compras autónomas. El worker comprueba antes de decidir, antes de ejecutar y al reanudar intents de compra persistidos; una revalidación fallida rechaza/caduca el intent sin ejecutar.
+- Se añadió `list_unresolved_order_intents()` para consultar todos los intents no terminales sin ocultar pendientes antiguos por paginación.
+- Pruebas adversas: scope/cuenta errónea, snapshot caducado, balance inválido, intents pendientes, reanudación, evidencia stale, entorno incorrecto, ventas de reducción, API auth y perfil PAPER conservador.
+- PR CI exacta: 718 passed, 1 warning; Docker hardening passed. CI post-merge de `main` run `43054150372`: Python tests y Docker build/runtime hardening success.
+- No se activó Binance Demo genérico, no se enviaron órdenes externas y LIVE continúa deshabilitado.
+
+## Siguiente bloque — identidad y posiciones Binance Spot Demo
+
+1. Investigar un mecanismo fiable de identidad de cuenta Demo soportado por el proveedor; no asumir que el alias de configuración equivale a un UID remoto.
+2. Mapear balances Spot a posiciones por instrumento solo cuando exista una regla contable y de valoración inequívoca; separar activos base, quote, dust y activos no negociables.
+3. Añadir precio/valoración con fuente, timestamp y frescura; evitar convertir balances libres en posiciones sin identidad de instrumento.
+4. Emitir snapshot de balances+posiciones con cobertura y procedencia explícitas; conservar UNKNOWN cuando el proveedor no pueda probar completitud.
+5. Integrar el adaptador solo cuando identidad y posiciones estén verificadas; mantener los gates de partial fills, cancelación, reconciliación y account scope.
+6. Preparar el smoke test Demo read-only y después el drill de órdenes exclusivamente en el host Demo, con credenciales configuradas en el servidor y autorización explícita. No usar producción ni LIVE.
