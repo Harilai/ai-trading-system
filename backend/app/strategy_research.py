@@ -567,14 +567,12 @@ class StrategyResearchAgent:
             normalized_quotes.append({
                 "timestamp_ms": timestamp,
                 "retrieved_at_ms": retrieved_at_ms,
-                "available_at_ms": retrieved_at_ms,
                 "bid": bid,
                 "ask": ask,
                 "timestamp_source": timestamp_source,
                 "source": source,
             })
 
-        normalized_quotes.sort(key=lambda quote: (quote["retrieved_at_ms"], quote["timestamp_ms"]))
         data_quality = _candle_data_quality(
             normalized, expected_interval_seconds=expected_interval_seconds,
             calendar_model=calendar_model,
