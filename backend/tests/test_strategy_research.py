@@ -261,3 +261,61 @@ def test_market_regime_is_diagnostic_and_does_not_bypass_promotion_gates():
     assert "market_regime" not in result["promotion_gates"]
     assert result["execution"] == "research_only"
     assert result["eligible_count"] == 0
+
+
+
+def test_backtest_reports_trade_expectancy_exposure_and_duration():
+    candles = candles_from_closes([100.0, 110.0, 105.0, 105.0, 105.0])
+    result = StrategyResearchAgent()._backtest(
+        candles,
+        lambda closes, index, in_position: index == 0 and not in_position,
+        0,
+        0,
+        len(candles),
+    )
+
+    assert result["trades"] == 1
+    assert result["evaluation_bars"] == 4
+    assert result["exposure_bars"] == 1
+    assert result["exposure_fraction"] == pytest.approx(0.25)
+    assert result["average_trade_duration_bars"] == pytest.approx(1.0)
+    assert result["average_trade_return"] < 0
+    assert result["average_loss_return"] == pytest.approx(result["average_trade_return"])
+    assert result["average_win_return"] is None
+    assert result["payoff_ratio"] is None
+    assert result["return_observations"] == result["evaluation_bars"]
+
+
+def test_backtest_uses_no_extra_return_period_for_final_liquidation():
+    candles = candles_from_closes([100.0, 100.0, 101.0, 102.0, 103.0])
+    result = StrategyResearchAgent()._backtest(
+        candles,
+        lambda closes, index, in_position: True,
+        0,
+        0,
+        len(candles),
+    )
+
+    assert result["trades"] == 1
+    assert result["evaluation_bars"] == 4
+    assert result["return_observations"] == 4
+    assert result["average_trade_duration_bars"] == pytest.approx(3.0)
+
+
+def test_backtest_reports_undefined_risk_adjusted_metrics_without_variation():
+    candles = candles_from_closes([100.0] * 5)
+    result = StrategyResearchAgent()._backtest(
+        candles,
+        lambda closes, index, in_position: False,
+        0,
+        0,
+        len(candles),
+    )
+
+    assert result["trades"] == 0
+    assert result["exposure_fraction"] == 0
+    assert result["average_trade_return"] is None
+    assert result["payoff_ratio"] is None
+    assert result["return_volatility_per_bar"] == 0
+    assert result["sharpe_per_bar"] is None
+    assert result["sortino_per_bar"] is None
