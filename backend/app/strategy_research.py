@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Callable, Sequence
 from statistics import median
+from math import isfinite
 import math
 
 
@@ -114,8 +115,13 @@ def _candle_data_quality(
     ]
     median_interval_ms = median(intervals_ms) if intervals_ms else None
     if expected_interval_seconds is not None:
-        if not isinstance(expected_interval_seconds, (int, float)) or expected_interval_seconds <= 0:
-            raise ValueError("expected_interval_seconds must be positive")
+        if (
+            isinstance(expected_interval_seconds, bool)
+            or not isinstance(expected_interval_seconds, (int, float))
+            or not isfinite(expected_interval_seconds)
+            or expected_interval_seconds <= 0
+        ):
+            raise ValueError("expected_interval_seconds must be a finite positive number")
         expected_interval_ms = expected_interval_seconds * 1000
         gap_intervals = [interval for interval in intervals_ms if interval > expected_interval_ms * 1.5]
         cadence_source = "explicit_expected_interval"
