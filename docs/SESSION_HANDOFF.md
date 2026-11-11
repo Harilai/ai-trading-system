@@ -341,6 +341,11 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 - No se cambian estrategias ni gates. LIVE deshabilitado.
 
 
+## Rama histórica supersedida
+
+- `fix/kraken-ohlcv-history-capabilities` sigue existiendo, pero no debe fusionarse: está divergida respecto a `main` y su versión del scheduler permite continuar con adaptadores sin contrato de capacidades históricas, debilitando el fail-closed.
+- PR #155 (`feat(history): enforce provider OHLCV pagination capabilities`) ya integró en `main` la implementación equivalente con validación estricta de identidad, soporte, timeframe, paginación y límites. La rama antigua no tiene PR abierto y queda supersedida; conservarla solo como referencia hasta decidir su limpieza.
+
 ## Trabajo en curso — spread observado en Strategy Research
 
 - Rama: `feat/research-observed-spread-costs` (base `main` SHA `885fa5dc022882f8218ec95187c6b6c4930dd556`).
