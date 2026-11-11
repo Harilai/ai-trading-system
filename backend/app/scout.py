@@ -1,3 +1,4 @@
+import math
 from __future__ import annotations
 
 from typing import Any
@@ -36,6 +37,7 @@ class ScoutAgent:
         strategy_research: StrategyResearchAgent | None = None,
         max_ticker_age_seconds: int = 60,
         historical_store: Any | None = None,
+        quote_store: Any | None = None,
         research_history_limit: int = 5000,
     ):
         if max_symbols < 1:
@@ -50,6 +52,7 @@ class ScoutAgent:
         self.strategy_research = strategy_research or StrategyResearchAgent()
         self.max_ticker_age_seconds = max_ticker_age_seconds
         self.historical_store = historical_store
+        self.quote_store = quote_store
         self.research_history_limit = research_history_limit
 
     def scan(self, include_symbols: list[str] | None = None) -> dict[str, Any]:
@@ -88,14 +91,30 @@ class ScoutAgent:
                 last = ticker.get("last")
                 if last is None or float(last) <= 0:
                     continue
+                raw_bid = ticker.get("bid")
+                raw_ask = ticker.get("ask")
+                try:
+                    bid_value = float(raw_bid)
+                    ask_value = float(raw_ask)
+                    quote_observed = (
+                        math.isfinite(bid_value) and math.isfinite(ask_value)
+                        and bid_value > 0 and ask_value >= bid_value
+                    )
+                except (TypeError, ValueError, OverflowError):
+                    bid_value = ask_value = float(last)
+                    quote_observed = False
+                midpoint = (bid_value + ask_value) / 2 if quote_observed else None
                 candidates.append({
                     "symbol": normalized,
                     "provider_id": provider_id,
                     "instrument_id": instrument_id,
                     "last": float(last),
-                    "bid": float(ticker.get("bid") or last),
-                    "ask": float(ticker.get("ask") or last),
-                    "spread_fraction": 0.0,
+                    "bid": bid_value,
+                    "ask": ask_value,
+                    "spread_fraction": (
+                        (ask_value - bid_value) / midpoint if midpoint else None
+                    ),
+                    "quote_observed": quote_observed,
                     "quote_volume_24h": 0.0,
                     "ticker_timestamp_ms": int(ticker["timestamp"]),
                     "ticker_timestamp_source": ticker.get("timestamp_source", "exchange"),
@@ -108,6 +127,27 @@ class ScoutAgent:
 
         for candidate in candidates:
             symbol = candidate["symbol"]
+            quote_capture_status = "not_configured"
+            if self.quote_store is not None:
+                quote_capture_status = "unavailable"
+                if candidate.get("quote_observed") is True:
+                    try:
+                        captured = self.quote_store.record(
+                            candidate.get("provider_id") or "ccxt:kraken",
+                            candidate.get("instrument_id") or (
+                                f"{candidate.get('provider_id') or 'ccxt:kraken'}:spot:{symbol.upper()}"
+                            ),
+                            symbol,
+                            candidate["ticker_timestamp_ms"],
+                            candidate["bid"],
+                            candidate["ask"],
+                            timestamp_source=candidate.get("ticker_timestamp_source", "exchange"),
+                        )
+                        quote_capture_status = captured["status"]
+                    except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+                        quote_capture_status = "capture_error"
+                else:
+                    quote_capture_status = "quote_not_observed"
             try:
                 provider_id = candidate.get("provider_id")
                 try:
@@ -171,11 +211,44 @@ class ScoutAgent:
                         # Research falls back to the live provider sample; chart
                         # analysis and execution are not affected by store outages.
                         history_source = "provider_recent_store_unavailable"
+                interval_seconds = _timeframe_seconds(self.timeframe)
+                quote_snapshots = []
+                quote_history_status = "not_configured"
+                quote_coverage = None
+                if self.quote_store is not None:
+                    quote_history_status = "unavailable"
+                    try:
+                        if research_candles:
+                            quote_until_ms = (
+                                int(research_candles[-1]["timestamp"])
+                                + (interval_seconds * 1000 if interval_seconds else 1)
+                            )
+                            quote_snapshots = self.quote_store.get(
+                                candidate.get("provider_id") or "ccxt:kraken",
+                                candidate.get("instrument_id") or (
+                                    f"{candidate.get('provider_id') or 'ccxt:kraken'}:spot:{symbol.upper()}"
+                                ),
+                                since_ms=int(research_candles[0]["timestamp"]),
+                                until_ms=quote_until_ms,
+                            )
+                            quote_coverage = self.quote_store.coverage(
+                                candidate.get("provider_id") or "ccxt:kraken",
+                                candidate.get("instrument_id") or (
+                                    f"{candidate.get('provider_id') or 'ccxt:kraken'}:spot:{symbol.upper()}"
+                                ),
+                            )
+                            quote_history_status = "available" if quote_snapshots else "empty"
+                    except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+                        quote_history_status = "unavailable"
+                        quote_snapshots = []
+                max_quote_age_seconds = min(max(interval_seconds or 60, 60), 300)
                 try:
                     research = self.strategy_research.research(
                         research_candles,
-                        expected_interval_seconds=_timeframe_seconds(self.timeframe),
-                        calendar_model="crypto_24x7" if _timeframe_seconds(self.timeframe) else "unspecified",
+                        expected_interval_seconds=interval_seconds,
+                        calendar_model="crypto_24x7" if interval_seconds else "unspecified",
+                        quote_snapshots=quote_snapshots,
+                        max_quote_age_seconds=max_quote_age_seconds,
                     )
                 except ValueError as exc:
                     insufficient_history = "At least 120 candles are required" in str(exc)
@@ -198,6 +271,10 @@ class ScoutAgent:
                         "history_source": history_source,
                         "history_bars": len(research_candles),
                         "persisted_finalized_bars_available": persisted_bars,
+                        "quote_capture_status": quote_capture_status,
+                        "quote_history_status": quote_history_status,
+                        "quote_observations_available": len(quote_snapshots),
+                        "quote_coverage": quote_coverage,
                     }
                 analyses.append(
                     {
