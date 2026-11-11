@@ -7,6 +7,8 @@ from statistics import median
 from math import isfinite
 import math
 
+from .fee_schedule import resolve_taker_fee
+
 
 def _ema_series(values: Sequence[float], period: int) -> list[float]:
     if len(values) < period:
@@ -483,6 +485,11 @@ class StrategyResearchAgent:
         calendar_model: str = "unspecified",
         quote_snapshots: Sequence[dict] | None = None,
         max_quote_age_seconds: float = 300.0,
+        fee_schedule: dict | None = None,
+        provider_id: str | None = None,
+        instrument_id: str | None = None,
+        market_type: str = "spot",
+        quote_currency: str | None = None,
     ) -> dict:
         normalized = []
         for candle in candles:
@@ -594,6 +601,21 @@ class StrategyResearchAgent:
             if interval_ms is not None else int(normalized[-1]["timestamp"])
         )
         max_quote_age_ms = int(max_quote_age_seconds * 1000)
+        effective_fee_rate = self.fee_rate
+        fee_schedule_evidence = None
+        if fee_schedule is not None:
+            if not all((provider_id, instrument_id, quote_currency)):
+                raise ValueError("Provider, instrument and quote currency are required with a fee schedule")
+            fee_schedule_evidence = resolve_taker_fee(
+                fee_schedule,
+                provider_id=provider_id,
+                instrument_id=instrument_id,
+                market_type=market_type,
+                quote_currency=quote_currency,
+                start_timestamp_ms=int(normalized[0]["timestamp"]),
+                end_timestamp_ms=final_execution_timestamp_ms,
+            )
+            effective_fee_rate = fee_schedule_evidence["applied_rate"]
         backtest_quote_args = {
             "quote_snapshots": normalized_quotes,
             "max_quote_age_ms": max_quote_age_ms,
@@ -620,6 +642,7 @@ class StrategyResearchAgent:
             0,
             split,
             len(normalized),
+            fee_rate=effective_fee_rate,
             **backtest_quote_args,
         )
         results = []
@@ -627,7 +650,7 @@ class StrategyResearchAgent:
         stress_multipliers = (1.5, 2.0)
         benchmark_cost_sensitivity = {}
         for multiplier in stress_multipliers:
-            stressed_fee = self.fee_rate * multiplier
+            stressed_fee = effective_fee_rate * multiplier
             stressed_slippage = self.slippage_rate * multiplier
             if stressed_fee >= 1 or stressed_slippage >= 1:
                 benchmark_cost_sensitivity[str(multiplier)] = {
@@ -677,10 +700,12 @@ class StrategyResearchAgent:
         }
         for strategy_id, description, signal, warmup in self._specs():
             in_sample = self._backtest(
-                normalized, signal, warmup, warmup, split, **backtest_quote_args,
+                normalized, signal, warmup, warmup, split,
+                fee_rate=effective_fee_rate, **backtest_quote_args,
             )
             out_sample = self._backtest(
-                normalized, signal, warmup, split, len(normalized), **backtest_quote_args,
+                normalized, signal, warmup, split, len(normalized),
+                fee_rate=effective_fee_rate, **backtest_quote_args,
             )
             walk_forward_windows = [
                 {
@@ -689,7 +714,8 @@ class StrategyResearchAgent:
                     "end_index": end,
                     "evaluation_bars": max(0, end - max(warmup, start) - 1),
                     **self._backtest(
-                        normalized, signal, warmup, start, end, **backtest_quote_args,
+                        normalized, signal, warmup, start, end,
+                        fee_rate=effective_fee_rate, **backtest_quote_args,
                     ),
                 }
                 for index, (start, end) in enumerate(walk_forward_boundaries)
@@ -711,7 +737,7 @@ class StrategyResearchAgent:
             cost_sensitivity = {}
             for multiplier in stress_multipliers:
                 stressed_benchmark = benchmark_cost_sensitivity[str(multiplier)]
-                stressed_fee = self.fee_rate * multiplier
+                stressed_fee = effective_fee_rate * multiplier
                 stressed_slippage = self.slippage_rate * multiplier
                 if not stressed_benchmark["available"] or stressed_fee >= 1 or stressed_slippage >= 1:
                     cost_sensitivity[str(multiplier)] = {
@@ -829,14 +855,15 @@ class StrategyResearchAgent:
                     "spread_coverage_complete_across_oos_and_walk_forward": spread_coverage_complete_for_promotion,
                     "walk_forward_spread_coverage_complete": walk_forward_spread_coverage_complete,
                     "cost_model": {
-                        "fee_rate_per_side": self.fee_rate,
+                        "fee_rate_per_side": effective_fee_rate,
                         "slippage_rate_per_side": self.slippage_rate,
                         "spread_method": "observed_best_bid_ask_full_spread_half_per_side",
                         "spread_source": "timestamped_quote_snapshots",
                         "spread_observation_time_basis": "local_receipt_time_with_provider_event_guard",
                         "spread_reference_price_assumption": "OHLCV trade price treated as a mid proxy; spread is approximate",
                         "spread_unavailable_policy": "promotion_blocked",
-                        "fee_rate_source": "configured_assumption",
+                        "fee_rate_source": ("provider_schedule_taker" if fee_schedule_evidence else "configured_assumption"),
+                        "fee_schedule": fee_schedule_evidence,
                         "slippage_rate_source": "configured_assumption",
                         "slippage_component": "residual adverse price impact beyond the modeled spread",
                         "max_quote_age_seconds": max_quote_age_seconds,
@@ -861,14 +888,15 @@ class StrategyResearchAgent:
         return {
             "method": "chronological_70_30_plus_three_walk_forward_diagnostics_next_bar_open_fills",
             "cost_model": {
-                "fee_rate_per_side": self.fee_rate,
+                "fee_rate_per_side": effective_fee_rate,
                 "slippage_rate_per_side": self.slippage_rate,
                 "spread_method": "observed_best_bid_ask_full_spread_half_per_side",
                 "spread_source": "timestamped_quote_snapshots",
                 "spread_observation_time_basis": "local_receipt_time_with_provider_event_guard",
                         "spread_reference_price_assumption": "OHLCV trade price treated as a mid proxy; spread is approximate",
                 "spread_unavailable_policy": "promotion_blocked",
-                "fee_rate_source": "configured_assumption",
+                "fee_rate_source": ("provider_schedule_taker" if fee_schedule_evidence else "configured_assumption"),
+                "fee_schedule": fee_schedule_evidence,
                 "slippage_rate_source": "configured_assumption",
                 "slippage_component": "residual adverse price impact beyond the modeled spread",
                 "max_quote_age_seconds": max_quote_age_seconds,
