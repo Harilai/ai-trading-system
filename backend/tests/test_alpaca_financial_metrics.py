@@ -164,7 +164,7 @@ def test_store_rejects_non_paper_or_inactive_account_and_missing_required_fields
         normalize_financial_metrics(valid_snapshot(environment="production"))
     with pytest.raises(FinancialMetricsError, match="ACTIVE"):
         normalize_financial_metrics(valid_snapshot(account_status="ACCOUNT_UPDATED"))
-    with pytest.raises(FinancialMetricsError, match="required"):
+    with pytest.raises(FinancialMetricsError, match="Required"):
         normalize_financial_metrics(valid_snapshot(buying_power=None))
 
 
