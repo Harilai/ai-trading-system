@@ -305,6 +305,6 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - El propietario delega en el Engineering Lead la revisión técnica integral, la decisión de aprobación, la publicación y el merge de PR rutinarias. No solicitar al propietario revisión, aprobación o merge.
 - Cada PR debe pasar revisión interna completa del diff, tests adecuados, CI verde sobre el SHA exacto y evaluación de seguridad/regresiones antes de fusionarse.
 - No autoaprobar mediante la API de reviews de GitHub ni omitir branch protection. Si GitHub exige una aprobación de otra cuenta, documentar únicamente ese bloqueo de plataforma.
-- PR #133 integrada en `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`; PR #134 integrada en `9f42a272cbc4c2d603137db859b43078af5ca881`.
-- CI exacta de PR #134 y CI post-merge de main: Python tests y Docker build/runtime hardening success.
-- `main` y `demo` idénticas en `9f42a272cbc4c2d603137db859b43078af5ca881` (compare identical, 0 ahead/behind).
+- PR #133, #134 y #135 están integradas. #134 integró los adaptadores scoped y la validación Decimal; #135 consolidó el estado de continuidad y gobernanza.
+- CI de PR #134, post-merge #134, PR #135 y post-merge #135 terminó con Python tests y Docker build/runtime hardening en success.
+- `main` y `demo` se sincronizaron y el compare se verificó como `identical`, sin commits ahead/behind. Verificar el SHA actual en GitHub al iniciar cada sesión.
