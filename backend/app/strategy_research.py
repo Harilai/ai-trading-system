@@ -570,9 +570,8 @@ class StrategyResearchAgent:
                 **data_quality,
                 "out_of_sample_bars": len(normalized) - split,
                 "walk_forward_evaluation_bars": [
-                    max(0, end - max(warmup, start) - 1)
+                    max(0, end - start - 1)
                     for start, end in walk_forward_boundaries
-                    for warmup in [max(spec[3] for spec in self._specs())]
                 ],
             },
             "benchmark": {
