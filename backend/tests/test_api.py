@@ -2142,3 +2142,34 @@ def test_execution_registry_endpoint_is_empty_and_authenticated(monkeypatch):
     assert response.json() == {"items": []}
 
 
+
+
+
+def test_execution_preflight_endpoint_requires_control_token(monkeypatch):
+    monkeypatch.setattr("app.main.settings.agent_control_token", "test-control-token")
+    response = client.post("/api/execution/preflight", json={"side": "buy"})
+    assert response.status_code == 401
+
+
+def test_execution_preflight_endpoint_returns_scoped_paper_readiness(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    monkeypatch.setattr(
+        "app.main.paper_account_readiness.evaluate",
+        lambda **kwargs: {
+            "status": "ready",
+            "scope": {
+                "provider_id": "internal:paper-portfolio",
+                "venue_id": "internal-ledger",
+                "account_id": "paper-primary",
+                "environment": "paper",
+                "market_type": "spot",
+            },
+            "blockers": [],
+        },
+    )
+
+    response = client.post("/api/execution/preflight", json={"side": "buy"}, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+    assert response.json()["scope"]["environment"] == "paper"
