@@ -290,21 +290,21 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - El registry mantiene scope explícito provider/venue/account/environment/market_type, entornos aislados, capacidades con procedencia y fail-closed para evidencia desconocida, ausente, futura o caducada.
 - Endpoint autenticado GET `/api/execution/registrations`; inventario vacío por defecto. No se registran adaptadores automáticamente.
 
-## Scoped account adapters — PR #134 (en curso, base main)
+## Scoped account adapters — integrado (PR #134)
 
-- Rama: `feat/scoped-account-adapters`; PR #134 apunta directamente a `main`.
-- Añade wrappers de snapshots para Binance Spot Demo y PaperPortfolio, con scope explícito, balances y posiciones.
+- PR #134 fusionada mediante squash en `9f42a272cbc4c2d603137db859b43078af5ca881`.
+- CI del head exacto `2930df8471596e6fe131d418db1e5824f9b6581e`: run `43050767811`; Python tests y Docker build/runtime hardening success.
+- Añadidos wrappers de snapshots para Binance Spot Demo y PaperPortfolio, con scope explícito, balances y posiciones.
 - Binance: las tenencias Spot no se etiquetan falsamente como posiciones; positions permanece UNKNOWN. El account_id es un alias de configuración, no identidad remota verificada.
 - PAPER: ledger interno crypto Spot; el motor sigue siendo atómico y no declara partial fills ni cancelación de exchange. Readiness continúa fail-closed.
+- Se sustituyó el filtro de cantidades PAPER basado en `float` por validación Decimal finita; se añadieron tests para cantidades positivas diminutas y cantidades no finitas.
 - Los wrappers no se registran automáticamente ni conectan rutas de envío. No se envían órdenes y LIVE sigue deshabilitado.
-- Revisión técnica, decisión de aprobación y merge rutinario: responsabilidad del Engineering Lead; no solicitar al propietario revisión o merge.
-- CI del head previo `a7e4b035a04bb3961697f9528865438e34db1511` pasó en run `43049679926`; los cambios posteriores requieren CI verde sobre el head actualizado.
-- Siguiente trabajo: completar revisión técnica de #134, preservar precisión decimal, completar tests adversos y después integrar snapshots/freshness/scope/reconciliation en preflight y RiskManager sin bloquear cierres, reducciones ni emergency stop.
 
 ## Gobernanza de PR y continuidad — vigente 2026-11-11
 
 - El propietario delega en el Engineering Lead la revisión técnica integral, la decisión de aprobación, la publicación y el merge de PR rutinarias. No solicitar al propietario revisión, aprobación o merge.
 - Cada PR debe pasar revisión interna completa del diff, tests adecuados, CI verde sobre el SHA exacto y evaluación de seguridad/regresiones antes de fusionarse.
 - No autoaprobar mediante la API de reviews de GitHub ni omitir branch protection. Si GitHub exige una aprobación de otra cuenta, documentar únicamente ese bloqueo de plataforma.
-- PR #133 ya está integrada en `main` (merge `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`). PR #134 está abierta sobre `main`; su CI del head `a7e4b035a04bb3961697f9528865438e34db1511` pasó (run `43049679926`). La revisión técnica completa y decisión de merge corresponden al Engineering Lead.
-- Última comparación observada: `main` = `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`; `demo` = `4ea6f3525c7b6a2826b8025d5916714179ecbde6`. Sincronizar demo al SHA final de main y verificar identidad exacta.
+- PR #133 integrada en `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`; PR #134 integrada en `9f42a272cbc4c2d603137db859b43078af5ca881`.
+- CI exacta de PR #134 y CI post-merge de main: Python tests y Docker build/runtime hardening success.
+- `main` y `demo` idénticas en `9f42a272cbc4c2d603137db859b43078af5ca881` (compare identical, 0 ahead/behind).
