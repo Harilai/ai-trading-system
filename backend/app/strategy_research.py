@@ -835,7 +835,7 @@ class StrategyResearchAgent:
                         "spread_source": "timestamped_quote_snapshots",
                         "spread_observation_time_basis": "local_receipt_time_with_provider_event_guard",
                         "spread_reference_price_assumption": "OHLCV trade price treated as a mid proxy; spread is approximate",
-                        "spread_unavailable_policy": "reported_as_incomplete_cost_coverage",
+                        "spread_unavailable_policy": "promotion_blocked",
                         "fee_rate_source": "configured_assumption",
                         "slippage_rate_source": "configured_assumption",
                         "slippage_component": "residual adverse price impact beyond the modeled spread",
