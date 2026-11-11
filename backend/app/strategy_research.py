@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from typing import Callable, Sequence
+from bisect import bisect_right
+from datetime import datetime
 from statistics import median
 from math import isfinite
 import math
@@ -183,6 +185,7 @@ _VALIDATION_FAILURE_CATEGORIES = {
     "oos_drawdown_exceeded": "risk",
     "walk_forward_drawdown_exceeded": "risk",
     "fails_1_5x_cost_stress": "cost",
+    "insufficient_spread_coverage": "cost",
 }
 
 
@@ -249,7 +252,62 @@ class StrategyResearchAgent:
             ("bollinger_20_reversion", "Bollinger(20,2) lower-band entry / mean exit", _bollinger_signal, 20),
         ]
 
-    def _backtest(self, candles, signal, warmup, start, end, *, fee_rate=None, slippage_rate=None):
+    @staticmethod
+    def _spread_at_execution(
+        execution_timestamp_ms: int,
+        quote_snapshots: Sequence[dict],
+        quote_timestamps: Sequence[int],
+        max_quote_age_ms: int,
+    ) -> float | None:
+        index = bisect_right(quote_timestamps, execution_timestamp_ms) - 1
+        while index >= 0:
+            quote = quote_snapshots[index]
+            event_timestamp = quote["timestamp_ms"]
+            retrieved_at = quote["retrieved_at_ms"]
+            age_ms = execution_timestamp_ms - retrieved_at
+            if (
+                event_timestamp <= execution_timestamp_ms
+                and isinstance(retrieved_at, int)
+                and retrieved_at > 0
+                and retrieved_at <= execution_timestamp_ms
+                and 0 <= age_ms <= max_quote_age_ms
+            ):
+                bid = float(quote["bid"])
+                ask = float(quote["ask"])
+                midpoint = (bid + ask) / 2
+                if midpoint > 0 and ask >= bid:
+                    spread = (ask - bid) / midpoint
+                    if math.isfinite(spread) and 0 <= spread < 1:
+                        return spread
+            index -= 1
+        return None
+
+    def _backtest(
+        self, candles, signal, warmup, start, end, *,
+        fee_rate=None, slippage_rate=None, quote_snapshots=None,
+        max_quote_age_ms=0, spread_multiplier=1.0, candle_interval_ms=None,
+    ):
+        if (
+            isinstance(spread_multiplier, bool)
+            or not isinstance(spread_multiplier, (int, float))
+            or not math.isfinite(spread_multiplier)
+            or spread_multiplier < 0
+        ):
+            raise ValueError("spread_multiplier must be finite and non-negative")
+        if (
+            isinstance(max_quote_age_ms, bool)
+            or not isinstance(max_quote_age_ms, int)
+            or max_quote_age_ms < 0
+        ):
+            raise ValueError("max_quote_age_ms must be a non-negative integer")
+        if candle_interval_ms is not None and (
+            isinstance(candle_interval_ms, bool)
+            or not isinstance(candle_interval_ms, int)
+            or candle_interval_ms <= 0
+        ):
+            raise ValueError("candle_interval_ms must be a positive integer")
+        quote_snapshots = list(quote_snapshots or [])
+        quote_timestamps = [quote["retrieved_at_ms"] for quote in quote_snapshots]
         cash = 1.0
         units = 0.0
         entry_equity = 0.0
@@ -259,22 +317,41 @@ class StrategyResearchAgent:
         equity_curve = [1.0]
         evaluated_bars = 0
         exposure_bars = 0
+        spread_execution_count = 0
+        spread_missing_execution_count = 0
+        observed_spreads = []
         effective_fee_rate = self.fee_rate if fee_rate is None else fee_rate
         effective_slippage_rate = (
             self.slippage_rate if slippage_rate is None else slippage_rate
         )
         fee_multiplier = 1.0 - effective_fee_rate
-        buy_multiplier = fee_multiplier * (1.0 - effective_slippage_rate)
-        sell_multiplier = fee_multiplier * (1.0 - effective_slippage_rate)
+        base_execution_multiplier = fee_multiplier * (1.0 - effective_slippage_rate)
+
+        def execution_multiplier(timestamp_ms):
+            nonlocal spread_execution_count, spread_missing_execution_count
+            spread_execution_count += 1
+            spread = self._spread_at_execution(
+                timestamp_ms, quote_snapshots, quote_timestamps, max_quote_age_ms,
+            )
+            if spread is None:
+                spread_missing_execution_count += 1
+                return base_execution_multiplier
+            observed_spreads.append(spread)
+            half_spread = spread * 0.5 * spread_multiplier
+            if half_spread >= 1:
+                raise ValueError("Observed spread cost is outside the valid range")
+            return base_execution_multiplier * (1.0 - half_spread)
 
         for index in range(max(warmup, start), end - 1):
             closes = [float(candle["close"]) for candle in candles[: index + 1]]
             desired = signal(closes, index, units > 0)
+            execution_timestamp_ms = int(candles[index + 1]["timestamp"])
             execution_price = float(candles[index + 1]["open"])
             if execution_price <= 0:
                 raise ValueError("Candle prices must be positive")
 
             if units > 0 and not desired:
+                sell_multiplier = execution_multiplier(execution_timestamp_ms)
                 proceeds = units * execution_price * sell_multiplier
                 closed_returns.append(proceeds / entry_equity - 1.0)
                 trade_durations.append(index + 1 - entry_index)
@@ -283,6 +360,7 @@ class StrategyResearchAgent:
                 entry_equity = 0.0
                 entry_index = None
             elif units == 0 and desired:
+                buy_multiplier = execution_multiplier(execution_timestamp_ms)
                 entry_equity = cash * self.max_position_fraction
                 units = entry_equity * buy_multiplier / execution_price
                 cash -= entry_equity
@@ -297,13 +375,15 @@ class StrategyResearchAgent:
 
         if units > 0:
             final_price = float(candles[end - 1]["close"])
+            final_timestamp = int(candles[end - 1]["timestamp"])
+            if candle_interval_ms is not None:
+                final_timestamp += candle_interval_ms
+            sell_multiplier = execution_multiplier(final_timestamp)
             proceeds = units * final_price * sell_multiplier
             closed_returns.append(proceeds / entry_equity - 1.0)
             trade_durations.append(end - 1 - entry_index)
             cash += proceeds
             units = 0.0
-            # Replace the final mark with liquidation value. Appending a second
-            # point here would create a fictitious extra return period.
             if len(equity_curve) > 1:
                 equity_curve[-1] = cash
             else:
@@ -352,6 +432,9 @@ class StrategyResearchAgent:
             if average_win is not None and average_loss is not None and average_loss != 0
             else None
         )
+        spread_coverage_complete = (
+            bool(quote_snapshots) and spread_missing_execution_count == 0
+        )
         return {
             "net_return": cash - 1.0,
             "max_drawdown": max_drawdown,
@@ -382,11 +465,24 @@ class StrategyResearchAgent:
                 mean_period_return / downside_deviation
                 if downside_deviation > 0 else None
             ),
+            "spread_coverage_complete": spread_coverage_complete,
+            "spread_execution_count": spread_execution_count,
+            "spread_missing_execution_count": spread_missing_execution_count,
+            "spread_observed_execution_count": len(observed_spreads),
+            "average_observed_spread_fraction": (
+                sum(observed_spreads) / len(observed_spreads) if observed_spreads else None
+            ),
+            "maximum_observed_spread_fraction": (
+                max(observed_spreads) if observed_spreads else None
+            ),
+            "spread_multiplier": spread_multiplier,
         }
 
     def research(
         self, candles: Sequence[dict], *, expected_interval_seconds: float | None = None,
         calendar_model: str = "unspecified",
+        quote_snapshots: Sequence[dict] | None = None,
+        max_quote_age_seconds: float = 300.0,
     ) -> dict:
         normalized = []
         for candle in candles:
@@ -420,6 +516,103 @@ class StrategyResearchAgent:
         if len(normalized) < 120:
             raise ValueError("At least 120 candles are required for strategy research")
 
+        if (
+            isinstance(max_quote_age_seconds, bool)
+            or not isinstance(max_quote_age_seconds, (int, float))
+            or not math.isfinite(max_quote_age_seconds)
+            or max_quote_age_seconds <= 0
+        ):
+            raise ValueError("max_quote_age_seconds must be finite and positive")
+        normalized_quotes = []
+        for quote in quote_snapshots or []:
+            if not isinstance(quote, dict):
+                raise ValueError("Quote snapshot must be an object")
+            timestamp = quote.get("timestamp_ms")
+            if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp <= 0:
+                raise ValueError("Quote timestamp_ms must be a positive integer")
+            try:
+                bid = float(quote["bid"])
+                ask = float(quote["ask"])
+            except (KeyError, TypeError, ValueError, OverflowError) as exc:
+                raise ValueError("Quote bid/ask values must be finite") from exc
+            if not math.isfinite(bid) or not math.isfinite(ask) or bid <= 0 or ask < bid:
+                raise ValueError("Quote bid/ask values are invalid")
+            timestamp_source = quote.get("timestamp_source")
+            source = quote.get("source")
+            if (
+                not isinstance(timestamp_source, str)
+                or timestamp_source not in {"exchange", "retrieved_at"}
+            ):
+                raise ValueError("Quote timestamp source is unsupported")
+            if not isinstance(source, str) or not source.strip():
+                raise ValueError("Quote source is required")
+            retrieved_at_ms = quote.get("retrieved_at_ms")
+            if retrieved_at_ms is None:
+                retrieved_at = quote.get("retrieved_at")
+                if not isinstance(retrieved_at, str) or not retrieved_at.strip():
+                    raise ValueError("Quote retrieval timestamp is required")
+                try:
+                    parsed_retrieval = datetime.fromisoformat(retrieved_at)
+                    if parsed_retrieval.tzinfo is None:
+                        raise ValueError("Quote retrieval timestamp must include a timezone")
+                    retrieved_at_ms = int(parsed_retrieval.timestamp() * 1000)
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise ValueError("Quote retrieval timestamp is invalid") from exc
+            if (
+                isinstance(retrieved_at_ms, bool)
+                or not isinstance(retrieved_at_ms, int)
+                or retrieved_at_ms <= 0
+            ):
+                raise ValueError("Quote retrieval timestamp must be a positive integer")
+            if timestamp > retrieved_at_ms:
+                raise ValueError("Quote event timestamp is ahead of its receipt time")
+            if normalized_quotes and retrieved_at_ms < normalized_quotes[-1]["retrieved_at_ms"]:
+                raise ValueError("Quote receipt timestamps must be non-decreasing")
+            normalized_quotes.append({
+                "timestamp_ms": timestamp,
+                "retrieved_at_ms": retrieved_at_ms,
+                "bid": bid,
+                "ask": ask,
+                "timestamp_source": timestamp_source,
+                "source": source,
+            })
+
+        data_quality = _candle_data_quality(
+            normalized, expected_interval_seconds=expected_interval_seconds,
+            calendar_model=calendar_model,
+        )
+        interval_ms = (
+            int(expected_interval_seconds * 1000)
+            if expected_interval_seconds is not None
+            else (
+                int(data_quality["median_candle_interval_seconds"] * 1000)
+                if data_quality["median_candle_interval_seconds"] else None
+            )
+        )
+        final_execution_timestamp_ms = (
+            int(normalized[-1]["timestamp"]) + interval_ms
+            if interval_ms is not None else int(normalized[-1]["timestamp"])
+        )
+        max_quote_age_ms = int(max_quote_age_seconds * 1000)
+        backtest_quote_args = {
+            "quote_snapshots": normalized_quotes,
+            "max_quote_age_ms": max_quote_age_ms,
+            "candle_interval_ms": interval_ms,
+        }
+        quote_timestamp_sources = {}
+        for quote in normalized_quotes:
+            source_name = quote["timestamp_source"]
+            quote_timestamp_sources[source_name] = quote_timestamp_sources.get(source_name, 0) + 1
+        spread_coverage = {
+            "status": "available" if normalized_quotes else "unavailable",
+            "observations": len(normalized_quotes),
+            "first_timestamp_ms": min((quote["timestamp_ms"] for quote in normalized_quotes), default=None),
+            "last_timestamp_ms": max((quote["timestamp_ms"] for quote in normalized_quotes), default=None),
+            "timestamp_sources": quote_timestamp_sources,
+            "max_quote_age_seconds": max_quote_age_seconds,
+            "method": "latest_bid_ask_observation_received_at_or_before_execution_time",
+        }
+
         split = int(len(normalized) * 0.7)
         benchmark = self._backtest(
             normalized,
@@ -427,12 +620,9 @@ class StrategyResearchAgent:
             0,
             split,
             len(normalized),
+            **backtest_quote_args,
         )
         results = []
-        data_quality = _candle_data_quality(
-            normalized, expected_interval_seconds=expected_interval_seconds,
-            calendar_model=calendar_model,
-        )
         market_regime = _market_regime([row["close"] for row in normalized])
         stress_multipliers = (1.5, 2.0)
         benchmark_cost_sensitivity = {}
@@ -445,19 +635,23 @@ class StrategyResearchAgent:
                     "reason": "stressed_cost_rate_out_of_range",
                 }
                 continue
+            stressed_benchmark_result = self._backtest(
+                normalized,
+                lambda closes, index, in_position: True,
+                0,
+                split,
+                len(normalized),
+                fee_rate=stressed_fee,
+                slippage_rate=stressed_slippage,
+                spread_multiplier=multiplier,
+                **backtest_quote_args,
+            )
             benchmark_cost_sensitivity[str(multiplier)] = {
                 "available": True,
                 "fee_rate_per_side": stressed_fee,
                 "slippage_rate_per_side": stressed_slippage,
-                "out_of_sample": self._backtest(
-                    normalized,
-                    lambda closes, index, in_position: True,
-                    0,
-                    split,
-                    len(normalized),
-                    fee_rate=stressed_fee,
-                    slippage_rate=stressed_slippage,
-                ),
+                "spread_multiplier": multiplier,
+                "out_of_sample": stressed_benchmark_result,
             }
         walk_forward_boundaries = [
             (int(len(normalized) * 0.4), int(len(normalized) * 0.6)),
@@ -482,15 +676,21 @@ class StrategyResearchAgent:
             "minimum_walk_forward_bars_per_window": self.minimum_walk_forward_bars,
         }
         for strategy_id, description, signal, warmup in self._specs():
-            in_sample = self._backtest(normalized, signal, warmup, warmup, split)
-            out_sample = self._backtest(normalized, signal, warmup, split, len(normalized))
+            in_sample = self._backtest(
+                normalized, signal, warmup, warmup, split, **backtest_quote_args,
+            )
+            out_sample = self._backtest(
+                normalized, signal, warmup, split, len(normalized), **backtest_quote_args,
+            )
             walk_forward_windows = [
                 {
                     "window": index + 1,
                     "start_index": start,
                     "end_index": end,
                     "evaluation_bars": max(0, end - max(warmup, start) - 1),
-                    **self._backtest(normalized, signal, warmup, start, end),
+                    **self._backtest(
+                        normalized, signal, warmup, start, end, **backtest_quote_args,
+                    ),
                 }
                 for index, (start, end) in enumerate(walk_forward_boundaries)
                 if end - max(warmup, start) >= 2
@@ -527,6 +727,8 @@ class StrategyResearchAgent:
                     len(normalized),
                     fee_rate=stressed_fee,
                     slippage_rate=stressed_slippage,
+                    spread_multiplier=multiplier,
+                    **backtest_quote_args,
                 )
                 stressed_excess = (
                     stressed_result["net_return"]
@@ -536,6 +738,8 @@ class StrategyResearchAgent:
                     "available": True,
                     "fee_rate_per_side": stressed_fee,
                     "slippage_rate_per_side": stressed_slippage,
+                    "spread_multiplier": multiplier,
+                    "spread_coverage_complete": stressed_result["spread_coverage_complete"],
                     "out_of_sample": stressed_result,
                     "benchmark_excess_return": stressed_excess,
                     "beats_buy_and_hold": stressed_excess > 0,
@@ -568,6 +772,15 @@ class StrategyResearchAgent:
                 validation_failures.append("walk_forward_drawdown_exceeded")
             if benchmark_excess_return <= 0:
                 validation_failures.append("does_not_beat_buy_and_hold")
+            walk_forward_spread_coverage_complete = all(
+                window["spread_coverage_complete"] for window in walk_forward_windows
+            )
+            spread_coverage_complete_for_promotion = (
+                out_sample["spread_coverage_complete"]
+                and walk_forward_spread_coverage_complete
+            )
+            if not spread_coverage_complete_for_promotion:
+                validation_failures.append("insufficient_spread_coverage")
             if not self._passes_cost_stress(cost_sensitivity, "1.5"):
                 validation_failures.append("fails_1_5x_cost_stress")
             eligible = not validation_failures
@@ -612,6 +825,23 @@ class StrategyResearchAgent:
                     "beats_buy_and_hold": benchmark_excess_return > 0,
                     "walk_forward": walk_forward,
                     "cost_sensitivity": cost_sensitivity,
+                    "spread_coverage": spread_coverage,
+                    "spread_coverage_complete_across_oos_and_walk_forward": spread_coverage_complete_for_promotion,
+                    "walk_forward_spread_coverage_complete": walk_forward_spread_coverage_complete,
+                    "cost_model": {
+                        "fee_rate_per_side": self.fee_rate,
+                        "slippage_rate_per_side": self.slippage_rate,
+                        "spread_method": "observed_best_bid_ask_full_spread_half_per_side",
+                        "spread_source": "timestamped_quote_snapshots",
+                        "spread_observation_time_basis": "local_receipt_time_with_provider_event_guard",
+                        "spread_reference_price_assumption": "OHLCV trade price treated as a mid proxy; spread is approximate",
+                        "spread_unavailable_policy": "promotion_blocked",
+                        "fee_rate_source": "configured_assumption",
+                        "slippage_rate_source": "configured_assumption",
+                        "slippage_component": "residual adverse price impact beyond the modeled spread",
+                        "max_quote_age_seconds": max_quote_age_seconds,
+                        "max_position_fraction": self.max_position_fraction,
+                    },
                     "eligible": eligible,
                     "validation_failures": validation_failures,
                     "validation_failure_categories": _categorize_validation_failures(validation_failures),
@@ -633,6 +863,15 @@ class StrategyResearchAgent:
             "cost_model": {
                 "fee_rate_per_side": self.fee_rate,
                 "slippage_rate_per_side": self.slippage_rate,
+                "spread_method": "observed_best_bid_ask_full_spread_half_per_side",
+                "spread_source": "timestamped_quote_snapshots",
+                "spread_observation_time_basis": "local_receipt_time_with_provider_event_guard",
+                        "spread_reference_price_assumption": "OHLCV trade price treated as a mid proxy; spread is approximate",
+                "spread_unavailable_policy": "promotion_blocked",
+                "fee_rate_source": "configured_assumption",
+                "slippage_rate_source": "configured_assumption",
+                "slippage_component": "residual adverse price impact beyond the modeled spread",
+                "max_quote_age_seconds": max_quote_age_seconds,
                 "max_position_fraction": self.max_position_fraction,
             },
             "promotion_gates": {
@@ -643,6 +882,7 @@ class StrategyResearchAgent:
                 "maximum_drawdown": self.maximum_oos_drawdown,
                 "must_beat_buy_and_hold": True,
                 "must_remain_profitable_and_beat_buy_and_hold_at_1_5x_costs": True,
+                "must_have_complete_observed_spread_coverage": True,
             },
             "status": "available",
             "market_regime": market_regime,
@@ -654,6 +894,7 @@ class StrategyResearchAgent:
                 )
                 for category in ("sample", "performance", "risk", "cost", "other")
             },
+            "spread_coverage": spread_coverage,
             "data_quality": {
                 **data_quality,
                 "out_of_sample_bars": len(normalized) - split,
@@ -676,7 +917,8 @@ class StrategyResearchAgent:
             ),
             "experimental_promotion_note": (
                 "Experimental candidates are paper-only and are not validated for profitability; "
-                "they may underperform buy-and-hold or lose money."
+                "they may underperform buy-and-hold or lose money. Incomplete observed-spread coverage "
+                "blocks promotion even when a candidate is eligible for experimental paper evaluation."
             ),
             "candidates": results,
             "execution": "research_only",

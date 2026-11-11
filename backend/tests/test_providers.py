@@ -148,6 +148,16 @@ def test_non_kraken_ccxt_history_limits_remain_provider_specific():
     assert capabilities.max_historical_ohlcv_bars is None
 
 
+def test_ccxt_provider_rejects_future_or_invalid_ticker_timestamps():
+    from app.providers.ccxt_spot import CcxtSpotProvider
+
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    assert CcxtSpotProvider.is_stale({"timestamp": now_ms - 1000}, 60) is False
+    assert CcxtSpotProvider.is_stale({"timestamp": now_ms + 5000}, 60) is True
+    assert CcxtSpotProvider.is_stale({"timestamp": float("nan")}, 60) is True
+    assert CcxtSpotProvider.is_stale({}, 60) is True
+
+
 def test_ccxt_provider_discovery_skips_malformed_tickers():
     from datetime import datetime, timezone
     from app.providers.ccxt_spot import CcxtSpotProvider

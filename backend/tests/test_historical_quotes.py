@@ -1,0 +1,305 @@
+import sqlite3
+
+import pytest
+
+from app.historical_data import (
+    HistoricalDataConflict,
+    HistoricalDataError,
+    HistoricalQuoteStore,
+)
+
+
+def test_quote_store_persists_ordered_decimal_observations_and_provenance(tmp_path):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    first = store.record(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR", 1_700_000_000_000,
+        "100.10", "100.30", timestamp_source="retrieved_at",
+        retrieved_at_ms=1_700_000_000_000,
+    )
+    second = store.record(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR", 1_700_000_060_000,
+        "100.20", "100.40", timestamp_source="exchange",
+        retrieved_at_ms=1_700_000_060_000,
+    )
+
+    assert first["status"] == "inserted"
+    assert second["status"] == "inserted"
+    rows = store.get(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR",
+        since_ms=1_700_000_000_000, until_ms=1_700_000_120_000,
+    )
+    assert [row["timestamp_ms"] for row in rows] == [
+        1_700_000_000_000, 1_700_000_060_000,
+    ]
+    assert rows[0]["bid"] == "100.1"
+    assert rows[0]["ask"] == "100.3"
+    assert rows[0]["timestamp_source"] == "retrieved_at"
+    assert isinstance(rows[0]["retrieved_at_ms"], int) and rows[0]["retrieved_at_ms"] > 0
+    assert rows[1]["timestamp_source"] == "exchange"
+    assert store.coverage("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR") == {
+        "observations": 2,
+        "invalid_observations": 0,
+        "total_observations": 2,
+        "first_timestamp_ms": 1_700_000_000_000,
+        "last_timestamp_ms": 1_700_000_060_000,
+        "status": "available",
+    }
+
+
+def test_quote_store_is_idempotent_and_rejects_conflicting_same_timestamp(tmp_path):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    args = (
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+        1_700_000_000_000, "100", "101",
+    )
+    receipt_ms = 1_700_000_060_000
+    assert store.record(*args, timestamp_source="exchange", retrieved_at_ms=receipt_ms)["status"] == "inserted"
+    assert store.record(*args, timestamp_source="exchange", retrieved_at_ms=receipt_ms)["status"] == "unchanged"
+    with pytest.raises(HistoricalDataConflict, match="Conflicting quote snapshot"):
+        store.record(
+            *args[:4], "100", "102", timestamp_source="exchange",
+            retrieved_at_ms=receipt_ms,
+        )
+
+
+@pytest.mark.parametrize(
+    "timestamp,bid,ask,timestamp_source",
+    [
+        (True, "100", "101", "exchange"),
+        (0, "100", "101", "exchange"),
+        (1_700_000_000_000, "0", "101", "exchange"),
+        (1_700_000_000_000, "100", "99", "exchange"),
+        (1_700_000_000_000, "NaN", "101", "exchange"),
+        (1_700_000_000_000, "100", "101", "unknown"),
+    ],
+)
+def test_quote_store_rejects_invalid_observations(
+    tmp_path, timestamp, bid, ask, timestamp_source,
+):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    with pytest.raises(HistoricalDataError):
+        store.record(
+            "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+            timestamp, bid, ask, timestamp_source=timestamp_source,
+        )
+
+
+def test_quote_store_validates_query_ranges_and_limits(tmp_path):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    with pytest.raises(HistoricalDataError, match="limit"):
+        store.get("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", limit=0)
+    with pytest.raises(HistoricalDataError, match="until_ms"):
+        store.get(
+            "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR",
+            since_ms=200, until_ms=100,
+        )
+
+
+def test_quote_store_filters_by_receipt_time_independently_of_exchange_time(tmp_path):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    store.record(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+        1_700_000_000_000, "100", "101",
+        timestamp_source="exchange", retrieved_at_ms=1_700_000_060_000,
+    )
+
+    rows = store.get(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR",
+        received_since_ms=1_700_000_030_000,
+        received_until_ms=1_700_000_090_000,
+    )
+    assert len(rows) == 1
+    assert rows[0]["timestamp_ms"] == 1_700_000_000_000
+    assert rows[0]["retrieved_at_ms"] == 1_700_000_060_000
+
+    before_receipt = store.get(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR",
+        received_until_ms=1_700_000_030_000,
+    )
+    assert before_receipt == []
+
+
+def test_quote_store_migration_does_not_backdate_unknown_retrieval_time(tmp_path):
+    path = str(tmp_path / "legacy.sqlite")
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "CREATE TABLE historical_quotes ("
+            "provider_id TEXT NOT NULL, instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, "
+            "timestamp_ms INTEGER NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL, "
+            "timestamp_source TEXT NOT NULL, source TEXT NOT NULL, retrieved_at TEXT NOT NULL, "
+            "PRIMARY KEY(provider_id,instrument_id,timestamp_ms))"
+        )
+        db.execute(
+            "INSERT INTO historical_quotes VALUES(?,?,?,?,?,?,?,?,?)",
+            (
+                "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+                1_700_000_000_000, "100", "101", "exchange", "public_ticker",
+                "not-a-valid-retrieval-time",
+            ),
+        )
+
+    store = HistoricalQuoteStore(path)
+    assert store.get("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR") == []
+    assert store.coverage("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR") == {
+        "observations": 0,
+        "invalid_observations": 1,
+        "total_observations": 1,
+        "first_timestamp_ms": None,
+        "last_timestamp_ms": None,
+        "status": "empty",
+    }
+    with sqlite3.connect(path) as db:
+        retrieved_at_ms = db.execute(
+            "SELECT retrieved_at_ms FROM historical_quotes"
+        ).fetchone()[0]
+    assert retrieved_at_ms == 0
+
+
+def test_quote_store_migrates_legacy_rows_with_receipt_timestamp(tmp_path):
+    import sqlite3
+    from datetime import datetime, timezone
+
+    path = str(tmp_path / "legacy.sqlite")
+    retrieved = datetime.fromtimestamp(1_700_000_060, tz=timezone.utc).isoformat()
+    db = sqlite3.connect(path)
+    db.execute(
+        "CREATE TABLE historical_quotes ("
+        "provider_id TEXT NOT NULL, instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, "
+        "timestamp_ms INTEGER NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL, "
+        "timestamp_source TEXT NOT NULL, source TEXT NOT NULL, retrieved_at TEXT NOT NULL, "
+        "PRIMARY KEY(provider_id,instrument_id,timestamp_ms))"
+    )
+    db.execute(
+        "INSERT INTO historical_quotes VALUES(?,?,?,?,?,?,?,?,?)",
+        (
+            "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+            1_700_000_000_000, "100", "101", "exchange", "public_ticker", retrieved,
+        ),
+    )
+    db.commit()
+    db.close()
+
+    store = HistoricalQuoteStore(path)
+    rows = store.get("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR")
+    assert len(rows) == 1
+    assert rows[0]["retrieved_at_ms"] == 1_700_000_060_000
+
+
+def test_quote_store_rejects_event_timestamp_ahead_of_receipt_time(tmp_path):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    with pytest.raises(HistoricalDataError, match="ahead of receipt"):
+        store.record(
+            "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+            1_700_000_000_001, "100", "101",
+            timestamp_source="exchange", retrieved_at_ms=1_700_000_000_000,
+        )
+
+
+def test_quote_store_keeps_repeated_exchange_timestamp_as_separate_receipts(tmp_path):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    base = 1_700_000_000_000
+    first = store.record(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+        base, "100", "101", timestamp_source="exchange",
+        retrieved_at_ms=base + 1_000,
+    )
+    second = store.record(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+        base, "100", "101", timestamp_source="exchange",
+        retrieved_at_ms=base + 2_000,
+    )
+    assert first["status"] == second["status"] == "inserted"
+    rows = store.get(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR",
+        received_since_ms=base + 1_000,
+        received_until_ms=base + 3_000,
+    )
+    assert len(rows) == 2
+    assert [row["retrieved_at_ms"] for row in rows] == [base + 1_000, base + 2_000]
+
+
+def test_quote_store_keeps_repeated_exchange_timestamps_with_distinct_receipt_times(tmp_path):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    instrument_id = "ccxt:kraken:spot:BTC/EUR"
+    event_time = 1_700_000_000_000
+    first = store.record(
+        "ccxt:kraken", instrument_id, "BTC/EUR", event_time,
+        "100", "101", timestamp_source="exchange",
+        retrieved_at_ms=event_time + 100,
+    )
+    second = store.record(
+        "ccxt:kraken", instrument_id, "BTC/EUR", event_time,
+        "100.1", "101.1", timestamp_source="exchange",
+        retrieved_at_ms=event_time + 200,
+    )
+
+    assert first["status"] == "inserted"
+    assert second["status"] == "inserted"
+    rows = store.get(
+        "ccxt:kraken", instrument_id,
+        received_since_ms=event_time, received_until_ms=event_time + 500,
+    )
+    assert len(rows) == 2
+    assert [row["retrieved_at_ms"] for row in rows] == [
+        event_time + 100, event_time + 200,
+    ]
+
+
+def test_quote_store_rejects_event_timestamp_after_receipt_timestamp(tmp_path):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    with pytest.raises(HistoricalDataError, match="ahead of receipt"):
+        store.record(
+            "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+            1_700_000_000_001, "100", "101",
+            timestamp_source="exchange", retrieved_at_ms=1_700_000_000_000,
+        )
+
+
+def test_quote_store_migration_rejects_timezone_naive_receipt_timestamps(tmp_path):
+    path = str(tmp_path / "legacy-naive.sqlite")
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "CREATE TABLE historical_quotes ("
+            "provider_id TEXT NOT NULL, instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, "
+            "timestamp_ms INTEGER NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL, "
+            "timestamp_source TEXT NOT NULL, source TEXT NOT NULL, retrieved_at TEXT NOT NULL, "
+            "PRIMARY KEY(provider_id,instrument_id,timestamp_ms))"
+        )
+        db.execute(
+            "INSERT INTO historical_quotes VALUES(?,?,?,?,?,?,?,?,?)",
+            (
+                "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+                1_700_000_000_000, "100", "101", "exchange", "public_ticker",
+                "2023-11-14T22:14:20",
+            ),
+        )
+
+    store = HistoricalQuoteStore(path)
+    assert store.get("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR") == []
+    assert store.coverage("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR")["invalid_observations"] == 1
+
+
+def test_quote_store_quarantines_malformed_existing_receipt_columns(tmp_path):
+    path = str(tmp_path / "malformed.sqlite")
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "CREATE TABLE historical_quotes ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, provider_id TEXT NOT NULL, "
+            "instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, timestamp_ms INTEGER NOT NULL, "
+            "bid TEXT NOT NULL, ask TEXT NOT NULL, timestamp_source TEXT NOT NULL, "
+            "source TEXT NOT NULL, retrieved_at TEXT NOT NULL, retrieved_at_ms TEXT)"
+        )
+        db.execute(
+            "INSERT INTO historical_quotes "
+            "(provider_id,instrument_id,symbol,timestamp_ms,bid,ask,timestamp_source,source,retrieved_at,retrieved_at_ms) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (
+                "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+                1_700_000_000_000, "100", "101", "exchange", "public_ticker",
+                "2023-11-14T22:14:20+00:00", "not-a-number",
+            ),
+        )
+
+    store = HistoricalQuoteStore(path)
+    assert store.get("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR") == []
+    assert store.coverage("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR")["invalid_observations"] == 1

@@ -226,6 +226,251 @@ class HistoricalCandleStore:
         }
 
 
+class HistoricalQuoteStore:
+    """Append-only best-bid/ask observations with provider timestamp provenance."""
+
+    def __init__(self, database_path: str):
+        self.path = database_path
+        self.lock = RLock()
+        Path(database_path).parent.mkdir(parents=True, exist_ok=True)
+        with self.connect() as db:
+            table_exists = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='historical_quotes'"
+            ).fetchone() is not None
+            if table_exists:
+                existing_columns = {
+                    row["name"] for row in db.execute("PRAGMA table_info(historical_quotes)")
+                }
+                if "id" not in existing_columns:
+                    # Rebuild the original one-row-per-exchange-timestamp schema so
+                    # repeated observations of an unchanged exchange timestamp can
+                    # retain distinct local receipt times.
+                    db.execute("DROP INDEX IF EXISTS idx_historical_quotes_range")
+                    db.execute("ALTER TABLE historical_quotes RENAME TO historical_quotes_legacy")
+                    db.execute(
+                        "CREATE TABLE historical_quotes ("
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                        "provider_id TEXT NOT NULL, instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, "
+                        "timestamp_ms INTEGER NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL, "
+                        "timestamp_source TEXT NOT NULL, source TEXT NOT NULL, retrieved_at TEXT NOT NULL, "
+                        "retrieved_at_ms INTEGER NOT NULL, "
+                        "UNIQUE(provider_id,instrument_id,timestamp_ms,retrieved_at_ms))"
+                    )
+                    legacy_columns = {
+                        row["name"] for row in db.execute("PRAGMA table_info(historical_quotes_legacy)")
+                    }
+                    for legacy in db.execute("SELECT * FROM historical_quotes_legacy").fetchall():
+                        retrieved_ms = legacy["retrieved_at_ms"] if "retrieved_at_ms" in legacy_columns else None
+                        if retrieved_ms is None:
+                            try:
+                                retrieved = datetime.fromisoformat(legacy["retrieved_at"])
+                                if retrieved.tzinfo is None:
+                                    raise ValueError("Legacy quote receipt timestamp has no timezone")
+                                retrieved_ms = int(retrieved.timestamp() * 1000)
+                            except (TypeError, ValueError, OverflowError):
+                                retrieved_ms = 0
+                        else:
+                            try:
+                                retrieved_ms = int(retrieved_ms)
+                            except (TypeError, ValueError, OverflowError):
+                                retrieved_ms = 0
+                        if retrieved_ms < int(legacy["timestamp_ms"]):
+                            retrieved_ms = 0
+                        db.execute(
+                            "INSERT OR IGNORE INTO historical_quotes "
+                            "(provider_id,instrument_id,symbol,timestamp_ms,bid,ask,timestamp_source,source,retrieved_at,retrieved_at_ms) "
+                            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                            (
+                                legacy["provider_id"], legacy["instrument_id"], legacy["symbol"],
+                                legacy["timestamp_ms"], legacy["bid"], legacy["ask"],
+                                legacy["timestamp_source"], legacy["source"], legacy["retrieved_at"],
+                                int(retrieved_ms),
+                            ),
+                        )
+                    db.execute("DROP TABLE historical_quotes_legacy")
+                elif "retrieved_at_ms" not in existing_columns:
+                    db.execute("ALTER TABLE historical_quotes ADD COLUMN retrieved_at_ms INTEGER")
+                    legacy_rows = db.execute(
+                        "SELECT id,timestamp_ms,retrieved_at FROM historical_quotes "
+                        "WHERE retrieved_at_ms IS NULL"
+                    ).fetchall()
+                    for legacy in legacy_rows:
+                        try:
+                            retrieved = datetime.fromisoformat(legacy["retrieved_at"])
+                            if retrieved.tzinfo is None:
+                                raise ValueError("Legacy quote receipt timestamp has no timezone")
+                            retrieved_ms = int(retrieved.timestamp() * 1000)
+                        except (TypeError, ValueError, OverflowError):
+                            retrieved_ms = 0
+                        if retrieved_ms < int(legacy["timestamp_ms"]):
+                            retrieved_ms = 0
+                        db.execute(
+                            "UPDATE historical_quotes SET retrieved_at_ms=? WHERE id=?",
+                            (retrieved_ms, legacy["id"]),
+                        )
+                db.execute(
+                    "UPDATE historical_quotes SET retrieved_at_ms=0 "
+                    "WHERE retrieved_at_ms IS NULL OR retrieved_at_ms<timestamp_ms "
+                    "OR typeof(retrieved_at_ms)!='integer'"
+                )
+            else:
+                db.execute(
+                    "CREATE TABLE historical_quotes ("
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                    "provider_id TEXT NOT NULL, instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, "
+                    "timestamp_ms INTEGER NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL, "
+                    "timestamp_source TEXT NOT NULL, source TEXT NOT NULL, retrieved_at TEXT NOT NULL, "
+                    "retrieved_at_ms INTEGER NOT NULL, "
+                    "UNIQUE(provider_id,instrument_id,timestamp_ms,retrieved_at_ms))"
+                )
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_historical_quotes_range "
+                "ON historical_quotes(provider_id,instrument_id,retrieved_at_ms,timestamp_ms)"
+            )
+
+    def connect(self):
+        db = sqlite3.connect(self.path, timeout=10)
+        db.row_factory = sqlite3.Row
+        return db
+
+    def record(
+        self, provider_id: str, instrument_id: str, symbol: str, timestamp_ms: int,
+        bid, ask, *, timestamp_source: str, source: str = "public_ticker",
+        retrieved_at_ms: int | None = None,
+    ) -> dict:
+        HistoricalCandleStore._identity(provider_id, instrument_id, symbol, "quote")
+        if (
+            isinstance(timestamp_ms, bool) or not isinstance(timestamp_ms, int)
+            or timestamp_ms <= 0
+        ):
+            raise HistoricalDataError("Quote timestamp_ms must be a positive integer")
+        if (
+            not isinstance(timestamp_source, str)
+            or timestamp_source not in {"exchange", "retrieved_at"}
+        ):
+            raise HistoricalDataError("Quote timestamp_source is unsupported")
+        if not isinstance(source, str) or not source.strip():
+            raise HistoricalDataError("Quote source is required")
+        bid_value = _decimal(bid, "bid", positive=True)
+        ask_value = _decimal(ask, "ask", positive=True)
+        if Decimal(ask_value) < Decimal(bid_value):
+            raise HistoricalDataError("Quote ask cannot be below bid")
+        now_dt = datetime.now(timezone.utc)
+        now_ms = int(now_dt.timestamp() * 1000) if retrieved_at_ms is None else retrieved_at_ms
+        if isinstance(now_ms, bool) or not isinstance(now_ms, int) or now_ms <= 0:
+            raise HistoricalDataError("Quote retrieved_at_ms must be a positive integer")
+        if timestamp_ms > now_ms:
+            raise HistoricalDataError("Quote event timestamp cannot be ahead of receipt time")
+        now_dt = datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc)
+        now = now_dt.isoformat()
+        key = (provider_id, instrument_id, timestamp_ms, now_ms)
+        with self.lock, self.connect() as db:
+            existing = db.execute(
+                "SELECT bid,ask,timestamp_source,source FROM historical_quotes "
+                "WHERE provider_id=? AND instrument_id=? AND timestamp_ms=? AND retrieved_at_ms=?",
+                key,
+            ).fetchone()
+            values = (bid_value, ask_value, timestamp_source, source)
+            if existing is not None:
+                old_values = tuple(existing[name] for name in (
+                    "bid", "ask", "timestamp_source", "source",
+                ))
+                if old_values != values:
+                    raise HistoricalDataConflict(
+                        f"Conflicting quote snapshot at {timestamp_ms}"
+                    )
+                return {"status": "unchanged", "timestamp_ms": timestamp_ms}
+            db.execute(
+                "INSERT INTO historical_quotes "
+                "(provider_id,instrument_id,symbol,timestamp_ms,bid,ask,timestamp_source,source,retrieved_at,retrieved_at_ms) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (provider_id, instrument_id, symbol, timestamp_ms, *values, now, now_ms),
+            )
+        return {"status": "inserted", "timestamp_ms": timestamp_ms}
+
+    def get(
+        self, provider_id: str, instrument_id: str, *,
+        since_ms: int | None = None, until_ms: int | None = None,
+        received_since_ms: int | None = None, received_until_ms: int | None = None,
+        limit: int = 100_000,
+    ) -> list[dict]:
+        HistoricalCandleStore._identity(provider_id, instrument_id, "quote", "quote")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100_000:
+            raise HistoricalDataError("quote limit must be between 1 and 100000")
+        clauses = ["provider_id=?", "instrument_id=?", "retrieved_at_ms>=timestamp_ms"]
+        params: list = [provider_id, instrument_id]
+        if since_ms is not None:
+            if isinstance(since_ms, bool) or not isinstance(since_ms, int) or since_ms <= 0:
+                raise HistoricalDataError("since_ms must be a positive integer")
+            clauses.append("timestamp_ms>=?")
+            params.append(since_ms)
+        if until_ms is not None:
+            if isinstance(until_ms, bool) or not isinstance(until_ms, int) or until_ms <= 0:
+                raise HistoricalDataError("until_ms must be a positive integer")
+            clauses.append("timestamp_ms<?")
+            params.append(until_ms)
+        if since_ms is not None and until_ms is not None and until_ms <= since_ms:
+            raise HistoricalDataError("until_ms must be later than since_ms")
+        if received_since_ms is not None:
+            if isinstance(received_since_ms, bool) or not isinstance(received_since_ms, int) or received_since_ms <= 0:
+                raise HistoricalDataError("received_since_ms must be a positive integer")
+            clauses.append("retrieved_at_ms>=?")
+            params.append(received_since_ms)
+        if received_until_ms is not None:
+            if isinstance(received_until_ms, bool) or not isinstance(received_until_ms, int) or received_until_ms <= 0:
+                raise HistoricalDataError("received_until_ms must be a positive integer")
+            clauses.append("retrieved_at_ms<?")
+            params.append(received_until_ms)
+        if (
+            received_since_ms is not None and received_until_ms is not None
+            and received_until_ms <= received_since_ms
+        ):
+            raise HistoricalDataError("received_until_ms must be later than received_since_ms")
+        params.append(limit)
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM historical_quotes WHERE " + " AND ".join(clauses)
+                + " ORDER BY retrieved_at_ms DESC,timestamp_ms DESC,id DESC LIMIT ?",
+                params,
+            ).fetchall()
+        return [
+            {
+                "provider_id": row["provider_id"],
+                "instrument_id": row["instrument_id"],
+                "symbol": row["symbol"],
+                "timestamp_ms": row["timestamp_ms"],
+                "bid": row["bid"],
+                "ask": row["ask"],
+                "timestamp_source": row["timestamp_source"],
+                "source": row["source"],
+                "retrieved_at": row["retrieved_at"],
+                "retrieved_at_ms": row["retrieved_at_ms"],
+            }
+            for row in reversed(rows)
+        ]
+
+    def coverage(self, provider_id: str, instrument_id: str) -> dict:
+        HistoricalCandleStore._identity(provider_id, instrument_id, "quote", "quote")
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT COUNT(*) AS observations,"
+                "SUM(CASE WHEN retrieved_at_ms>=timestamp_ms THEN 1 ELSE 0 END) AS valid_observations,"
+                "SUM(CASE WHEN retrieved_at_ms<timestamp_ms OR retrieved_at_ms IS NULL THEN 1 ELSE 0 END) AS invalid_observations,"
+                "MIN(CASE WHEN retrieved_at_ms>=timestamp_ms THEN timestamp_ms END) AS first_ms,"
+                "MAX(CASE WHEN retrieved_at_ms>=timestamp_ms THEN timestamp_ms END) AS last_ms "
+                "FROM historical_quotes WHERE provider_id=? AND instrument_id=?",
+                (provider_id, instrument_id),
+            ).fetchone()
+        return {
+            "observations": row["valid_observations"] or 0,
+            "invalid_observations": row["invalid_observations"] or 0,
+            "total_observations": row["observations"] or 0,
+            "first_timestamp_ms": row["first_ms"],
+            "last_timestamp_ms": row["last_ms"],
+            "status": "available" if row["valid_observations"] else "empty",
+        }
+
+
 class PaginatedCandleCollector:
     """Fetch historical OHLCV using provider-supported since/limit pagination."""
 

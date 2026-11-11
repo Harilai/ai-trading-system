@@ -339,3 +339,21 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 - Se mantiene calendar_adjustment=false: esto detecta desviaciones de cadencia, no aplica calendario bursátil ni prueba que el dato ausente sea negociable.
 - Tests añadidos para huecos con cadencia explícita, estimación de barras ausentes y rechazo de intervalos cero/NaN/Inf/bool. CI pendiente para el head final; no tests locales.
 - No se cambian estrategias ni gates. LIVE deshabilitado.
+
+
+## Rama histórica supersedida
+
+- `fix/kraken-ohlcv-history-capabilities` sigue existiendo, pero no debe fusionarse: está divergida respecto a `main` y su versión del scheduler permite continuar con adaptadores sin contrato de capacidades históricas, debilitando el fail-closed.
+- PR #155 (`feat(history): enforce provider OHLCV pagination capabilities`) ya integró en `main` la implementación equivalente con validación estricta de identidad, soporte, timeframe, paginación y límites. La rama antigua no tiene PR abierto y queda supersedida; conservarla solo como referencia hasta decidir su limpieza.
+
+## Trabajo en curso — spread observado en Strategy Research
+
+- Rama: `feat/research-observed-spread-costs` (base `main` SHA `885fa5dc022882f8218ec95187c6b6c4930dd556`).
+- Store `HistoricalQuoteStore` para bid/ask públicos con identidad de proveedor/instrumento, provenance de timestamp y timestamp local de recepción; incluye migración para snapshots anteriores.
+- Scout captura solo quotes validados. Si falta bid/ask no crea spread sintético.
+- Strategy Research aplica spread observado como medio spread por lado en el siguiente fill de apertura/cierre, solo si el snapshot ya se había recibido antes del fill y está dentro del límite de edad. Se ha añadido prueba específica contra look-ahead por hora de recepción.
+- La cobertura se calcula por OOS y walk-forward y constituye un gate de promoción aditivo: la cobertura debe ser completa en ambos. Los umbrales de rendimiento, riesgo, número de operaciones y estrés existentes permanecen intactos.
+- Fee y slippage permanecen como supuestos configurados; no equivalen a tarifas personalizadas de cuenta.
+- CI del PR pendiente; no declarar integrado hasta pasar Python tests y Docker build/runtime hardening en el head exacto.
+- Siguiente: validar que la cobertura de quotes crece con los scans; implementar comisiones maker/taker por instrumento/proveedor y slippage/liquidez con procedencia; después, holdouts independientes y controles de selección múltiple antes de ampliar estrategias.
+- LIVE sigue deshabilitado. No se han realizado operaciones financieras.
