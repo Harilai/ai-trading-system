@@ -39,9 +39,9 @@ def test_binance_demo_wrapper_requires_explicit_account_scope():
 
 
 def test_binance_demo_wrapper_rejects_non_demo_or_production_capability():
-    account = FakeBinanceDemo()
+    account = make_binance_demo_account()
     account.describe = lambda: {
-        **FakeBinanceDemo.describe(account),
+        **account.describe(),
         "environment": "live",
         "demo_only": False,
         "production_endpoint_allowed": True,
@@ -64,7 +64,13 @@ def test_binance_demo_wrapper_scopes_balance_snapshot_and_does_not_infer_positio
 def test_binance_demo_wrapper_rejects_snapshot_scope_mismatch():
     account = FakeBinanceDemo()
     account.fetch_balances = lambda: {
+        "provider_id": "ccxt:binance-demo",
         "environment": "live",
+        "market_type": "spot",
+        "demo_only": True,
+        "withdrawals_enabled": False,
+        "fetched_at": "2026-11-11T10:00:00+00:00",
+        "balances": [],
     }
     adapter = BinanceSpotDemoScopedAdapter(account, account_id="binance-demo-account")
     with pytest.raises(ScopedAccountAdapterError, match="does not match"):
