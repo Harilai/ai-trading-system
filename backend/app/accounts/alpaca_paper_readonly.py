@@ -253,6 +253,8 @@ class AlpacaPaperReadOnlyAccount:
             "read_only": True,
             "execution_enabled": False,
             "withdrawals_enabled": False,
+            "transfers_enabled": False,
+            "wallet_signing_enabled": False,
             "coverage_status": "complete",
             "positions": sorted(positions, key=lambda item: item["instrument_id"]),
         }
