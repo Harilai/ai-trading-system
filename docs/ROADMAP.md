@@ -261,3 +261,14 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - API: GET /api/markets y POST /api/instruments/refresh aceptan provider_id y asset_class; el refresh conserva el token de control.
 - El filtro global por clase omite proveedores que no ofrecen esa clase sin marcarlos como fallidos; el filtro explícito por proveedor sí informa de incompatibilidad.
 - Integrado mediante squash en `98760e46740556144478623929ed233f7e7402bd`. CI de PR #130: 645 tests Python pasaron (1 warning); Docker build/runtime hardening pasó. CI post-merge de `main` también pasó. Descubrimiento únicamente; no habilita negociación.
+
+
+## Elegibilidad de instrumentos — evaluación conservadora (en revisión)
+
+- Nuevo evaluador read-only: separa disponibilidad de datos de capacidad real de ejecución.
+- Estados: supported, unsupported, not_configured y unknown; faltan metadatos críticos se informan explícitamente.
+- Para considerar una integración potencialmente operable se exigen capacidades declaradas de órdenes, idempotencia, fills parciales, cancelación, conciliación, balances y posiciones.
+- Se comprueban estado activo, base/quote, precisión, mínimos, fees, sesión y datos de contratos cuando aplican.
+- Endpoint: GET /api/instruments/{catalogue_id}/eligibility.
+- La API no registra ni presume adaptadores de ejecución: el resultado supported solo es posible cuando se acredita el adaptador y todos los controles. El endpoint actual pasa execution_adapter_configured=false.
+- No envía órdenes, no cambia RiskManager y no habilita PAPER/DEMO/LIVE.
