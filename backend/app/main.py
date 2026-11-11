@@ -73,6 +73,13 @@ if settings.twelve_data_api_key:
 portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 paper_account_adapter = PaperPortfolioScopedAdapter(portfolio, account_id="paper-primary")
 paper_account_readiness = PaperAccountReadiness(portfolio, paper_account_adapter)
+# Register only the internal PAPER scope. Its atomic-fill profile remains ineligible
+# for generic exchange readiness because partial fills/cancellation are unsupported.
+execution_adapter_registry.register(
+    paper_account_adapter.scope,
+    paper_account_adapter.capabilities(),
+    paper_account_adapter,
+)
 instrument_catalog = InstrumentCatalog(settings.database_path)
 account_snapshot_store = AccountSnapshotStore(settings.database_path)
 position_snapshot_store = PositionSnapshotStore(settings.database_path)
