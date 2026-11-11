@@ -655,10 +655,12 @@ def test_research_without_observed_spread_reports_incomplete_cost_coverage():
     result = StrategyResearchAgent(minimum_oos_trades=1).research(rows)
 
     assert result["spread_coverage"]["status"] == "unavailable"
-    assert "must_have_complete_observed_spread_coverage" not in result["promotion_gates"]
+    assert result["promotion_gates"]["must_have_complete_observed_spread_coverage"] is True
     assert all(
         not candidate["spread_coverage_complete_across_oos_and_walk_forward"]
-        and "insufficient_spread_coverage" not in candidate["validation_failures"]
+        and "insufficient_spread_coverage" in candidate["validation_failures"]
+        and candidate["validation_failure_categories"]["cost"]
+        and candidate["cost_model"]["spread_unavailable_policy"] == "promotion_blocked"
         and candidate["eligible"] is (not candidate["validation_failures"])
         for candidate in result["candidates"]
     )
