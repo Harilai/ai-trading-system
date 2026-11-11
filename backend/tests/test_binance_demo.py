@@ -77,6 +77,44 @@ def test_binance_demo_connector_enables_demo_before_any_exchange_call_and_never_
     assert description["withdrawals"] is False
 
 
+def test_binance_demo_balance_error_identifies_invalid_asset_without_exposing_amounts():
+    exchange = FakeBinanceDemoExchange(response={
+        "free": {"BTC/USDT": "123.456"},
+        "used": {},
+        "total": {},
+    })
+    provider = BinanceSpotDemoAccount(
+        "key", "secret", enabled=True,
+        exchange_factory=lambda _: exchange,
+    )
+
+    with pytest.raises(BinanceDemoError) as error:
+        provider.fetch_balances()
+
+    message = str(error.value)
+    assert "invalid asset code" in message
+    assert "BTC/USDT" in message
+    assert "123.456" not in message
+
+
+def test_binance_demo_balance_invalid_asset_diagnostic_escapes_control_characters():
+    exchange = FakeBinanceDemoExchange(response={
+        "free": {"BTC\\nFORGED": "1"},
+        "used": {},
+        "total": {},
+    })
+    provider = BinanceSpotDemoAccount(
+        "key", "secret", enabled=True,
+        exchange_factory=lambda _: exchange,
+    )
+
+    with pytest.raises(BinanceDemoError) as error:
+        provider.fetch_balances()
+
+    assert "\\\\n" in str(error.value)
+    assert "\\nFORGED" in str(error.value)
+
+
 def test_binance_demo_connector_rejects_missing_enable_demo_trading_method():
     class LegacyOnlyExchange:
         urls = {"api": {"private": "https://testnet.binance.vision/api"}}
