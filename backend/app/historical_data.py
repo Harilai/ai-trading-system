@@ -196,10 +196,12 @@ class HistoricalCandleStore:
                 "SELECT COUNT(DISTINCT provider_id || '|' || instrument_id || '|' || timeframe) "
                 "AS series FROM historical_candles"
             ).fetchone()["series"]
-        try:
-            size_bytes = Path(self.path).stat().st_size
-        except OSError:
-            size_bytes = 0
+        size_bytes = 0
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                size_bytes += Path(self.path + suffix).stat().st_size
+            except OSError:
+                continue
         return {
             "bars": row["bars"] or 0,
             "provisional_bars": row["provisional_bars"] or 0,
