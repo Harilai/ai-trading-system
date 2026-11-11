@@ -149,10 +149,17 @@ def evaluate_instrument_eligibility(
         missing.append("expiry")
 
     if blockers:
-        status = "unsupported" if any(
-            "does not declare" in item or "data-only" in item or "not active" in item or "not active" in item
+        hard_unsupported = any(
+            marker in item
             for item in blockers
-        ) else "not_configured"
+            for marker in (
+                "does not declare support",
+                "data-only",
+                "not explicitly active",
+                "trading status is not active",
+            )
+        )
+        status = "unsupported" if hard_unsupported else "not_configured"
     elif missing:
         status = "unknown"
     elif execution_capability == "not_configured":
