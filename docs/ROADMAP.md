@@ -363,3 +363,14 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 3. Revisar el modelo de costes para incorporar spread observable y, cuando los datos lo permitan, liquidez/impacto.
 4. Añadir estrategias estructuralmente distintas (p. ej. breakout, momentum y volatilidad) solo con un protocolo común y corrección/diagnóstico de selección múltiple.
 5. Validar en ventanas holdout posteriores no usadas para seleccionar parámetros; conservar los gates actuales hasta disponer de evidencia suficiente.
+
+
+## Bloque en desarrollo — histórico persistente y paginado
+
+- Rama `feat/persistent-paginated-market-history`; implementación en revisión mediante PR pendiente.
+- `HistoricalCandleStore` persiste OHLCV en SQLite con clave compuesta proveedor/instrumento/timeframe/timestamp, decimales como texto, lecturas por rango y resumen de cobertura.
+- La ingesta es idempotente. Las velas provisionales pueden actualizarse; una vela finalizada no se sobrescribe silenciosamente: un conflicto se rechaza y revierte la transacción.
+- `PaginatedCandleCollector` pagina por `since`/timestamp, aplica límites máximos de páginas y devuelve cursor de reanudación si no completa el rango.
+- API autenticada `POST /api/market-data/history/sync` y `GET /api/market-data/history`. Sync se restringe a instrumentos activos del catálogo del proveedor seleccionado y usa el limitador de CCXT.
+- No se incorpora una frecuencia de sincronización automática todavía; primero se valida el contrato de paginación, persistencia, recuperación y límites de proveedor.
+- No se cambian gates de estrategia ni ejecución; LIVE permanece deshabilitado.
