@@ -2,10 +2,10 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-> **Último cambio integrado:** PR #131 (elegibilidad conservadora de instrumentos), merge SHA `9c0bca72e13ecd2edb8b2ff0649a42b0458c6940`.
-> **`main` y `demo`:** ambos sincronizados a `13cbd0282e3b885c2ad41278414296b47f0bf986`; PR #131 y documentación posterior ya integradas.
+> **Último cambio integrado:** PR #132 (execution eligibility gate), merge SHA `15e80e59dc05348581cee8acb29f7fee76df6341`.
+> **`main`:** PR #132 integrada; documentación de continuidad actualizada en esta sesión. **`demo`:** debe sincronizarse al SHA final de `main` tras estos commits documentales.
 > **Historial previo de demo:** preservado en `archive/demo-before-main-sync-2026-11-11`; no se integró en main porque main es la fuente de verdad.
-> **PR abiertas:** ninguna en la última consulta.
+> **PR abiertas:** PR #132 integrada; verificar nuevas PR al inicio de la siguiente sesión.
 > **Operación:** paper trading y Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
 ## Integraciones recientes verificadas
@@ -158,3 +158,37 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 4. Validar Paper/Demo con mocks y preflight; ejecutar smoke test real de Binance Demo solo con autorización y credenciales configuradas por el propietario en su servidor.
 5. Después ampliar proveedores/mercados y realizar backtests fuera de muestra con costes; VPS/backup restore drill siguen pendientes.
 6. LIVE queda fuera de alcance hasta aprobación explícita, auditoría, sandbox, conciliación y pruebas adversas completas.
+
+
+## Bloque integrado — execution eligibility gate (PR #132)
+
+- PR #132: https://github.com/Harilai/ai-trading-system/pull/132
+- Merge squash SHA: `15e80e59dc05348581cee8acb29f7fee76df6341`.
+- Cambios: registro de ejecución separado del registro market-data; lookup de adaptadores y capabilities; compatibilidad asset class/market type; elegibilidad incluye instrument_id; ExecutionRouter.submit exige evidencia supported ligada a provider e instrumento; RiskManager permite exigir esa evidencia como precondición fail-closed.
+- Tests/CI sobre head exacto `a204cdd410c64364ab3a45744a4bbdee2462187b`: 661 passed, 1 warning; Docker build/runtime hardening pasó. No se ejecutaron tests locales.
+- Fallos de CI intermedios se investigaron por logs y corrigieron antes del merge. El head final es el que se considera validado.
+- No se registra ningún adaptador genérico en la aplicación: endpoint de elegibilidad sigue devolviendo no_configured para los instrumentos actuales, correctamente. Binance Demo y Alpaca no se convierten en adaptadores genéricos por inferencia.
+- LIVE continúa deshabilitado; no se enviaron órdenes ni se hicieron acciones financieras.
+
+## Método obligatorio de continuidad por conversación
+
+- Iniciar cada conversación con revisión live de GitHub, main/demo, PR, CI, roadmap y handoff.
+- Mostrar al propietario un resumen de estado: implementaciones integradas, capacidades disponibles, estado de pruebas, riesgos/bloqueos y próximo bloque.
+- Ejecutar bloques coherentes sin pedir confirmación por cada paso técnico ordinario.
+- Al cerrar cada bloque, consolidar cambios, archivos, PR/merges, pruebas exactas, limitaciones y siguiente prioridad.
+- Actualizar siempre ROADMAP y SESSION_HANDOFF para que una conversación nueva pueda continuar sin depender del chat anterior.
+- Documento normativo ampliado: `docs/AGENT_WORKFLOW.md`, sección “Session continuity contract”.
+
+## Próximo bloque — execution adapter registry v2
+
+1. Diseñar scope explícito por provider/venue/account/environment/market_type; no equiparar market-data provider con broker.
+2. Separar capabilities de ejecución de capabilities de datos, balances y posiciones; cada una debe tener procedencia y estado.
+3. Revisar Binance Demo y PAPER existentes para decidir wrappers seguros; no declarar balances/positions/reconciliation si el contrato no los ofrece realmente.
+4. Conectar account readiness, stale data y reconciliación al preflight de nuevas entradas; preservar salidas de reducción/emergencia.
+5. Añadir tests de cuenta equivocada, entorno equivocado, capabilities parciales, estado desconocido, desconexión, snapshots incompletos y mismatch de reconciliación.
+6. Mantener registry vacío y fail-closed hasta que exista adaptador validado. No LIVE.
+
+## Estado de ramas — actualizar tras documentación
+
+- PR #132 fusionada en main.
+- La sincronización de demo debe apuntar al SHA final de main posterior a los commits documentales de esta sesión.
