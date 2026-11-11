@@ -19,6 +19,8 @@ from .instrument_catalog import InstrumentCatalog, InstrumentCatalogError
 from .instrument_eligibility import evaluate_instrument_eligibility
 from .execution import ExecutionRouter
 from .execution_registry import ExecutionAdapterRegistry
+from .execution_adapters import PaperPortfolioScopedAdapter
+from .account_readiness import PaperAccountReadiness
 from .equity_research import EquityEtfResearchAgent
 from .equity_exits import EquityExitMonitor
 from .providers.registry import ProviderRegistry
@@ -69,6 +71,8 @@ if settings.twelve_data_api_key:
         min_request_interval_seconds=settings.twelve_data_min_request_interval_seconds,
     ))
 portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
+paper_account_adapter = PaperPortfolioScopedAdapter(portfolio, account_id="paper-primary")
+paper_account_readiness = PaperAccountReadiness(portfolio, paper_account_adapter)
 instrument_catalog = InstrumentCatalog(settings.database_path)
 account_snapshot_store = AccountSnapshotStore(settings.database_path)
 position_snapshot_store = PositionSnapshotStore(settings.database_path)
@@ -190,6 +194,10 @@ class OrderRequest(BaseModel):
     take_profit: float | None = Field(default=None, gt=0)
     strategy_id: str | None = None
     client_order_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class ExecutionPreflightRequest(BaseModel):
+    side: Literal["buy", "sell"] = "buy"
 
 
 class FxConversionRequest(BaseModel):
@@ -1031,6 +1039,16 @@ def execution_registrations(x_agent_token: str | None = Header(default=None)):
     return {"items": execution_adapter_registry.list_registrations()}
 
 
+@app.post("/api/execution/preflight")
+def execution_account_preflight(
+    request: ExecutionPreflightRequest,
+    x_agent_token: str | None = Header(default=None),
+):
+    """Evaluate account freshness and ledger reconciliation before a new PAPER entry."""
+    require_order_control_token(x_agent_token)
+    return paper_account_readiness.evaluate(side=request.side)
+
+
 @app.get("/api/instruments/{catalogue_id}/eligibility")
 def instrument_trading_eligibility(catalogue_id: str):
     item = instrument_catalog.get_instrument(catalogue_id)
@@ -1309,7 +1327,7 @@ def paper_fx_conversion(
         raise HTTPException(503, str(exc)) from exc
 
 
-def _paper_equity_order(order: OrderRequest):
+def _paper_equity_order(order: OrderRequest, account_readiness: dict | None = None):
     if not order.client_order_id or not order.client_order_id.strip():
         raise HTTPException(422, "USD equity/ETF paper orders require client_order_id for idempotency")
     portfolio.reconcile_order_intents()
@@ -1469,9 +1487,18 @@ def _paper_equity_order(order: OrderRequest):
         rationale="Owner-submitted USD cash-equity/ETF paper order evaluated by deterministic Risk Manager",
         source_agent="manual_owner",
     )
-    risk = RiskManager().evaluate(proposal, context)
+    risk = RiskManager().evaluate(
+        proposal,
+        context,
+        account_readiness=account_readiness,
+        require_account_readiness=order.side == "buy",
+    )
     if not risk.accepted:
         raise HTTPException(422, f"Risk Manager rejected order: {risk.reason}")
+    if order.side == "buy":
+        final_readiness = paper_account_readiness.evaluate(side="buy")
+        if final_readiness.get("status") != "ready":
+            raise HTTPException(503, {"message": "PAPER account preflight failed immediately before execution", "preflight": final_readiness})
 
     try:
         return portfolio.execute(
@@ -1511,10 +1538,13 @@ def paper_order(
     if order.side == "buy" and order.stop_loss is None:
         raise HTTPException(422, "A buy order requires an explicit stop_loss")
     require_order_control_token(x_agent_token)
+    account_readiness = paper_account_readiness.evaluate(side=order.side)
+    if order.side == "buy" and account_readiness.get("status") != "ready":
+        raise HTTPException(503, {"message": "PAPER account preflight blocked this new entry", "preflight": account_readiness})
 
     if order.provider_id == "twelve_data":
         try:
-            return _paper_equity_order(order)
+            return _paper_equity_order(order, account_readiness)
         except PortfolioError as exc:
             raise HTTPException(422, str(exc)) from exc
         except MarketDataError as exc:
@@ -1586,9 +1616,18 @@ def paper_order(
             rationale="Owner-submitted paper order evaluated by deterministic Risk Manager",
             source_agent="manual_owner",
         )
-        risk = RiskManager().evaluate(proposal, context)
+        risk = RiskManager().evaluate(
+            proposal,
+            context,
+            account_readiness=account_readiness,
+            require_account_readiness=order.side == "buy",
+        )
         if not risk.accepted:
             raise HTTPException(422, f"Risk Manager rejected order: {risk.reason}")
+        if order.side == "buy":
+            final_readiness = paper_account_readiness.evaluate(side="buy")
+            if final_readiness.get("status") != "ready":
+                raise HTTPException(503, {"message": "PAPER account preflight failed immediately before execution", "preflight": final_readiness})
 
         return portfolio.execute(
             symbol,
