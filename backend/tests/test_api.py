@@ -2127,3 +2127,63 @@ def test_instrument_eligibility_endpoint_returns_404_for_missing_catalogue_item(
     response = client.get("/api/instruments/not-found/eligibility")
 
     assert response.status_code == 404
+
+
+def test_execution_registry_endpoint_requires_control_token(monkeypatch):
+    monkeypatch.setattr("app.main.settings.agent_control_token", "test-control-token")
+    response = client.get("/api/execution/registrations")
+    assert response.status_code == 401
+
+
+def test_execution_registry_endpoint_is_empty_and_authenticated(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    response = client.get("/api/execution/registrations", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {"items": []}
+
+
+def test_instrument_eligibility_never_infers_execution_from_market_data(monkeypatch):
+    from app.main import instrument_catalog
+
+    monkeypatch.setattr("app.main.instrument_catalog.get_instrument", lambda _catalogue_id: {
+        "provider_id": "kraken",
+        "symbol": "BTC/EUR",
+        "instrument_id": "kraken:spot:BTC/EUR",
+        "asset_class": "crypto",
+        "market_type": "spot",
+        "base": "BTC",
+        "quote": "EUR",
+        "native_symbol": "BTC/EUR",
+        "active": True,
+        "trading_status": "active",
+        "minimum_amount": 0.0001,
+        "minimum_cost": 1,
+        "maker_fee": 0,
+        "taker_fee": 0.0026,
+        "precision_mode": "tick_size",
+        "price_tick": 0.01,
+        "amount_step": 0.00001,
+    })
+    monkeypatch.setattr("app.main.market.capability_matrix", lambda: [
+        type("Capabilities", (), {
+            "provider_id": "kraken",
+            "asset_classes": ("crypto",),
+            "market_types": ("spot",),
+            "public_market_data": True,
+            "requires_authentication_for_market_data": False,
+            "order_management": True,
+            "supports_market_orders": True,
+            "supports_limit_orders": True,
+            "supports_stop_orders": False,
+            "supports_client_order_id": True,
+            "supports_partial_fills": True,
+            "supports_cancel": True,
+            "supports_reconciliation": True,
+            "balances": True,
+            "positions": True,
+        })()
+    ])
+    response = client.get("/api/instruments/catalogue-btc/eligibility")
+    assert response.status_code == 200
+    assert response.json()["execution_adapter_configured"] is False
+    assert response.json()["status"] != "supported"
