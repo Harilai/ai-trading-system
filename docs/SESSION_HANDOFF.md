@@ -3,8 +3,8 @@
  > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
 > **Último cambio de código integrado:** PR #156, squash merge SHA `82b95f2b72bb1f191deb61490b160f469174ca99`.
-> **main y demo:** idénticas en SHA `82b95f2b72bb1f191deb61490b160f469174ca99`; compare verificado como identical.
-> **PR abiertas:** ninguna tras integrar PR #156.
+> **main y demo:** deben permanecer idénticas; verificar el compare después de cada merge y sincronizar `demo` por fast-forward.
+> **PRs:** PR #156 integrada; no hay trabajo funcional pendiente de revisión. Esta actualización es solo documental.
 > **CI PR #156:** head `6b400d4da500ffd74ce9106e0fcf8b34a7dda1e0`: 811 Python tests passed, 1 warning; Docker build/runtime hardening passed (run `43084727897`). Post-merge main run `43084918192`: ambos jobs success, 811 tests passed, 1 warning.
 
 > **Validación local:** no se pudo clonar el repositorio desde el shell por falta de resolución de GitHub; no afirmar tests locales. La validación ejecutada fue GitHub Actions.
