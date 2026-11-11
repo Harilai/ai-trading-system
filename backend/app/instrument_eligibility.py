@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from datetime import date, datetime, timezone
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .providers.base import AssetClass, MarketInstrument, PrecisionMode, ProviderCapabilities
 
@@ -161,13 +163,46 @@ def evaluate_instrument_eligibility(
         if not isinstance(instrument.get("settlement_currency"), str) or not instrument["settlement_currency"].strip():
             missing.append("settlement_currency")
     if asset_class in {AssetClass.EQUITY.value, AssetClass.ETF.value, AssetClass.INDEX.value}:
-        if not isinstance(instrument.get("session_timezone"), str) or not instrument["session_timezone"].strip():
+        session_timezone = instrument.get("session_timezone")
+        if not isinstance(session_timezone, str) or not session_timezone.strip():
             missing.append("session_timezone")
-    if asset_class == AssetClass.FUTURE.value:
-        if not instrument.get("expiry"):
+        else:
+            try:
+                ZoneInfo(session_timezone)
+            except (ZoneInfoNotFoundError, ValueError):
+                missing.append("valid_session_timezone")
+
+    if asset_class in {AssetClass.FUTURE.value, AssetClass.OPTION.value}:
+        expiry = instrument.get("expiry")
+        if not isinstance(expiry, str) or not expiry.strip():
             missing.append("expiry")
+        else:
+            try:
+                try:
+                    expiry_dt = datetime.fromisoformat(expiry.replace("Z", "+00:00"))
+                except ValueError:
+                    expiry_dt = datetime.combine(date.fromisoformat(expiry), datetime.min.time(), tzinfo=timezone.utc)
+                if expiry_dt.tzinfo is None:
+                    expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
+                if expiry_dt <= datetime.now(timezone.utc):
+                    blockers.append("Instrument contract has expired")
+            except ValueError:
+                missing.append("valid_expiry")
+        if not _finite_positive(instrument.get("contract_size")):
+            if "contract_size" not in missing:
+                missing.append("contract_size")
         if not isinstance(instrument.get("contract_type"), str) or not instrument["contract_type"].strip():
             missing.append("contract_type")
+        if not isinstance(instrument.get("settlement_currency"), str) or not instrument["settlement_currency"].strip():
+            missing.append("settlement_currency")
+
+    if asset_class == AssetClass.OPTION.value:
+        if not _finite_positive(instrument.get("strike")):
+            missing.append("strike")
+        if instrument.get("option_type") not in {"call", "put"}:
+            missing.append("option_type")
+        if not isinstance(instrument.get("underlying"), str) or not instrument["underlying"].strip():
+            missing.append("underlying")
 
     if blockers:
         hard_unsupported = any(
