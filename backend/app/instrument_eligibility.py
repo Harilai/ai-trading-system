@@ -175,6 +175,8 @@ def evaluate_instrument_eligibility(
             for item in blockers
             for marker in (
                 "does not declare support",
+                "Provider does not declare",
+                "Provider declares no supported order type",
                 "data-only",
                 "not explicitly active",
                 "trading status is not active",
