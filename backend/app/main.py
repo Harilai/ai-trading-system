@@ -105,7 +105,7 @@ _alpaca_secret = settings.alpaca_paper_api_secret.get_secret_value().strip()
 alpaca_paper_configuration_status = "disabled"
 alpaca_paper_account_provider = None
 if settings.alpaca_paper_enabled:
-    if _alpaca_key and _alpaca_secret:
+    if _alpaca_key and _alpaca_secret and settings.alpaca_paper_expected_account_id.strip():
         try:
             alpaca_paper_account_provider = AlpacaPaperReadOnlyAccount(
                 _alpaca_key,
