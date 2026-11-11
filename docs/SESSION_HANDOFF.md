@@ -355,5 +355,5 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 - La cobertura se calcula por OOS y walk-forward y constituye un gate de promoción aditivo: la cobertura debe ser completa en ambos. Los umbrales de rendimiento, riesgo, número de operaciones y estrés existentes permanecen intactos.
 - Fee y slippage permanecen como supuestos configurados; no equivalen a tarifas personalizadas de cuenta.
 - CI del PR pendiente; no declarar integrado hasta pasar Python tests y Docker build/runtime hardening en el head exacto.
-- Siguiente: revisar cobertura de quotes y el dashboard; después, comisiones por instrumento/proveedor y slippage/liquidez, sin relajar gates.
+- Siguiente: validar que la cobertura de quotes crece con los scans; implementar comisiones maker/taker por instrumento/proveedor y slippage/liquidez con procedencia; después, holdouts independientes y controles de selección múltiple antes de ampliar estrategias.
 - LIVE sigue deshabilitado. No se han realizado operaciones financieras.
