@@ -214,6 +214,7 @@ class ScoutAgent:
                         # analysis and execution are not affected by store outages.
                         history_source = "provider_recent_store_unavailable"
                 interval_seconds = _timeframe_seconds(self.timeframe)
+                max_quote_age_seconds = min(max(interval_seconds or 60, 60), 300)
                 quote_snapshots = []
                 quote_history_status = "not_configured"
                 quote_coverage = None
@@ -230,8 +231,11 @@ class ScoutAgent:
                                 candidate.get("instrument_id") or (
                                     f"{candidate.get('provider_id') or 'ccxt:kraken'}:spot:{symbol.upper()}"
                                 ),
-                                since_ms=int(research_candles[0]["timestamp"]),
-                                until_ms=quote_until_ms,
+                                received_since_ms=max(
+                                    1, int(research_candles[0]["timestamp"])
+                                    - int(max_quote_age_seconds * 1000),
+                                ),
+                                received_until_ms=quote_until_ms,
                             )
                             quote_coverage = self.quote_store.coverage(
                                 candidate.get("provider_id") or "ccxt:kraken",
@@ -243,7 +247,6 @@ class ScoutAgent:
                     except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
                         quote_history_status = "unavailable"
                         quote_snapshots = []
-                max_quote_age_seconds = min(max(interval_seconds or 60, 60), 300)
                 try:
                     research = self.strategy_research.research(
                         research_candles,
