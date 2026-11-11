@@ -1993,3 +1993,47 @@ def test_coordinated_account_snapshot_api_requires_auth_and_explicit_provider_co
     )
     assert history.status_code == 200
     assert len(history.json()["items"]) == 1
+
+
+
+def test_instrument_refresh_accepts_provider_and_asset_class_filters(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    captured = {}
+
+    def discover_markets(asset_classes=None, provider_ids=None):
+        captured["asset_classes"] = asset_classes
+        captured["provider_ids"] = provider_ids
+        return [], []
+
+    monkeypatch.setattr("app.main.market.discover_markets", discover_markets)
+    monkeypatch.setattr(
+        "app.main.instrument_catalog.record_discovery",
+        lambda instruments, failures, started_at=None: {
+            "status": "success",
+            "inserted_count": 0,
+            "failures": failures,
+        },
+    )
+
+    response = client.post(
+        "/api/instruments/refresh?provider_id=twelve_data&asset_class=equity",
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    from app.providers.base import AssetClass
+    assert captured == {
+        "asset_classes": (AssetClass.EQUITY,),
+        "provider_ids": ("twelve_data",),
+    }
+
+
+def test_instrument_refresh_rejects_unknown_asset_class(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    response = client.post(
+        "/api/instruments/refresh?asset_class=spaceship",
+        headers=headers,
+    )
+
+    assert response.status_code == 422
+    assert "Unsupported asset_class" in response.json()["detail"]
