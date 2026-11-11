@@ -196,11 +196,12 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 
 ## Estado actual — registry y adaptadores scoped (2026-11-11)
 
-- PR #133 está fusionada en `main`; merge commit `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`.
-- PR #134 (`feat/scoped-account-adapters`) está abierta y apunta directamente a `main`. Head anterior a los últimos cambios de revisión: `a7e4b035a04bb3961697f9528865438e34db1511`; el head actual debe consultarse en GitHub.
-- PR #134 añade `BinanceSpotDemoScopedAdapter` y `PaperPortfolioScopedAdapter`, snapshots con scope explícito, balances y posiciones. Binance Spot balances no se convierten artificialmente en posiciones; positions sigue UNKNOWN. Los account_id son alias locales no verificados como identidad remota.
+- PR #133 integrada en `main`; merge commit `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`.
+- PR #134 integrada mediante squash; merge commit `9f42a272cbc4c2d603137db859b43078af5ca881`.
+- CI de PR #134 en head exacto `2930df8471596e6fe131d418db1e5824f9b6581e`: run `43050767811`, Python tests y Docker build/runtime hardening ambos success.
+- La revisión técnica interna la realizó el Engineering Lead. No se solicitó al propietario revisar, aprobar ni fusionar.
+- Implementado: `BinanceSpotDemoScopedAdapter` y `PaperPortfolioScopedAdapter`, snapshots con scope explícito, balances y posiciones. Binance Spot balances no se convierten artificialmente en posiciones; positions sigue UNKNOWN. Los account_id son alias locales no verificados como identidad remota.
 - PAPER sigue limitado a crypto Spot y simulación market atómica; partial fills y cancelación de exchange permanecen UNSUPPORTED. Readiness falla cerrado. Los wrappers no están registrados automáticamente ni conectados a rutas de envío.
-- La revisión técnica completa, la decisión de aprobación y el merge rutinario corresponden al Engineering Lead. El propietario no revisa ni fusiona PR ordinarias.
-- CI run `43049679926` pasó en el head previo `a7e4b035a04bb3961697f9528865438e34db1511`; cualquier cambio posterior exige CI verde en el SHA actualizado.
-- Última comparación: `main` = `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`; `demo` = `4ea6f3525c7b6a2826b8025d5916714179ecbde6`. Sincronizar demo después de integrar el bloque y verificar igualdad de SHA.
+- `main` y `demo` apuntan al mismo SHA `9f42a272cbc4c2d603137db859b43078af5ca881`; compare verificado como `identical` (0 ahead/behind).
+- CI post-merge de `main` run `43050890327`: Python tests y Docker build/runtime hardening ambos success.
 - No se han enviado órdenes ni realizado acciones financieras. LIVE permanece deshabilitado.
