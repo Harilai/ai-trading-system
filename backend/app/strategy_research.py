@@ -355,8 +355,6 @@ class StrategyResearchAgent:
         }
 
     def research(self, candles: Sequence[dict]) -> dict:
-        if len(candles) < 120:
-            raise ValueError("At least 120 candles are required for strategy research")
         normalized = []
         for candle in candles:
             row = {
@@ -385,6 +383,9 @@ class StrategyResearchAgent:
             if normalized and row["timestamp"] <= normalized[-1]["timestamp"]:
                 raise ValueError("Candle timestamps must be strictly increasing")
             normalized.append(row)
+
+        if len(normalized) < 120:
+            raise ValueError("At least 120 candles are required for strategy research")
 
         split = int(len(normalized) * 0.7)
         benchmark = self._backtest(
