@@ -2127,3 +2127,18 @@ def test_instrument_eligibility_endpoint_returns_404_for_missing_catalogue_item(
     response = client.get("/api/instruments/not-found/eligibility")
 
     assert response.status_code == 404
+
+
+def test_execution_registry_endpoint_requires_control_token(monkeypatch):
+    monkeypatch.setattr("app.main.settings.agent_control_token", "test-control-token")
+    response = client.get("/api/execution/registrations")
+    assert response.status_code == 401
+
+
+def test_execution_registry_endpoint_is_empty_and_authenticated(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    response = client.get("/api/execution/registrations", headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {"items": []}
+
+

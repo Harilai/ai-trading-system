@@ -192,3 +192,15 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 
 - PR #132 fusionada en main.
 - `main` y `demo` sincronizadas y compare verificado como `identical` tras los commits documentales de esta sesión; actualizar el SHA exacto al inicio de la próxima conversación.
+
+## Continuidad actual — execution adapter registry v2 / PR #133
+
+- PR abierta: https://github.com/Harilai/ai-trading-system/pull/133
+- Rama: `feat/scoped-execution-registry-v2`; base `main`.
+- Implementado: contrato de scope completo provider/venue/account/environment/market_type; entornos MOCK/BACKTEST/PAPER/DEMO/TESTNET/LIVE separados; capabilities de ejecución y cuenta independientes; evidencia con fuente y timestamp timezone-aware; caducidad 24 h; fail-closed para unknown/missing/future/stale; mínimos de readiness inmutables: idempotency, partial fills, cancel, reconciliation, balances y positions.
+- API: GET `/api/execution/registrations`, autenticada con X-Agent-Token, inventario vacío por defecto. No se serializa el objeto adaptador.
+- Elegibilidad: la ruta de catálogo no puede conocer account_id/environment; por eso mantiene execution_adapter_configured=false. No afirmar instrumento ejecutable desde market data solamente.
+- Límites: Binance Demo sigue usando BinanceSpotDemoExecution y su ledger/Decimal/idempotency/reconciliation propios; Alpaca Paper sigue read-only; PAPER sigue siendo el motor interno PaperPortfolio. Ningún wrapper se ha conectado en esta PR. No hay órdenes nuevas ni LIVE.
+- Head anterior `348768e8943a373282b3966c4d49e3d3d11c5880`: CI Python y Docker build/Compose/runtime hardening verdes. Tras últimos cambios de validación y tests, consultar el head/checks más recientes de #133; no fusionar con CI pendiente o fallida.
+- Próximo bloque: integrar wrappers especializados uno por uno, verificar ID real de cuenta desde el proveedor, account readiness, balance/position freshness, desconexión, reconciliación incompleta y scope mismatch; usar mocks en tests; conectar elegibilidad al RiskManager/preflight sin bloquear reducciones/emergency stop. Después verificar main/demo idénticas.
+- Estado de ramas previo a merge: main y demo siguen en `4ea6f3525c7b6a2826b8025d5916714179ecbde6`; la rama PR se separa intencionadamente hasta superar revisión y CI.

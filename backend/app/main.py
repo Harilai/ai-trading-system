@@ -18,6 +18,7 @@ from .providers.base import AssetClass
 from .instrument_catalog import InstrumentCatalog, InstrumentCatalogError
 from .instrument_eligibility import evaluate_instrument_eligibility
 from .execution import ExecutionRouter
+from .execution_registry import ExecutionAdapterRegistry
 from .equity_research import EquityEtfResearchAgent
 from .equity_exits import EquityExitMonitor
 from .providers.registry import ProviderRegistry
@@ -54,6 +55,8 @@ market = ProviderRegistry()
 # Deliberately empty until a compatible execution adapter is explicitly registered.
 # Market-data discovery must never populate this registry.
 execution_router = ExecutionRouter(live_enabled=False)
+# Scoped account/environment registry remains empty until account identity is verified.
+execution_adapter_registry = ExecutionAdapterRegistry()
 for configured_provider in settings.market_data_provider_ids.split(','):
     provider_id = configured_provider.strip().lower()
     if provider_id:
@@ -1021,6 +1024,13 @@ def instrument_catalogue_item(catalogue_id: str):
     return item
 
 
+@app.get("/api/execution/registrations")
+def execution_registrations(x_agent_token: str | None = Header(default=None)):
+    """List explicitly registered provider/account/environment execution scopes."""
+    require_order_control_token(x_agent_token)
+    return {"items": execution_adapter_registry.list_registrations()}
+
+
 @app.get("/api/instruments/{catalogue_id}/eligibility")
 def instrument_trading_eligibility(catalogue_id: str):
     item = instrument_catalog.get_instrument(catalogue_id)
@@ -1033,22 +1043,13 @@ def instrument_trading_eligibility(catalogue_id: str):
         ),
         None,
     )
-    # Market-data registration is not an execution adapter registration.
-    # Query only the dedicated execution registry; never infer execution from discovery.
-    try:
-        execution_capabilities = execution_router.capabilities_for(item.get("provider_id", ""))
-    except (AttributeError, TypeError, ValueError):
-        execution_capabilities = None
+    # Market-data, account-read, and execution registrations are independent.
+    # This endpoint cannot infer an account scope from an instrument catalogue row.
     return evaluate_instrument_eligibility(
         item,
         capabilities,
         catalogue_id=catalogue_id,
-        execution_adapter_configured=(
-            execution_capabilities is not None
-            and execution_router.supports_instrument(
-                item.get("provider_id", ""), item.get("asset_class", ""), item.get("market_type", ""),
-            )
-        ),
+        execution_adapter_configured=False,
     ).as_dict()
 
 
