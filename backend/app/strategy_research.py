@@ -524,6 +524,8 @@ class StrategyResearchAgent:
             raise ValueError("max_quote_age_seconds must be finite and positive")
         normalized_quotes = []
         for quote in quote_snapshots or []:
+            if not isinstance(quote, dict):
+                raise ValueError("Quote snapshot must be an object")
             timestamp = quote.get("timestamp_ms")
             if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp <= 0:
                 raise ValueError("Quote timestamp_ms must be a positive integer")
