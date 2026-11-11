@@ -241,3 +241,13 @@ def test_quote_store_keeps_repeated_exchange_timestamps_with_distinct_receipt_ti
     assert [row["retrieved_at_ms"] for row in rows] == [
         event_time + 100, event_time + 200,
     ]
+
+
+def test_quote_store_rejects_event_timestamp_after_receipt_timestamp(tmp_path):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    with pytest.raises(HistoricalDataError, match="ahead of receipt"):
+        store.record(
+            "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+            1_700_000_000_001, "100", "101",
+            timestamp_source="exchange", retrieved_at_ms=1_700_000_000_000,
+        )
