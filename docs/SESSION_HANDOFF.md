@@ -2,10 +2,10 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-> **Último cambio integrado:** PR #127 (ledger financiero tipado Alpaca Paper), merge SHA `495370934313ae56e457b5c7f00bed60a435b02e`. Rama de trabajo actual: `feat/coordinated-cash-account-snapshots`.
-> **`main` y `demo`:** ambos apuntan exactamente a `495370934313ae56e457b5c7f00bed60a435b02e` (verificado por ref y compare idéntico).
+> **Último cambio integrado:** PR #128 (snapshot coordinado Alpaca Paper cash), merge SHA `7ab1e0056c3f1fd749d26cdfc52eca0ac6abad6a`.
+> **`main` y `demo`:** ambos apuntan exactamente a `7ab1e0056c3f1fd749d26cdfc52eca0ac6abad6a` (verificado por ref y compare idéntico).
 > **Historial previo de demo:** preservado en `archive/demo-before-main-sync-2026-11-11`; no se integró en main porque main es la fuente de verdad.
-> **PR abiertas:** comprobar GitHub antes de continuar. Snapshot coordinado Alpaca cash en desarrollo.
+> **PR abiertas:** comprobar GitHub antes de continuar. PR #128 integrada.
 > **Operación:** paper trading y Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
 ## Integraciones recientes verificadas
@@ -96,11 +96,13 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - Tras cada merge válido a `main`, mover/sincronizar `demo` al mismo SHA y verificar `compare main...demo = identical`.
 - La antigua punta divergente de `demo` está preservada en `archive/demo-before-main-sync-2026-11-11`.
 
-## Snapshot coordinado Alpaca cash — en desarrollo
+## Snapshot coordinado Alpaca cash — integrado (PR #128)
 
 - Rama: `feat/coordinated-cash-account-snapshots`.
 - Nuevo store `backend/app/accounts/coordinated_cash_snapshot_store.py`: vincula ledger financiero Alpaca y ledger de posiciones cash en una transacción SQLite.
 - `AccountFinancialMetricsStore` expone inserción transaccional y lectura por snapshot ID.
 - Endpoint autenticado: `POST /api/accounts/alpaca/financial-metrics/snapshots/coordinated`.
 - Tests añadidos para captura completa, scope, skew, rollback, idempotencia y append-only.
-- Pendiente CI y revisión técnica; no afirmar integración ni validación operativa.
+- CI de PR #128: Python tests y Docker build/runtime hardening completados con éxito sobre el head `ef753ceb6d4f60d5d3aea03e0bfbdd8d39bd0484`.
+- Merge squash: `7ab1e0056c3f1fd749d26cdfc52eca0ac6abad6a`. `main` y `demo` sincronizadas a ese SHA y compare verificado como identical.
+- Pendiente: validación operativa read-only con credenciales Paper del propietario; no se ha ejecutado ninguna captura real. LIVE sigue deshabilitado.
