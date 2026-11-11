@@ -145,3 +145,29 @@ def test_pagination_completes_when_provider_reaches_requested_end(tmp_path):
     )
     assert result["complete"] is True
     assert result["next_since_ms"] is None
+
+
+def test_limited_history_query_returns_latest_rows_in_chronological_order(tmp_path):
+    db = store(tmp_path)
+    db.upsert("p", "i", "BTC/EUR", "1m",
+              [row(1000), row(2000), row(3000), row(4000)],
+              finalized_before_ms=5000)
+    assert [item["timestamp_ms"] for item in db.get("p", "i", "1m", limit=2)] == [3000, 4000]
+
+
+def test_decimal_formatting_is_canonical_for_idempotent_replays(tmp_path):
+    db = store(tmp_path)
+    db.upsert("p", "i", "BTC/EUR", "1m",
+              [[1000, "10.000", "12.00", "9.0", "11.000", "100.0"]],
+              finalized_before_ms=2000)
+    replay = db.upsert("p", "i", "BTC/EUR", "1m",
+                       [[1000, 10, 12, 9, 11, 100]],
+                       finalized_before_ms=2000)
+    assert replay["unchanged"] == 1
+
+
+def test_fractional_candle_timestamp_is_rejected(tmp_path):
+    with pytest.raises(HistoricalDataError, match="timestamp must be an integer"):
+        store(tmp_path).upsert("p", "i", "BTC/EUR", "1m",
+                               [[1000.5, 10, 12, 9, 11, 100]],
+                               finalized_before_ms=2000)
