@@ -130,15 +130,19 @@ class ScoutAgent:
         for candidate in candidates:
             symbol = candidate["symbol"]
             quote_capture_status = "not_configured"
+            quote_provider_id = candidate.get("provider_id")
+            quote_instrument_id = candidate.get("instrument_id")
+            quote_identity_valid = (
+                isinstance(quote_provider_id, str) and bool(quote_provider_id.strip())
+                and isinstance(quote_instrument_id, str) and bool(quote_instrument_id.strip())
+            )
             if self.quote_store is not None:
-                quote_capture_status = "unavailable"
-                if candidate.get("quote_observed") is True:
+                quote_capture_status = "identity_missing"
+                if quote_identity_valid and candidate.get("quote_observed") is True:
                     try:
                         captured = self.quote_store.record(
-                            candidate.get("provider_id") or "ccxt:kraken",
-                            candidate.get("instrument_id") or (
-                                f"{candidate.get('provider_id') or 'ccxt:kraken'}:spot:{symbol.upper()}"
-                            ),
+                            quote_provider_id,
+                            quote_instrument_id,
                             symbol,
                             candidate["ticker_timestamp_ms"],
                             candidate["bid"],
@@ -148,7 +152,7 @@ class ScoutAgent:
                         quote_capture_status = captured["status"]
                     except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
                         quote_capture_status = "capture_error"
-                else:
+                elif quote_identity_valid:
                     quote_capture_status = "quote_not_observed"
             try:
                 provider_id = candidate.get("provider_id")
@@ -219,34 +223,31 @@ class ScoutAgent:
                 quote_history_status = "not_configured"
                 quote_coverage = None
                 if self.quote_store is not None:
-                    quote_history_status = "unavailable"
-                    try:
-                        if research_candles:
-                            quote_until_ms = (
-                                int(research_candles[-1]["timestamp"])
-                                + (interval_seconds * 1000 if interval_seconds else 1)
-                            )
-                            quote_snapshots = self.quote_store.get(
-                                candidate.get("provider_id") or "ccxt:kraken",
-                                candidate.get("instrument_id") or (
-                                    f"{candidate.get('provider_id') or 'ccxt:kraken'}:spot:{symbol.upper()}"
-                                ),
-                                received_since_ms=max(
-                                    1, int(research_candles[0]["timestamp"])
-                                    - int(max_quote_age_seconds * 1000),
-                                ),
-                                received_until_ms=quote_until_ms,
-                            )
-                            quote_coverage = self.quote_store.coverage(
-                                candidate.get("provider_id") or "ccxt:kraken",
-                                candidate.get("instrument_id") or (
-                                    f"{candidate.get('provider_id') or 'ccxt:kraken'}:spot:{symbol.upper()}"
-                                ),
-                            )
-                            quote_history_status = "available" if quote_snapshots else "empty"
-                    except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+                    quote_history_status = "identity_missing"
+                    if quote_identity_valid:
                         quote_history_status = "unavailable"
-                        quote_snapshots = []
+                        try:
+                            if research_candles:
+                                quote_until_ms = (
+                                    int(research_candles[-1]["timestamp"])
+                                    + (interval_seconds * 1000 if interval_seconds else 1)
+                                )
+                                quote_snapshots = self.quote_store.get(
+                                    quote_provider_id,
+                                    quote_instrument_id,
+                                    received_since_ms=max(
+                                        1, int(research_candles[0]["timestamp"])
+                                        - int(max_quote_age_seconds * 1000),
+                                    ),
+                                    received_until_ms=quote_until_ms,
+                                )
+                                quote_coverage = self.quote_store.coverage(
+                                    quote_provider_id, quote_instrument_id,
+                                )
+                                quote_history_status = "available" if quote_snapshots else "empty"
+                        except (OSError, sqlite3.Error, ValueError, TypeError, KeyError):
+                            quote_history_status = "unavailable"
+                            quote_snapshots = []
                 try:
                     research = self.strategy_research.research(
                         research_candles,
