@@ -30,6 +30,22 @@ docker compose logs --tail=100 api
 
 The connector must initialize against `demo-api.binance.com`. A production REST endpoint is a hard configuration failure. Do not work around that check.
 
+
+## 2A. Automated read-only preflight (recommended)
+
+From the repository root on the server, after the API is healthy and the Demo connector is configured, run:
+
+```bash
+read -rsp "Owner token: " AGENT_CONTROL_TOKEN
+export AGENT_CONTROL_TOKEN
+echo
+cd backend
+python -m app.binance_demo_preflight
+unset AGENT_CONTROL_TOKEN
+```
+
+The command performs only three authenticated GET requests: account capabilities, virtual balances and the active Spot market catalogue. It verifies explicit Demo identity, no transfer/withdrawal capability, non-empty market discovery and duplicate-free symbols. It never submits, cancels or reconciles an order. A failed preflight is a hard stop; do not proceed to the order drill. For remote API access, use HTTPS and pass `--allow-remote --api https://your-private-api-host`; do not send the owner token over plain HTTP.
+
 ## 2. Authenticate without persisting the token
 
 In a private shell on the server:

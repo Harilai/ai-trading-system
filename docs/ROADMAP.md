@@ -4,6 +4,17 @@
 
 Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
+## Completado — promoción de snapshots y reconciliación de ramas (#99–#101)
+
+- PR #99 porta a `main` el ledger append-only de posiciones externas y sus endpoints autenticados. Requiere cobertura `complete/partial`, scope `market_type` en cuentas multi-market y proveedor read-only; los conectores actuales aún no habilitan captura.
+- PR #100 porta la trazabilidad experimental y el endurecimiento de salidas de Chief desde `demo`, conservando el monitor equity paper de #77.
+- PR #101 sincroniza `demo` con `main` usando un merge con ambos padres tras comprobar que no existían archivos exclusivos de `demo` ausentes en `main`.
+- PR #74 se cerró como implementación sustituida. El snapshot coordinado balances+posiciones sigue pendiente como requisito, no se descarta.
+
+## Siguiente fase — primer adaptador read-only de posiciones
+
+Implementar un adaptador concreto solo cuando el endpoint del proveedor permita obtener posiciones con cobertura verificable. Exigir scopes mínimos read-only, identidad de cuenta/entorno/mercado, timestamp del proveedor, normalización decimal y pruebas de respuestas vacías/completas/parciales. No inferir posiciones desde balances y no añadir métodos de trading, transferencias o firma.
+
 ## Objetivo de producto
 
 Construir una plataforma algorítmica multiactivo y multi-venue, preparada para capital real y extensible a los instrumentos accesibles mediante los proveedores conectados. El universo objetivo no se limita a crypto spot ni a EUR: incluye crypto CEX/DEX, acciones, ETF, FX, futuros, opciones, bonos, materias primas y otros instrumentos cuando existan adaptador, elegibilidad, datos, contabilidad y perfil de riesgo adecuados.
@@ -26,6 +37,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 10. **Completado — Binance Spot Demo Trading connector (PR #61):** CCXT Demo mode, verificación estricta de `demo-api.binance.com`, balances virtuales y discovery Spot.
 11. **Completado — lifecycle de órdenes Binance Spot Demo (PR #63):** limit orders, intents persistentes, clientOrderId, timeout/unknown-state reconciliation, partial fills, cancelación, auditoría append-only y fail-closed. No existe fallback a producción.
 12. **Siguiente — smoke tests operativos con una cuenta Binance Demo real:** seguir `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md` y verificar respuestas reales, filtros/precisión, partial fills, cancelación, timeout y reconciliación tras restart. Credenciales Demo solo en el servidor; no se simula una prueba real si el propietario no ha configurado la cuenta.
+    **Preparación completada (PR #103):** preflight automatizado de solo lectura con tres GET, validación explícita de Demo/permisos/catálogo y CI verde (568 tests; Docker hardening). Esto no sustituye el smoke test real ni crea/cancela órdenes.
 13. **Completado en PR #66 — ledger idempotente de fills individuales y comisiones:** trade IDs, order ID, cantidad, precio, quote cost, comisión/activo, timestamp, persistencia append-only y bloqueo fail-closed hasta cubrir el fill acumulado.
 14. **Completado en PR #68 — reconciliación periódica Demo:** polling de órdenes abiertas/unknown y fills con leases persistentes, fencing, backoff, lotes acotados y recuperación tras restart; funciona con estrategia pausada y nunca reenvía órdenes.
 15. **Completado — contratos normalizados de cuenta (PR #71):** registry multi-account, permisos y balances normalizados.
