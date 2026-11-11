@@ -5,7 +5,7 @@
 > **Último cambio integrado:** PR #144, merge SHA `24d2235fd7fba9a9158fe688c92e5df087cdf387`.
 > **main y demo:** mismo SHA `24d2235fd7fba9a9158fe688c92e5df087cdf387`; compare debe verificarse al inicio de la próxima sesión.
 > **PR abiertas:** ninguna en la última auditoría.
-> **CI:** PR #142, #143 y #144 superaron Python tests y Docker build/runtime hardening. CI post-merge de PR #144 run `43066860684` estaba en curso en la última consulta.
+> **CI:** PR #142, #143 y #144 superaron Python tests y Docker build/runtime hardening. CI post-merge de PR #144 run `43066860684` success.
 > **Validación local:** no se pudo clonar el repositorio desde el shell por falta de resolución de GitHub; no afirmar tests locales. La validación ejecutada fue GitHub Actions.
 > **Operación:** investigación y PAPER; LIVE sigue deshabilitado. No ejecutar operaciones reales ni usar credenciales productivas.
 
@@ -235,7 +235,7 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - PR #143 añade `data_quality`: número de velas, días cubiertos, cadencia mediana, huecos >1,5x cadencia, velas OOS y barras por ventana walk-forward. El detector no conoce calendarios de mercado; aplicarlo a acciones/FX requiere calendario por venue.
 - PR #144 persiste `data_quality` en `strategy_research_history` y presenta las métricas OOS y calidad del histórico en el dashboard. Registros históricos incompletos siguen siendo válidos.
 - PR #142 merge SHA `257aabafd2ea8dfbb8f0a8726688abc81b13b18a`; PR #143 merge SHA `59b3f7ed960911240134295e9e3a7cace3b6b09c`; PR #144 merge SHA `24d2235fd7fba9a9158fe688c92e5df087cdf387`.
-- CI PR #142 run `43065850901` success y post-merge `43066016747` success. CI PR #143 run `43066316270` success y post-merge `43066501575` success. CI PR #144 run `43066715216` success; post-merge `43066860684` pendiente de comprobar.
+- CI PR #142 run `43065850901` success y post-merge `43066016747` success. CI PR #143 run `43066316270` success y post-merge `43066501575` success. CI PR #144 run `43066715216` success y post-merge `43066860684` success.
 - `ScoutAgent` usa timeframe `1h` y `candle_limit=250`; unas 10,4 jornadas, 75 barras OOS y 49 barras por ventana walk-forward. La muestra es demasiado corta para afirmar robustez.
 - El universo de estrategia tiene tres candidatos: EMA 12/26, RSI(14) mean reversion y Bollinger(20,2) mean reversion. No se añadieron estrategias nuevas ni se relajaron gates.
 
