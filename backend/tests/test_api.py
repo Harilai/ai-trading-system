@@ -1872,3 +1872,124 @@ def test_position_snapshot_api_persists_only_capability_checked_snapshot(monkeyp
     )
     assert detail.status_code == 200
     assert detail.json()["positions"][0]["instrument_id"] == "test:spot:BTC/EUR"
+
+
+def test_coordinated_account_snapshot_api_requires_auth_and_explicit_provider_coverage(monkeypatch, tmp_path):
+    from datetime import datetime, timezone
+    from app.accounts.contracts import AccountProviderRegistry
+    from app.accounts.coordinated_snapshot_store import CoordinatedAccountSnapshotStore
+    from app.accounts.position_snapshot_store import PositionSnapshotStore
+    from app.accounts.snapshot_store import AccountSnapshotStore
+
+    headers = configure_order_auth(monkeypatch)
+    database = str(tmp_path / "coordinated-api.db")
+    balances = AccountSnapshotStore(database)
+    positions = PositionSnapshotStore(database)
+    coordinated = CoordinatedAccountSnapshotStore(database, balances, positions)
+    monkeypatch.setattr("app.main.account_snapshot_store", balances)
+    monkeypatch.setattr("app.main.position_snapshot_store", positions)
+    monkeypatch.setattr("app.main.coordinated_account_snapshot_store", coordinated)
+
+    class ReadOnlyProvider:
+        def __init__(self, *, with_balance_coverage=True):
+            self.with_balance_coverage = with_balance_coverage
+
+        def describe(self):
+            return {
+                "provider_id": "test:coordinated",
+                "account_alias": "primary",
+                "venue_type": "exchange",
+                "environment": "demo",
+                "market_types": ["spot"],
+                "configured": True,
+                "balances": True,
+                "positions": True,
+                "order_management": False,
+                "order_submission": False,
+                "order_cancellation": False,
+                "reconciliation": False,
+                "read_only_connector": True,
+                "transfers": False,
+                "withdrawals": False,
+                "wallet_signing": False,
+                "account_key_permissions_verified": False,
+            }
+
+        def fetch_balances(self):
+            result = {
+                "provider_id": "test:coordinated",
+                "account_alias": "primary",
+                "environment": "demo",
+                "market_type": "spot",
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "read_only": True,
+                "execution_enabled": False,
+                "withdrawals_enabled": False,
+                "balances": [{"asset": "EUR", "free": "25", "used": "0", "total": "25"}],
+            }
+            if self.with_balance_coverage:
+                result["coverage_status"] = "complete"
+            return result
+
+        def fetch_positions_snapshot(self, *, market_type="spot"):
+            return {
+                "provider_id": "test:coordinated",
+                "account_alias": "primary",
+                "environment": "demo",
+                "market_type": market_type,
+                "fetched_at": datetime.now(timezone.utc).isoformat(),
+                "read_only": True,
+                "execution_enabled": False,
+                "withdrawals_enabled": False,
+                "coverage_status": "complete",
+                "positions": [{
+                    "instrument_id": "test:spot:BTC/EUR",
+                    "symbol": "BTC/EUR",
+                    "asset_class": "crypto",
+                    "market_type": "spot",
+                    "quantity": "0.01",
+                    "side": "long",
+                    "quote_currency": "EUR",
+                }],
+            }
+
+    unauthorized = client.post(
+        "/api/accounts/test:coordinated/snapshots/coordinated?request_id=api-1",
+    )
+    assert unauthorized.status_code == 401
+
+    registry = AccountProviderRegistry()
+    registry.register(ReadOnlyProvider(with_balance_coverage=False))
+    monkeypatch.setattr("app.main.account_provider_registry", registry)
+    blocked = client.post(
+        "/api/accounts/test:coordinated/snapshots/coordinated?request_id=api-1",
+        headers=headers,
+    )
+    assert blocked.status_code == 409
+    assert "coverage" in blocked.json()["detail"].lower()
+
+    registry = AccountProviderRegistry()
+    registry.register(ReadOnlyProvider())
+    monkeypatch.setattr("app.main.account_provider_registry", registry)
+    created = client.post(
+        "/api/accounts/test:coordinated/snapshots/coordinated?request_id=api-2",
+        headers=headers,
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["capture_status"] == "complete"
+    capture_id = created.json()["capture_id"]
+
+    detail = client.get(
+        f"/api/accounts/snapshots/coordinated/{capture_id}",
+        headers=headers,
+    )
+    assert detail.status_code == 200
+    assert detail.json()["balances"]["environment"] == "demo"
+    assert detail.json()["positions"]["environment"] == "demo"
+
+    history = client.get(
+        "/api/accounts/snapshots/coordinated?provider_id=test%3Acoordinated&environment=demo",
+        headers=headers,
+    )
+    assert history.status_code == 200
+    assert len(history.json()["items"]) == 1

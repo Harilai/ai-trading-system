@@ -31,6 +31,7 @@ from .accounts.binance_spot import AccountConnectorError, BinanceSpotReadOnlyAcc
 from .accounts.ccxt_readonly import CcxtReadOnlyAccount, CcxtReadOnlyAccountError
 from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
 from .accounts.position_snapshot_store import PositionSnapshotError, PositionSnapshotStore
+from .accounts.coordinated_snapshot_store import CoordinatedAccountSnapshotStore, CoordinatedSnapshotError
 from .accounts.contracts import (
     AccountProviderError, AccountProviderNotFound, AccountProviderRegistry, AmbiguousAccountProvider,
     InvalidAccountRequest, UnsupportedAccountCapability,
@@ -60,6 +61,9 @@ portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 instrument_catalog = InstrumentCatalog(settings.database_path)
 account_snapshot_store = AccountSnapshotStore(settings.database_path)
 position_snapshot_store = PositionSnapshotStore(settings.database_path)
+coordinated_account_snapshot_store = CoordinatedAccountSnapshotStore(
+    settings.database_path, account_snapshot_store, position_snapshot_store,
+)
 demo_order_store = BinanceDemoOrderStore(settings.database_path)
 
 _binance_key = settings.binance_readonly_api_key.get_secret_value().strip()
@@ -252,6 +256,83 @@ def create_account_provider_snapshot(
         raise HTTPException(422, str(exc)) from exc
     except sqlite3.Error as exc:
         raise HTTPException(503, "Unable to persist account snapshot") from exc
+
+
+@app.post("/api/accounts/{provider_id}/snapshots/coordinated", status_code=201)
+def create_coordinated_account_snapshot(
+    provider_id: str,
+    request_id: str = Query(..., min_length=1, max_length=128),
+    account_alias: str | None = None,
+    market_type: str = Query("spot", min_length=1, max_length=24),
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        existing = coordinated_account_snapshot_store.get_by_request_id(request_id)
+        if existing is not None:
+            if (existing["provider_id"], existing["account_alias"], existing["market_type"]) != (
+                provider_id, account_alias or existing["account_alias"], market_type.lower()
+            ):
+                raise CoordinatedSnapshotError("Capture request_id is already bound to a different account scope")
+            return existing
+        balances, positions = account_provider_registry.fetch_coordinated_snapshot(
+            provider_id, account_alias, market_type=market_type,
+        )
+        return coordinated_account_snapshot_store.record_snapshot(
+            request_id, balances, positions,
+        )
+    except AccountProviderNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except (UnsupportedAccountCapability, AmbiguousAccountProvider) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except InvalidAccountRequest as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except AccountProviderError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except CoordinatedSnapshotError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except (AccountSnapshotError, PositionSnapshotError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to persist coordinated account snapshot") from exc
+
+
+@app.get("/api/accounts/snapshots/coordinated")
+def list_coordinated_account_snapshots(
+    provider_id: str | None = None,
+    account_alias: str | None = None,
+    environment: str | None = None,
+    market_type: str | None = None,
+    limit: int = Query(50, ge=1, le=200),
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        return {
+            "items": coordinated_account_snapshot_store.list_snapshots(
+                provider_id=provider_id, account_alias=account_alias,
+                environment=environment, market_type=market_type, limit=limit,
+            )
+        }
+    except CoordinatedSnapshotError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to read coordinated account snapshots") from exc
+
+
+@app.get("/api/accounts/snapshots/coordinated/{capture_id}")
+def get_coordinated_account_snapshot(
+    capture_id: str,
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        result = coordinated_account_snapshot_store.get_snapshot(capture_id)
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to read coordinated account snapshot") from exc
+    if result is None:
+        raise HTTPException(404, "Coordinated account snapshot was not found")
+    return result
 
 
 @app.get("/api/accounts/binance/spot/balances")

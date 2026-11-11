@@ -12,9 +12,9 @@ Actualizado: 2026-11-11. Este documento distingue lo implementado y validado de 
 - PR #103 incorpora el preflight Binance Demo read-only. PR #104 actualiza el handoff operativo. PR #106 sincronizó `main` y `demo`; PR #110 incorporó el diagnóstico seguro de claves de balance Binance Demo en `demo`. Tras PR #110, ambos árboles tienen 109 archivos y los 109 blobs son idénticos. CI de PR #110 pasó en el SHA exacto `cbbd1510476a1ddb165aa70b3d027c0816ce9598` (Python tests y Docker build/runtime hardening). PR #105 se cerró como intento amplio sustituido por conflictos.
 - PR #74 se cerró como implementación sustituida. El snapshot coordinado balances+posiciones sigue pendiente como requisito, no se descarta.
 
-## Siguiente fase — snapshot coordinado balances + posiciones
+## Implementado — snapshot coordinado balances + posiciones (PR #113 pendiente de merge)
 
-El diseño está documentado en [`COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md`](COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md). Los ledgers de balances y posiciones ya existen por separado; falta un `capture_id` común, cobertura explícita para ambos lados, validación de skew temporal y persistencia atómica en una sola transacción sin duplicar registros. Antes de habilitar captura real debe existir un proveedor concreto que exponga ambas lecturas con scope y cobertura verificables. Los conectores Spot actuales no cumplen ese requisito; no inventar posiciones a partir de balances o fills.
+El diseño está documentado en [`COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md`](COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md). PR #113 implementa el `capture_id` común, ledger de referencias sin duplicación, cobertura explícita, identidad proveedor/cuenta/entorno/mercado, timestamp provenance y skew máximo, idempotencia, rollback atómico de ambos ledgers y endpoints autenticados de captura/historial/detalle. El ledger de balances queda aislado por entorno mediante migración compatible (filas legacy -> `production`). CI exacta del head `61f3240c3afc3fce3c1cf75597a850e45fd50a78`: 581 tests passed, 1 warning; Docker Compose, build y non-root hardening correctos. La captura real sigue bloqueada hasta que un proveedor declare balances+posiciones y cobertura completa/parcial verificable; los conectores Spot actuales no cumplen. No inventar posiciones a partir de balances o fills.
 
 ## Objetivo de producto
 
@@ -165,7 +165,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [x] Generalizar el portfolio a claves `provider_id + instrument_id`, con migración de datos legacy y aislamiento de símbolos duplicados.
 - [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución (PR #78 normaliza órdenes/fills; PR #79 añade el ledger; PR #80 explicita la completitud de historial; aún faltan adaptadores y worker de conciliación).
 - [x] Añadir contrato y endpoint autenticado para posiciones normalizadas, exigiendo capacidad explícita y sin sintetizarlas desde balances.
-- [ ] Diseñar snapshot coordinado de cuenta que vincule balances y posiciones con identidad/grupo común y timestamps compatibles, sin duplicar la persistencia de posiciones ni inferir completitud.
+- [x] Diseñar e implementar snapshot coordinado de cuenta que vincula balances y posiciones mediante un grupo append-only, referencias a los ledgers existentes, scope común, cobertura explícita, skew temporal, idempotencia y persistencia atómica (PR #113). Captura operativa pendiente de proveedor compatible.
 - [ ] Implementar adaptadores FX, índices y commodities solo tras validar APIs y elegibilidad.
 - [ ] Diseñar wallet read-only y blockchain monitoring antes de añadir firma aislada; no usar seeds en agentes.
 - [ ] Implementar DEX swaps con simulación, gas, slippage, MEV y reconciliación antes de habilitar ejecución.

@@ -47,6 +47,7 @@ class AccountSnapshotStore:
                     snapshot_id TEXT PRIMARY KEY,
                     provider_id TEXT NOT NULL,
                     account_alias TEXT NOT NULL,
+                    environment TEXT NOT NULL DEFAULT 'production',
                     market_type TEXT NOT NULL,
                     fetched_at TEXT NOT NULL,
                     recorded_at TEXT NOT NULL,
@@ -57,9 +58,7 @@ class AccountSnapshotStore:
                     content_hash TEXT NOT NULL,
                     FOREIGN KEY(previous_snapshot_id) REFERENCES account_snapshots(snapshot_id)
                 );
-                CREATE INDEX IF NOT EXISTS idx_account_snapshots_account
-                    ON account_snapshots(provider_id,account_alias,market_type,fetched_at DESC);
-                CREATE TABLE IF NOT EXISTS account_snapshot_balances (
+                 CREATE TABLE IF NOT EXISTS account_snapshot_balances (
                     snapshot_id TEXT NOT NULL,
                     asset TEXT NOT NULL,
                     free TEXT,
@@ -81,6 +80,14 @@ class AccountSnapshotStore:
                     BEFORE DELETE ON account_snapshot_balances
                     BEGIN SELECT RAISE(ABORT,'account snapshot balances are append-only'); END;
                 """
+            )
+            columns = {row["name"] for row in db.execute("PRAGMA table_info(account_snapshots)").fetchall()}
+            if "environment" not in columns:
+                db.execute("ALTER TABLE account_snapshots ADD COLUMN environment TEXT NOT NULL DEFAULT 'production'")
+            db.execute("DROP INDEX IF EXISTS idx_account_snapshots_account")
+            db.execute(
+                "CREATE INDEX idx_account_snapshots_account "
+                "ON account_snapshots(provider_id,account_alias,environment,market_type,fetched_at DESC)"
             )
 
     @staticmethod
@@ -125,6 +132,10 @@ class AccountSnapshotStore:
         provider_id = snapshot.get("provider_id")
         account_alias = snapshot.get("account_alias")
         market_type = snapshot.get("market_type")
+        environment = snapshot.get("environment", "production")
+        if not isinstance(environment, str) or not environment.strip():
+            raise AccountSnapshotError("Account snapshot environment is invalid")
+        environment = environment.strip().lower()
         if not isinstance(provider_id, str) or not provider_id.strip() or len(provider_id) > 128:
             raise AccountSnapshotError("Account snapshot provider_id is invalid")
         if not isinstance(account_alias, str) or not account_alias.strip() or len(account_alias) > 128:
@@ -179,6 +190,7 @@ class AccountSnapshotStore:
         normalized = {
             "provider_id": provider_id.strip(),
             "account_alias": account_alias.strip(),
+            "environment": environment,
             "market_type": market_type,
             "fetched_at": fetched_at.isoformat(),
             "balances": balances,
@@ -235,7 +247,7 @@ class AccountSnapshotStore:
             })
         return changes
 
-    def record_snapshot(self, snapshot: dict) -> dict:
+    def _record_snapshot_in_transaction(self, snapshot: dict, db) -> str:
         normalized, balances = self._normalize(snapshot)
         recorded_at = datetime.now(timezone.utc).isoformat()
         snapshot_id = str(uuid4())
@@ -243,59 +255,62 @@ class AccountSnapshotStore:
         content_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         provider_id = normalized["provider_id"]
         account_alias = normalized["account_alias"]
+        environment = normalized["environment"]
         market_type = normalized["market_type"]
 
+        previous_row = db.execute(
+            """
+            SELECT snapshot_id,fetched_at FROM account_snapshots
+            WHERE provider_id=? AND account_alias=? AND environment=? AND market_type=?
+            ORDER BY fetched_at DESC, recorded_at DESC, snapshot_id DESC LIMIT 1
+            """,
+            (provider_id, account_alias, environment, market_type),
+        ).fetchone()
+        previous_id = previous_row["snapshot_id"] if previous_row else None
+        if previous_row and normalized["fetched_at"] < previous_row["fetched_at"]:
+            raise AccountSnapshotError(
+                "Account snapshot is older than the latest stored observation"
+            )
+        previous_balances = {}
+        if previous_id:
+            rows = db.execute(
+                "SELECT asset,free,used,total FROM account_snapshot_balances WHERE snapshot_id=?",
+                (previous_id,),
+            ).fetchall()
+            previous_balances = {row["asset"]: dict(row) for row in rows}
+        current_balances = {item["asset"]: item for item in balances}
+        changes = self._diff(previous_balances, current_balances) if previous_id else []
+        change_count = sum(item["state"] != "unchanged" for item in changes)
+        status = "initial" if previous_id is None else ("changed" if change_count else "unchanged")
+        db.execute(
+            """
+            INSERT INTO account_snapshots(
+                snapshot_id,provider_id,account_alias,environment,market_type,fetched_at,recorded_at,
+                previous_snapshot_id,reconciliation_status,change_count,balance_count,content_hash
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                snapshot_id, provider_id, account_alias, environment, market_type,
+                normalized["fetched_at"], recorded_at, previous_id,
+                status, change_count, len(balances), content_hash,
+            ),
+        )
+        db.executemany(
+            """
+            INSERT INTO account_snapshot_balances(snapshot_id,asset,free,used,total)
+            VALUES(?,?,?,?,?)
+            """,
+            [
+                (snapshot_id, item["asset"], item["free"], item["used"], item["total"])
+                for item in balances
+            ],
+        )
+        return snapshot_id
+
+    def record_snapshot(self, snapshot: dict) -> dict:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            previous_row = db.execute(
-                """
-                SELECT snapshot_id,fetched_at FROM account_snapshots
-                WHERE provider_id=? AND account_alias=? AND market_type=?
-                ORDER BY fetched_at DESC, recorded_at DESC, snapshot_id DESC LIMIT 1
-                """,
-                (provider_id, account_alias, market_type),
-            ).fetchone()
-            previous_id = previous_row["snapshot_id"] if previous_row else None
-            if previous_row and normalized["fetched_at"] < previous_row["fetched_at"]:
-                raise AccountSnapshotError(
-                    "Account snapshot is older than the latest stored observation"
-                )
-            previous_balances = {}
-            if previous_id:
-                rows = db.execute(
-                    "SELECT asset,free,used,total FROM account_snapshot_balances WHERE snapshot_id=?",
-                    (previous_id,),
-                ).fetchall()
-                previous_balances = {row["asset"]: dict(row) for row in rows}
-            current_balances = {item["asset"]: item for item in balances}
-            changes = self._diff(previous_balances, current_balances) if previous_id else []
-            change_count = sum(item["state"] != "unchanged" for item in changes)
-            status = "initial" if previous_id is None else ("changed" if change_count else "unchanged")
-
-            db.execute(
-                """
-                INSERT INTO account_snapshots(
-                    snapshot_id,provider_id,account_alias,market_type,fetched_at,recorded_at,
-                    previous_snapshot_id,reconciliation_status,change_count,balance_count,content_hash
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    snapshot_id, provider_id, account_alias, market_type,
-                    normalized["fetched_at"], recorded_at, previous_id,
-                    status, change_count, len(balances), content_hash,
-                ),
-            )
-            db.executemany(
-                """
-                INSERT INTO account_snapshot_balances(snapshot_id,asset,free,used,total)
-                VALUES(?,?,?,?,?)
-                """,
-                [
-                    (snapshot_id, item["asset"], item["free"], item["used"], item["total"])
-                    for item in balances
-                ],
-            )
-
+            snapshot_id = self._record_snapshot_in_transaction(snapshot, db)
         return self.get_snapshot(snapshot_id)
 
     def list_snapshots(
@@ -303,6 +318,7 @@ class AccountSnapshotStore:
         *,
         provider_id: str | None = None,
         account_alias: str | None = None,
+        environment: str | None = None,
         limit: int = 50,
     ) -> list[dict]:
         if not isinstance(limit, int) or not 1 <= limit <= 200:
@@ -315,11 +331,14 @@ class AccountSnapshotStore:
         if account_alias:
             clauses.append("account_alias=?")
             params.append(account_alias)
+        if environment:
+            clauses.append("environment=?")
+            params.append(environment.strip().lower())
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(limit)
         with self.connect() as db:
             rows = db.execute(
-                f"SELECT snapshot_id,provider_id,account_alias,market_type,fetched_at,recorded_at,"
+                f"SELECT snapshot_id,provider_id,account_alias,environment,market_type,fetched_at,recorded_at,"
                 f"previous_snapshot_id,reconciliation_status,change_count,balance_count,content_hash "
                 f"FROM account_snapshots {where} "
                 f"ORDER BY fetched_at DESC,recorded_at DESC,snapshot_id DESC LIMIT ?",
