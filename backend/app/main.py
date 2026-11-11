@@ -274,6 +274,12 @@ def create_alpaca_financial_metrics_snapshot(
     if alpaca_paper_account_provider is None:
         raise HTTPException(503, "Alpaca Paper read-only account connector is not configured")
     try:
+        existing = financial_metrics_store.get_by_request_id(
+            request_id, provider_id="alpaca:paper",
+            account_alias=settings.alpaca_paper_account_alias,
+        )
+        if existing is not None:
+            return existing
         snapshot = alpaca_paper_account_provider.fetch_financial_metrics_snapshot()
         return financial_metrics_store.record_snapshot(request_id, snapshot)
     except AlpacaPaperAccountError as exc:
