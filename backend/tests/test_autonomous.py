@@ -84,7 +84,7 @@ def test_decision_cycle_persists_proposal_only_result(tmp_path):
             return {"action": "hold", "rationale": "No validated opportunity"}
 
     class FakeChief:
-        def decide(self, scan, portfolio):
+        def decide(self, scan, portfolio, *, account_readiness=None):
             assert scan["analyses"]
             assert portfolio["cash"] == 20
             return FakeDecision()
@@ -213,9 +213,19 @@ def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
             self.intent["status"] = "filled"
             return self.order
 
+    class ReadyReadiness:
+        def evaluate(self, **kwargs):
+            return {"status": "ready", "blockers": []}
+
     store = AutonomousStore(str(tmp_path / "paper-cycle.db"))
     portfolio = FakePortfolio()
-    worker = AutonomousAgent(store, scout=FakeScout(), chief=FakeChief(), portfolio=portfolio)
+    worker = AutonomousAgent(
+        store,
+        scout=FakeScout(),
+        chief=FakeChief(),
+        portfolio=portfolio,
+        account_readiness=ReadyReadiness(),
+    )
     task = {"id": "paper-decision-1", "kind": "decision_cycle", "payload": {}}
 
     first = asyncio.run(worker._execute(task))
@@ -293,7 +303,17 @@ def test_end_to_end_paper_buy_then_stop_loss_exit(tmp_path):
     portfolio = PaperPortfolio(str(tmp_path / "e2e-paper.db"), initial_cash=20)
     scout = MutableScout()
     chief = ChiefAgent(minimum_order_value_eur=1)
-    worker = AutonomousAgent(store, scout=scout, chief=chief, portfolio=portfolio)
+    from app.account_readiness import PaperAccountReadiness
+    from app.execution_adapters import PaperPortfolioScopedAdapter
+
+    readiness = PaperAccountReadiness(
+        portfolio,
+        PaperPortfolioScopedAdapter(portfolio, account_id="paper-primary"),
+    )
+    worker = AutonomousAgent(
+        store, scout=scout, chief=chief, portfolio=portfolio,
+        account_readiness=readiness,
+    )
 
     buy_task = {"id": "buy-task-1", "kind": "decision_cycle", "payload": {}}
     buy_result = asyncio.run(worker._execute(buy_task))
@@ -750,9 +770,20 @@ def test_decision_cycle_resumes_persisted_risk_approved_intent_without_rescannin
         def scan(self, *args, **kwargs):
             raise AssertionError("A persisted approved intent must resume without new market research")
 
+    from app.account_readiness import PaperAccountReadiness
+    from app.execution_adapters import PaperPortfolioScopedAdapter
+
     store = AutonomousStore(path)
+    readiness = PaperAccountReadiness(
+        portfolio,
+        PaperPortfolioScopedAdapter(portfolio, account_id="paper-primary"),
+    )
     worker = AutonomousAgent(
-        store, scout=ScoutMustNotRescan(), chief=object(), portfolio=portfolio,
+        store,
+        scout=ScoutMustNotRescan(),
+        chief=object(),
+        portfolio=portfolio,
+        account_readiness=readiness,
     )
     result = asyncio.run(worker._execute({
         "id": task_id, "kind": "decision_cycle", "payload": {},
