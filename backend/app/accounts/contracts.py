@@ -741,9 +741,9 @@ class AccountProviderRegistry:
             permissions_verified=capabilities.permissions_verified,
             balances=tuple(sorted(balances, key=lambda item: item.asset)),
         ).to_dict()
-        for optional in ("demo_only",):
+        for optional in ("demo_only", "coverage_status", "timestamp_source"):
             if optional in raw:
-                snapshot[optional] = bool(raw[optional])
+                snapshot[optional] = raw[optional]
         return snapshot
 
     def fetch_positions(
@@ -885,6 +885,34 @@ class AccountProviderRegistry:
             "coverage_status": coverage,
             "positions": sorted(positions, key=lambda item: item["instrument_id"]),
         }
+
+    def fetch_coordinated_snapshot(
+        self, provider_id: str, account_alias: str | None = None, *, market_type: str,
+    ) -> tuple[dict, dict]:
+        capabilities = self.capabilities(provider_id, account_alias)
+        if not capabilities.balances or not capabilities.positions:
+            raise UnsupportedAccountCapability(
+                "Coordinated snapshots require explicit balance and position capabilities"
+            )
+        if not capabilities.read_only or any((
+            capabilities.order_management, capabilities.order_submission,
+            capabilities.order_cancellation, capabilities.transfers,
+            capabilities.withdrawals, capabilities.wallet_signing,
+        )):
+            raise UnsupportedAccountCapability("Coordinated snapshots require a strictly read-only account")
+        balances = self.fetch_balances(provider_id, account_alias)
+        if balances.get("coverage_status") not in {"complete", "partial"}:
+            raise UnsupportedAccountCapability(
+                "Balance provider must declare complete or partial snapshot coverage"
+            )
+        positions = self.fetch_positions_snapshot(
+            provider_id, account_alias, market_type=market_type,
+        )
+        if balances["market_type"] != positions["market_type"]:
+            raise AccountProviderError("Balance and position market scopes do not match")
+        balances["timestamp_source"] = balances.get("timestamp_source", "provider")
+        positions["timestamp_source"] = positions.get("timestamp_source", "provider")
+        return balances, positions
 
     def record_read_only_snapshot(
         self,
