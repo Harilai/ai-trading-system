@@ -530,6 +530,8 @@ def test_research_requires_complete_observed_spread_for_promotion():
     assert result["promotion_gates"]["must_have_complete_observed_spread_coverage"] is True
     assert all(
         candidate["out_of_sample"]["spread_coverage_complete"]
+        and candidate["walk_forward_spread_coverage_complete"]
+        and candidate["spread_coverage_complete_for_promotion"]
         and "insufficient_spread_coverage" not in candidate["validation_failures"]
         for candidate in result["candidates"]
     )
@@ -623,7 +625,8 @@ def test_research_without_observed_spread_blocks_strategy_promotion():
     assert result["eligible_count"] == 0
     assert result["recommended_strategy"] is None
     assert all(
-        "insufficient_spread_coverage" in candidate["validation_failure_categories"]["cost"]
+        not candidate["spread_coverage_complete_for_promotion"]
+        and "insufficient_spread_coverage" in candidate["validation_failure_categories"]["cost"]
         for candidate in result["candidates"]
     )
 
