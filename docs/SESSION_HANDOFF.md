@@ -194,14 +194,16 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - PR #132 fusionada en main.
 - `main` y `demo` sincronizadas y compare verificado como `identical` tras los commits documentales de esta sesión; actualizar el SHA exacto al inicio de la próxima conversación.
 
-## Estado actual — registry y adaptadores scoped (2026-11-11)
+## Estado actual — registry, adaptadores y gobernanza (2026-11-11)
 
 - PR #133 integrada en `main`; merge commit `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`.
 - PR #134 integrada mediante squash; merge commit `9f42a272cbc4c2d603137db859b43078af5ca881`.
-- CI de PR #134 en head exacto `2930df8471596e6fe131d418db1e5824f9b6581e`: run `43050767811`, Python tests y Docker build/runtime hardening ambos success.
-- La revisión técnica interna la realizó el Engineering Lead. No se solicitó al propietario revisar, aprobar ni fusionar.
+- PR #135 integrada mediante squash; merge commit `a11201319c503fb110cd6aec315e7b9c1ab77ccf`. Actualiza este handoff y el roadmap tras #134.
+- CI de PR #134 en head exacto `2930df8471596e6fe131d418db1e5824f9b6581e`: run `43050767811`, Python tests y Docker build/runtime hardening ambos success. CI post-merge de #134: run `43050890327`, ambos success.
+- CI de PR #135 en head exacto `bfd19dfafbe3323259261e3a056b3729ab5cbb6c`: run `43051061358`, ambos jobs success. CI post-merge: run `43051187209`, ambos jobs success.
+- La revisión técnica interna la realizó el Engineering Lead. No se solicitó al propietario revisar, aprobar ni fusionar ninguna de estas PR.
 - Implementado: `BinanceSpotDemoScopedAdapter` y `PaperPortfolioScopedAdapter`, snapshots con scope explícito, balances y posiciones. Binance Spot balances no se convierten artificialmente en posiciones; positions sigue UNKNOWN. Los account_id son alias locales no verificados como identidad remota.
 - PAPER sigue limitado a crypto Spot y simulación market atómica; partial fills y cancelación de exchange permanecen UNSUPPORTED. Readiness falla cerrado. Los wrappers no están registrados automáticamente ni conectados a rutas de envío.
-- `main` y `demo` apuntan al mismo SHA `9f42a272cbc4c2d603137db859b43078af5ca881`; compare verificado como `identical` (0 ahead/behind).
-- CI post-merge de `main` run `43050890327`: Python tests y Docker build/runtime hardening ambos success.
+- La cantidad de posiciones PAPER se valida con Decimal finito, sin filtrar cantidades positivas mediante float; tests cubren cantidades positivas diminutas y valores no finitos.
+- `main` y `demo` están sincronizadas y el compare se verificó como `identical` (0 ahead/behind). Consultar el SHA actual directamente en GitHub al iniciar la siguiente sesión.
 - No se han enviado órdenes ni realizado acciones financieras. LIVE permanece deshabilitado.
