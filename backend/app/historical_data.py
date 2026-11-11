@@ -254,9 +254,13 @@ class HistoricalQuoteStore:
                 for legacy in legacy_rows:
                     try:
                         retrieved = datetime.fromisoformat(legacy["retrieved_at"])
+                        if retrieved.tzinfo is None:
+                            raise ValueError("Legacy quote retrieval timestamp has no timezone")
                         retrieved_ms = int(retrieved.timestamp() * 1000)
                     except (TypeError, ValueError, OverflowError):
-                        retrieved_ms = int(legacy["timestamp_ms"])
+                        # Unknown receipt time must never be backdated to the
+                        # exchange event time; research will reject this row.
+                        retrieved_ms = 0
                     db.execute(
                         "UPDATE historical_quotes SET retrieved_at_ms=? "
                         "WHERE provider_id=? AND instrument_id=? AND timestamp_ms=?",
