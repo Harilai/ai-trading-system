@@ -292,7 +292,6 @@ class AccountSnapshotStore:
                 for item in balances
             ],
         )
-    return self.get_snapshot(snapshot_id)
         return snapshot_id
 
     def record_snapshot(self, snapshot: dict) -> dict:
