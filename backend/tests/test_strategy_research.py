@@ -348,6 +348,30 @@ def test_research_detects_missing_candle_intervals_without_reordering_data():
     assert quality["gap_count"] == 1
     assert quality["largest_gap_seconds"] == 7200
     assert quality["calendar_adjustment"] is False
+    assert quality["cadence_source"] == "median_observed_interval_heuristic"
+    assert quality["estimated_missing_intervals"] == 1
+
+
+def test_research_uses_explicit_expected_cadence_for_gap_diagnostics():
+    rows = candles_from_closes([100.0 + index * 0.01 for index in range(240)])
+    rows = rows[:120] + rows[122:]
+    result = StrategyResearchAgent().research(
+        rows, expected_interval_seconds=3600, calendar_model="crypto_24x7",
+    )
+    quality = result["data_quality"]
+    assert quality["gap_count"] == 1
+    assert quality["largest_gap_seconds"] == 10800
+    assert quality["expected_candle_interval_seconds"] == 3600
+    assert quality["cadence_source"] == "explicit_expected_interval"
+    assert quality["estimated_missing_intervals"] == 2
+    assert quality["calendar_model"] == "crypto_24x7"
+    assert quality["calendar_adjustment"] is False
+
+
+def test_research_rejects_invalid_expected_cadence():
+    rows = candles_from_closes([100.0 + index * 0.01 for index in range(120)])
+    with pytest.raises(ValueError, match="expected_interval_seconds"):
+        StrategyResearchAgent().research(rows, expected_interval_seconds=0)
 
 
 def test_research_reports_sample_adequacy_and_categorized_failure_reasons():
