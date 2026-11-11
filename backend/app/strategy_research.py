@@ -102,21 +102,37 @@ def _market_regime(closes: Sequence[float]) -> dict[str, float | str]:
     }
 
 
-def _candle_data_quality(candles: Sequence[dict]) -> dict:
-    """Summarize timestamp coverage without assuming a venue trading calendar."""
+def _candle_data_quality(
+    candles: Sequence[dict], *, expected_interval_seconds: float | None = None,
+    calendar_model: str = "unspecified",
+) -> dict:
+    """Summarize coverage; fixed cadence requires an explicit venue model."""
     timestamps = [int(candle["timestamp"]) for candle in candles]
     intervals_ms = [
         current - previous
         for previous, current in zip(timestamps[:-1], timestamps[1:])
     ]
     median_interval_ms = median(intervals_ms) if intervals_ms else None
-    gap_intervals = (
-        [
-            interval for interval in intervals_ms
-            if interval > median_interval_ms * 1.5
-        ]
-        if median_interval_ms is not None else []
-    )
+    if expected_interval_seconds is not None:
+        if not isinstance(expected_interval_seconds, (int, float)) or expected_interval_seconds <= 0:
+            raise ValueError("expected_interval_seconds must be positive")
+        expected_interval_ms = expected_interval_seconds * 1000
+        gap_intervals = [interval for interval in intervals_ms if interval > expected_interval_ms * 1.5]
+        cadence_source = "explicit_expected_interval"
+        estimated_missing_intervals = sum(
+            max(0, round(interval / expected_interval_ms) - 1)
+            for interval in gap_intervals
+        )
+    else:
+        gap_intervals = (
+            [interval for interval in intervals_ms if interval > median_interval_ms * 1.5]
+            if median_interval_ms is not None else []
+        )
+        cadence_source = "median_observed_interval_heuristic"
+        estimated_missing_intervals = sum(
+            max(0, round(interval / median_interval_ms) - 1)
+            for interval in gap_intervals
+        ) if median_interval_ms else 0
     history_span_seconds = (
         (timestamps[-1] - timestamps[0]) / 1000.0 if len(timestamps) > 1 else 0.0
     )
@@ -136,7 +152,15 @@ def _candle_data_quality(candles: Sequence[dict]) -> dict:
             max(gap_intervals) / 1000.0 if gap_intervals else 0.0
         ),
         "gap_detection_threshold_multiplier": 1.5,
-        "gap_detection_method": "intervals_above_1_5x_median_cadence",
+        "gap_detection_method": (
+            "intervals_above_1_5x_expected_cadence"
+            if expected_interval_seconds is not None
+            else "intervals_above_1_5x_median_cadence"
+        ),
+        "expected_candle_interval_seconds": expected_interval_seconds,
+        "cadence_source": cadence_source,
+        "estimated_missing_intervals": estimated_missing_intervals,
+        "calendar_model": calendar_model,
         "calendar_adjustment": False,
     }
 
@@ -354,7 +378,10 @@ class StrategyResearchAgent:
             ),
         }
 
-    def research(self, candles: Sequence[dict]) -> dict:
+    def research(
+        self, candles: Sequence[dict], *, expected_interval_seconds: float | None = None,
+        calendar_model: str = "unspecified",
+    ) -> dict:
         normalized = []
         for candle in candles:
             row = {
@@ -396,7 +423,10 @@ class StrategyResearchAgent:
             len(normalized),
         )
         results = []
-        data_quality = _candle_data_quality(normalized)
+        data_quality = _candle_data_quality(
+            normalized, expected_interval_seconds=expected_interval_seconds,
+            calendar_model=calendar_model,
+        )
         market_regime = _market_regime([row["close"] for row in normalized])
         stress_multipliers = (1.5, 2.0)
         benchmark_cost_sensitivity = {}
