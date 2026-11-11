@@ -4,6 +4,17 @@
 
 Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
+## Completado — promoción de snapshots y reconciliación de ramas (#99–#101)
+
+- PR #99 porta a `main` el ledger append-only de posiciones externas y sus endpoints autenticados. Requiere cobertura `complete/partial`, scope `market_type` en cuentas multi-market y proveedor read-only; los conectores actuales aún no habilitan captura.
+- PR #100 porta la trazabilidad experimental y el endurecimiento de salidas de Chief desde `demo`, conservando el monitor equity paper de #77.
+- PR #101 sincroniza `demo` con `main` usando un merge con ambos padres tras comprobar que no existían archivos exclusivos de `demo` ausentes en `main`.
+- PR #74 se cerró como implementación sustituida. El snapshot coordinado balances+posiciones sigue pendiente como requisito, no se descarta.
+
+## Siguiente fase — primer adaptador read-only de posiciones
+
+Implementar un adaptador concreto solo cuando el endpoint del proveedor permita obtener posiciones con cobertura verificable. Exigir scopes mínimos read-only, identidad de cuenta/entorno/mercado, timestamp del proveedor, normalización decimal y pruebas de respuestas vacías/completas/parciales. No inferir posiciones desde balances y no añadir métodos de trading, transferencias o firma.
+
 ## Objetivo de producto
 
 Construir una plataforma algorítmica multiactivo y multi-venue, preparada para capital real y extensible a los instrumentos accesibles mediante los proveedores conectados. El universo objetivo no se limita a crypto spot ni a EUR: incluye crypto CEX/DEX, acciones, ETF, FX, futuros, opciones, bonos, materias primas y otros instrumentos cuando existan adaptador, elegibilidad, datos, contabilidad y perfil de riesgo adecuados.

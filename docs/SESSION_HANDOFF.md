@@ -2,8 +2,8 @@
 
 > **Última revisión del repositorio:** 2026-11-11 Europe/Madrid
 > **Rama base revisada:** `main`
-> **Último commit integrado en `main`:** `e37b9ee2ddc462db00e5ba6145eb0a92cca6fd6c` — PR #96.
-> **Rama `demo`:** `bd34ff5114dd952b5d58fb8c93c470387f4eeaba`, con PR #91–#93 integradas.
+> **Último commit integrado en `main`:** `66914385d5ae6802bfa6e06b84ced971a100e254` — PR #100.
+> **Rama `demo`:** `34b589be83b4e35125182b511d249faf565314d7`, sincronizada con `main` mediante PR #101.
 > **Estado de ejecución:** paper trading únicamente; Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
 ## Estado actual — 11 de noviembre de 2026
@@ -11,16 +11,16 @@
 - PR #78 fusionada: contratos normalizados de órdenes y fills.
 - PR #79 fusionada: ledger SQLite append-only de órdenes y ejecuciones individuales, idempotencia, aislamiento por cuenta/entorno/mercado y cobertura explícita.
 - PR #80 fusionada: historial de fills con completitud explícita y reconciliación read-only de órdenes conocidas; no envía, cancela ni reintenta órdenes.
-- PR #77 en revisión: monitor paper de stop-loss/take-profit para acciones/ETF USD de Twelve Data. Fusionada en `0c5c9b402557af49746e8f0d37f23eab4a4a2681`; CI exacto: 524 tests passed y Docker hardening passed. El monitor exige instrumento, cotización, FX y sesión válidos; mantiene los datos de procedencia y el dashboard de estrategias.
-- En `demo`, PR #91 endurece salidas paper y PR #92–#93 incorporan snapshots externos append-only e integración API. Los adaptadores existentes aún declaran `positions=false`; no hay captura real habilitada en esos conectores.
-- PR #96 fusionada: lectura de posiciones con scope market_type, soporte position-only y coverage_status=unknown para el contrato legacy. PR #74 cerrada como implementación sustituida; el requisito de snapshot combinado balances/posiciones queda diferido en roadmap. PR #97 de sync masiva main→demo cerrada sin merge por conflictos de interfaces; ambas ramas permanecen intactas.
-
-- PR #100 fusiona en `main` las mejoras de trazabilidad experimental y diagnósticos de Chief procedentes de #89/#91: estado legacy explícito, evidencia de decisiones hold y salida por estrategia solo ante señal booleana False explícita; Risk Manager sigue obligatorio.
+- PR #77 fusionada: monitor paper de stop-loss/take-profit para acciones/ETF USD de Twelve Data; 524 tests passed y Docker hardening passed.
+- PR #99 fusionada: ledger append-only de snapshots externos de posiciones, con cobertura complete/partial, aislamiento por cuenta/entorno/mercado y decimales exactos. No hay adaptador de producción con `positions=true` todavía.
+- PR #96 fusionada: lectura de posiciones con scope market_type, soporte position-only y coverage_status=unknown para el contrato legacy.
+- PR #100 fusionada: trazabilidad de estrategias experimentales, diagnósticos de Chief y salidas por estrategia solo ante señal booleana False explícita; Risk Manager sigue obligatorio.
+- PR #101 sincronizó `demo` con `main`; ambos árboles contienen las funcionalidades integradas. PR #74 se cerró como implementación sustituida y su requisito de snapshot combinado queda diferido. PR #97 se cerró sin merge porque su primer intento de sincronización tenía conflictos; #101 resolvió después la divergencia mediante un merge con ambos padres.
 - No se ha levantado ni reiniciado una demo local en esta sesión; no se han usado credenciales ni fondos reales.
 
 ## Siguiente acción
 
-PR #77 y #96 completadas. Siguiente: portar #92–#93 de demo a main mediante PRs específicos, preservando los contratos #78–#80 y el endpoint #96; después reconciliar #89/#91 con el worker/dashboard de main. Mantener paper-only y no habilitar live trading.
+PR #77–#80 y #96, #99–#101 completadas. Siguiente: implementar el primer adaptador real read-only de posiciones para un mercado concreto, con cobertura verificable, permisos mínimos, tests de identidad/frescura y sin métodos de escritura. Después ampliar por venue/asset class. Mantener paper-only y no habilitar live trading.
 
 ## Fase completada — Demo local paper (PR #75)
 
