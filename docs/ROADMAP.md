@@ -230,3 +230,18 @@ Cada fase debe incluir:
 5. Revisión de diferencias y actualización de documentación.
 
 No se fusionará código con CI fallida o con una protección financiera no probada.
+
+
+## Snapshot coordinado Alpaca cash — implementación en revisión
+
+- Rama `feat/coordinated-cash-account-snapshots`: añade un ledger coordinado separado para enlazar, en una única transacción SQLite, el snapshot financiero tipado de Alpaca Paper y el snapshot de posiciones `cash`. No reutiliza el ledger genérico Spot ni convierte `cash`, `equity` o `buying_power` en balances fungibles.
+- Incluye identidad proveedor/cuenta/entorno/mercado, cobertura, timestamps y skew máximo, idempotencia por request ID, referencias a los dos ledgers, hashes de contenido, append-only y rollback completo.
+- Endpoint autenticado: `POST /api/accounts/alpaca/financial-metrics/snapshots/coordinated?request_id=...`. Sigue siendo read-only y no importa datos a PaperPortfolio, Chief o Risk Manager.
+- Estado: implementación y tests añadidos; pendiente CI, revisión de diff y merge. No afirmar pruebas superadas hasta completar CI.
+
+## Política de ramas
+
+- `main` es la única fuente de verdad.
+- `demo` debe apuntar exactamente al mismo commit que `main`, no solo compartir archivos o tener un merge-base común.
+- Flujo obligatorio: rama de trabajo → PR revisada/CI verde → merge a `main` → sincronización exacta de `demo` desde `main` → verificación de igualdad de SHA.
+- El historial divergente previo de `demo` se conserva en `archive/demo-before-main-sync-2026-11-11`; no se incorpora a `main` salvo selección explícita de cambios necesarios.
