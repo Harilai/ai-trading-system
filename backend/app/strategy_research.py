@@ -141,6 +141,29 @@ def _candle_data_quality(candles: Sequence[dict]) -> dict:
     }
 
 
+_VALIDATION_FAILURE_CATEGORIES = {
+    "insufficient_oos_trades": "sample",
+    "incomplete_walk_forward_windows": "sample",
+    "insufficient_walk_forward_history": "sample",
+    "insufficient_walk_forward_trades": "sample",
+    "non_positive_oos_return": "performance",
+    "insufficient_positive_walk_forward_windows": "performance",
+    "non_positive_walk_forward_mean": "performance",
+    "does_not_beat_buy_and_hold": "performance",
+    "oos_drawdown_exceeded": "risk",
+    "walk_forward_drawdown_exceeded": "risk",
+    "fails_1_5x_cost_stress": "cost",
+}
+
+
+def _categorize_validation_failures(failures: Sequence[str]) -> dict[str, list[str]]:
+    categories: dict[str, list[str]] = {}
+    for failure in failures:
+        category = _VALIDATION_FAILURE_CATEGORIES.get(failure, "other")
+        categories.setdefault(category, []).append(failure)
+    return categories
+
+
 class StrategyResearchAgent:
     """Compares simple long-only candidates using chronological out-of-sample tests."""
 
@@ -404,6 +427,23 @@ class StrategyResearchAgent:
             (int(len(normalized) * 0.6), int(len(normalized) * 0.8)),
             (int(len(normalized) * 0.8), len(normalized)),
         ]
+        walk_forward_evaluation_bars = [
+            max(0, end - start - 1)
+            for start, end in walk_forward_boundaries
+        ]
+        sample_adequacy = {
+            "status": (
+                "adequate_for_configured_walk_forward_gates"
+                if len(walk_forward_evaluation_bars) == 3
+                and all(value >= self.minimum_walk_forward_bars for value in walk_forward_evaluation_bars)
+                else "insufficient_for_configured_walk_forward_gates"
+            ),
+            "available_bars": len(normalized),
+            "minimum_research_bars": 120,
+            "out_of_sample_bars": len(normalized) - split,
+            "walk_forward_evaluation_bars": walk_forward_evaluation_bars,
+            "minimum_walk_forward_bars_per_window": self.minimum_walk_forward_bars,
+        }
         for strategy_id, description, signal, warmup in self._specs():
             in_sample = self._backtest(normalized, signal, warmup, warmup, split)
             out_sample = self._backtest(normalized, signal, warmup, split, len(normalized))
@@ -537,6 +577,9 @@ class StrategyResearchAgent:
                     "cost_sensitivity": cost_sensitivity,
                     "eligible": eligible,
                     "validation_failures": validation_failures,
+                    "validation_failure_categories": _categorize_validation_failures(validation_failures),
+                    "experimental_validation_failures": experimental_validation_failures,
+                    "experimental_validation_failure_categories": _categorize_validation_failures(experimental_validation_failures),
                     "score": score,
                     "experimental_eligible": experimental_eligible,
                     "experimental_validation_failures": experimental_validation_failures,
@@ -565,14 +608,20 @@ class StrategyResearchAgent:
                 "must_beat_buy_and_hold": True,
                 "must_remain_profitable_and_beat_buy_and_hold_at_1_5x_costs": True,
             },
+            "status": "available",
             "market_regime": market_regime,
+            "sample_adequacy": sample_adequacy,
+            "failure_summary": {
+                category: sum(
+                    1 for item in results
+                    if item["validation_failure_categories"].get(category)
+                )
+                for category in ("sample", "performance", "risk", "cost", "other")
+            },
             "data_quality": {
                 **data_quality,
                 "out_of_sample_bars": len(normalized) - split,
-                "walk_forward_evaluation_bars": [
-                    max(0, end - start - 1)
-                    for start, end in walk_forward_boundaries
-                ],
+                "walk_forward_evaluation_bars": walk_forward_evaluation_bars,
             },
             "benchmark": {
                 "name": "buy_and_hold",
