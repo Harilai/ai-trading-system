@@ -19,12 +19,13 @@ Add to the server-side `.env` (never commit credentials):
 HISTORICAL_DATA_SYNC_ENABLED=true
 HISTORICAL_DATA_SYNC_TARGETS=ccxt:kraken,BTC/EUR,1h;ccxt:kraken,ETH/EUR,1h
 HISTORICAL_DATA_SYNC_INTERVAL_SECONDS=3600
+HISTORICAL_DATA_SYNC_RETRY_SECONDS=60
 HISTORICAL_DATA_SYNC_LOOKBACK_DAYS=365
 HISTORICAL_DATA_SYNC_PAGE_LIMIT=500
 HISTORICAL_DATA_SYNC_MAX_PAGES_PER_TARGET=10
 ```
 
-Each target is `provider_id,symbol,timeframe`; separate targets with semicolons. Only explicitly listed targets are synchronized. CCXT validates the timeframe and its exchange-specific rate limiter remains enabled. Requests run sequentially, with a bounded page count per target per cycle. The durable cursor means a long initial backfill continues in later cycles instead of starting over.
+Each target is `provider_id,symbol,timeframe`; separate targets with semicolons. Only explicitly listed targets are synchronized. CCXT validates the timeframe and its exchange-specific rate limiter remains enabled. Requests run sequentially, with a bounded page count per target per cycle. A backfill in progress retries after the configured retry interval (60 seconds by default); once caught up, the normal sync interval applies. The durable cursor means a long initial backfill continues in later cycles instead of starting over. Calendar-month timeframes such as `1M` are rejected because their variable duration is incompatible with fixed-interval cursor arithmetic.
 
 Start the isolated worker:
 
