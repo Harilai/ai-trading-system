@@ -741,7 +741,9 @@ class AccountProviderRegistry:
             permissions_verified=capabilities.permissions_verified,
             balances=tuple(sorted(balances, key=lambda item: item.asset)),
         ).to_dict()
-        for optional in ("demo_only", "coverage_status", "timestamp_source"):
+        if "demo_only" in raw:
+            snapshot["demo_only"] = bool(raw["demo_only"])
+        for optional in ("coverage_status", "timestamp_source"):
             if optional in raw:
                 snapshot[optional] = raw[optional]
         return snapshot
