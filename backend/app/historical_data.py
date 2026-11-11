@@ -282,7 +282,10 @@ class HistoricalQuoteStore:
             or timestamp_ms <= 0
         ):
             raise HistoricalDataError("Quote timestamp_ms must be a positive integer")
-        if timestamp_source not in {"exchange", "retrieved_at"}:
+        if (
+            not isinstance(timestamp_source, str)
+            or timestamp_source not in {"exchange", "retrieved_at"}
+        ):
             raise HistoricalDataError("Quote timestamp_source is unsupported")
         if not isinstance(source, str) or not source.strip():
             raise HistoricalDataError("Quote source is required")
