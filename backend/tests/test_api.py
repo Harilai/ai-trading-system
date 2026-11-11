@@ -2183,3 +2183,33 @@ def test_execution_preflight_endpoint_returns_scoped_paper_readiness(monkeypatch
     assert response.status_code == 200
     assert response.json()["status"] == "ready"
     assert response.json()["scope"]["environment"] == "paper"
+
+
+
+def test_manual_buy_is_blocked_when_account_preflight_is_not_ready(monkeypatch):
+    headers = configure_order_auth(monkeypatch)
+    monkeypatch.setattr(
+        "app.main.paper_account_readiness.evaluate",
+        lambda **kwargs: {
+            "status": "blocked",
+            "blockers": ["unresolved_paper_order_intents"],
+        },
+    )
+    monkeypatch.setattr(
+        "app.main.market.ticker",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("market quote must not be requested")),
+    )
+
+    response = client.post(
+        "/api/orders",
+        json={
+            "symbol": "BTC/EUR",
+            "side": "buy",
+            "quantity": 0.001,
+            "stop_loss": 9800,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 503
+    assert "preflight" in response.json()["detail"]["message"].lower()
