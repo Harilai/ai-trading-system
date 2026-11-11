@@ -2,19 +2,19 @@
 
 > Continuity between ChatGPT sessions: read [`docs/SESSION_HANDOFF.md`](SESSION_HANDOFF.md) for project state and [`docs/AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) for the mandatory multi-agent development method.
 
-Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
+Actualizado: 2026-11-11. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
 ## Completado — promoción de snapshots y reconciliación de ramas (#99–#106)
 
 - PR #99 porta a `main` el ledger append-only de posiciones externas y sus endpoints autenticados. Requiere cobertura `complete/partial`, scope `market_type` en cuentas multi-market y proveedor read-only; los conectores actuales aún no habilitan captura.
 - PR #100 porta la trazabilidad experimental y el endurecimiento de salidas de Chief desde `demo`, conservando el monitor equity paper de #77.
 - PR #101 sincroniza `demo` con `main` usando un merge con ambos padres tras comprobar que no existían archivos exclusivos de `demo` ausentes en `main`.
-- PR #103 incorpora el preflight Binance Demo read-only. PR #104 actualiza el handoff operativo. PR #106 sincroniza los cinco archivos restantes de `main` a `demo`; comparación de árboles posterior: 109 archivos y cero diferencias. PR #105 se cerró como intento amplio sustituido por conflictos.
+- PR #103 incorpora el preflight Binance Demo read-only. PR #104 actualiza el handoff operativo. PR #106 sincronizó `main` y `demo`; PR #110 incorporó el diagnóstico seguro de claves de balance Binance Demo en `demo`. Tras PR #110, ambos árboles tienen 109 archivos y los 109 blobs son idénticos. CI de PR #110 pasó en el SHA exacto `cbbd1510476a1ddb165aa70b3d027c0816ce9598` (Python tests y Docker build/runtime hardening). PR #105 se cerró como intento amplio sustituido por conflictos.
 - PR #74 se cerró como implementación sustituida. El snapshot coordinado balances+posiciones sigue pendiente como requisito, no se descarta.
 
-## Siguiente fase — primer adaptador read-only de posiciones
+## Siguiente fase — snapshot coordinado balances + posiciones
 
-Implementar un adaptador concreto solo cuando el endpoint del proveedor permita obtener posiciones con cobertura verificable. Exigir scopes mínimos read-only, identidad de cuenta/entorno/mercado, timestamp del proveedor, normalización decimal y pruebas de respuestas vacías/completas/parciales. No inferir posiciones desde balances y no añadir métodos de trading, transferencias o firma.
+El diseño está documentado en [`COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md`](COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md). Los ledgers de balances y posiciones ya existen por separado; falta un `capture_id` común, cobertura explícita para ambos lados, validación de skew temporal y persistencia atómica en una sola transacción sin duplicar registros. Antes de habilitar captura real debe existir un proveedor concreto que exponga ambas lecturas con scope y cobertura verificables. Los conectores Spot actuales no cumplen ese requisito; no inventar posiciones a partir de balances o fills.
 
 ## Objetivo de producto
 
@@ -48,11 +48,6 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 19. **Completado en PR #75 — demo local paper:** Compose aislado con 10.000 EUR virtuales, datos públicos Kraken, clave Twelve Data opcional solo para cotizaciones, sin credenciales de cuenta ni ruta de ejecución. CI: 460 tests Python y validación/build Docker correctos en el SHA `7abd5f527612d0c593e93d8a94852cc29d0a72d8`.
 20. Supervisión paper equity y operación 24/7: monitor stop/take equity integrado en paper; VPS real, proveedor de backups externo y drills de restauración siguen pendientes.
 21. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario. Sigue fuera del alcance de esta fase.
-
-
-22. **En curso — ledger común de órdenes y fills (PR #79 listo para revisión, apilado sobre PR #78):** SQLite con observaciones append-only, deduplicación de fills, aislamiento por cuenta/entorno/mercado, cobertura explícita y transacciones fail-closed. No conecta proveedores ni envía órdenes.
-
-23. **En curso — cobertura explícita e ingestión read-only de órdenes (PR #80, apilado sobre #79):** `AccountFillHistory` declara ámbito, timestamp y completitud; el servicio actualiza una orden conocida y persiste fills verificados. No añade adaptadores, scheduler ni envío de órdenes.
 
 ## Completado — trazabilidad experimental paper y salidas seguras de Chief (#100)
 
