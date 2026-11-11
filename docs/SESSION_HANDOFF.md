@@ -347,7 +347,7 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 - Store `HistoricalQuoteStore` para bid/ask públicos con identidad de proveedor/instrumento, provenance de timestamp y timestamp local de recepción; incluye migración para snapshots anteriores.
 - Scout captura solo quotes validados. Si falta bid/ask no crea spread sintético.
 - Strategy Research aplica spread observado como medio spread por lado en el siguiente fill de apertura/cierre, solo si el snapshot ya se había recibido antes del fill y está dentro del límite de edad. Se ha añadido prueba específica contra look-ahead por hora de recepción.
-- El gate de costes exige cobertura completa de spread observado en las ejecuciones evaluadas. Esto es deliberadamente conservador; las ventanas históricas anteriores a la captura de quotes no podrán pasar este gate.
+- La cobertura de spread observado se calcula por OOS y walk-forward, pero permanece como diagnóstico de completitud del modelo de costes. No se añade un nuevo promotion gate en este bloque; los criterios existentes permanecen intactos.
 - Fee y slippage permanecen como supuestos configurados; no equivalen a tarifas personalizadas de cuenta.
 - CI del PR pendiente; no declarar integrado hasta pasar Python tests y Docker build/runtime hardening en el head exacto.
 - Siguiente: revisar cobertura de quotes y el dashboard; después, comisiones por instrumento/proveedor y slippage/liquidez, sin relajar gates.
