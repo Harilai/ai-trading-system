@@ -442,22 +442,24 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - PR #155 mergeada; no quedan PR abiertas. `demo` se avanzó por fast-forward al mismo SHA que `main`; compare verificado como identical.
 - No se consultaron credenciales privadas ni se ejecutaron órdenes. LIVE permanece deshabilitado.
 
-### Siguiente prioridad
+### Siguiente prioridad tras PR #156
 
-1. Modelar costes de ejecución observables: fees del instrumento/proveedor, spread bid-ask y slippage; identificar claramente cuándo solo existe una estimación.
-2. Evitar look-ahead: al backtest solo se aplican cotizaciones/spreads disponibles en el timestamp de decisión.
-3. Medir sensibilidad de resultados a spread, fees y slippage; mantener los promotion gates actuales.
-4. Añadir holdouts temporales independientes y control de selección múltiple antes de ampliar el catálogo de estrategias.
-5. No atribuir límites/cadencias crypto 24/7 a acciones, ETF o FX; exigir contratos de venue/sesión antes de incorporar esos mercados a investigación.
+1. Validar que la cobertura de quotes crece en scans reales de investigación y que el histórico cubre progresivamente los periodos OOS/walk-forward.
+2. Implementar comisiones maker/taker por instrumento y proveedor, incluyendo moneda de comisión y tiers solo cuando el proveedor los exponga.
+3. Mejorar slippage, liquidez e impacto con datos observables; no inferir profundidad de mercado a partir de OHLCV.
+4. Añadir holdouts temporales independientes, control de selección múltiple y comparación con benchmarks antes de ampliar estrategias.
+5. Mantener separados los calendarios/capacidades por venue; no aplicar crypto 24/7 a acciones, ETF o FX.
 
 
 
-## En desarrollo — costes con spread observado y timestamps (2026-11-11)
+## Completado — spread observado y cobertura de costes (PR #156)
 
-- Rama `feat/research-observed-spread-costs`; PR pendiente de CI/revisión.
-- Store separado `HistoricalQuoteStore` captura bid/ask públicos validados por proveedor/instrumento, conserva timestamp de exchange y timestamp local de recepción, y rechaza snapshots conflictivos.
-- Scout registra snapshots disponibles y entrega el histórico al evaluador. Los datos faltantes no se convierten en spread cero.
-- Strategy Research aplica medio spread por lado únicamente cuando el snapshot fue recibido antes del fill simulado y sigue dentro de la edad máxima. La promoción exige cobertura completa en OOS y todas las ventanas walk-forward mediante un gate aditivo; los umbrales existentes de rendimiento, riesgo, trades y estrés permanecen intactos.
-- Fees y slippage siguen siendo supuestos configurados independientes; no se afirma que reflejen el tier real de la cuenta.
-- Los quotes históricos no se pueden reconstruir desde OHLCV; la cobertura se acumula hacia delante. Los periodos previos sin snapshots quedan explícitamente incompletos.
-- Pendiente tras integración: validar la acumulación real de cobertura de quotes, incorporar comisiones maker/taker por instrumento/proveedor y modelar liquidez/impacto sin look-ahead. Después, ampliar holdouts independientes y controles de selección múltiple antes de añadir nuevas estrategias.
+- PR #156 integrada por squash en `main`; merge SHA `82b95f2b72bb1f191deb61490b160f469174ca99`. `demo` sincronizada por fast-forward y verificada idéntica a `main`.
+- `HistoricalQuoteStore` conserva snapshots públicos bid/ask append-only, por proveedor/instrumento, con valores decimales, timestamp del proveedor y timestamp local de recepción. Incluye migraciones fail-closed para metadatos de recepción inválidos y admite snapshots repetidos con el mismo timestamp de evento cuando su recepción es distinta.
+- Scout registra solo cotizaciones validadas y exige identidad explícita de proveedor/instrumento. Bid/ask ausentes o inválidos no se sustituyen por last ni producen spread cero.
+- Backtesting aplica medio spread observado en entrada y salida, separado de fees y slippage. Usa snapshots recibidos antes de la ejecución y limita su frescura por tiempo de recepción; cada ventana walk-forward liquida en su propio instante, evitando look-ahead entre ventanas.
+- La promoción exige cobertura completa de spread observado en OOS y en cada ventana walk-forward. Es un gate aditivo; los umbrales existentes de rentabilidad, drawdown, operaciones y estrés 1.5x no se relajan.
+- Dashboard muestra cobertura OOS/walk-forward, ejecuciones sin cotización y spread medio. Runbook documenta procedencia, ventana de frescura y la aproximación OHLCV→mid.
+- Fees y slippage continúan como supuestos configurados; no equivalen a las tarifas/tier reales de una cuenta. Los quotes históricos no se pueden reconstruir desde OHLCV: la cobertura se acumula desde la activación del escaneo.
+- CI del head PR `6b400d4da500ffd74ce9106e0fcf8b34a7dda1e0`: 811 tests Python passed, 1 warning; Docker build/runtime hardening passed (run `43084727897`). CI post-merge `main` run `43084918192`: ambos jobs success, 811 tests passed, 1 warning.
+- No se ejecutaron tests locales ni validación operativa contra un exchange real. No se usaron credenciales privadas ni se ejecutaron órdenes. LIVE permanece deshabilitado.
