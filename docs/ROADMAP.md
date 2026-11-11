@@ -18,13 +18,13 @@ El diseño está documentado en [`COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md`](COORD
 
 
 
-## Adaptador Alpaca Paper read-only — implementación en curso
+## Adaptador Alpaca Paper read-only — integrado en main y demo (PR #118 / #120)
 
-- Implementado en la rama `feat/alpaca-paper-readonly-positions`: proveedor aislado de posiciones abiertas con host Paper fijo, GET a `/v2/account` y `/v2/positions`, verificación obligatoria del account ID esperado y normalización decimal estricta.
+- PR #118 fusionada en `main` (merge SHA `d42b9fada02d60d7073bbc76171bd69c31a9e8a3`) y PR #120 sincronizada a `demo` (merge SHA `23fa997a878da7fe7ba7735b2baa80f035f7a8d7`). Proveedor aislado de posiciones abiertas con host Paper fijo, GET a `/v2/account` y `/v2/positions`, verificación obligatoria del account ID esperado y normalización decimal estricta.
 - El conector solo declara `positions=true`, `market_types=[cash]`, `balances=false` y todas las capacidades de escritura en false. No se integra con cartera paper, Chief, Risk Manager, snapshot coordinado ni ejecución.
 - Solo acepta `us_equity`, normalizado como `equity`; no adivina si un activo es ETF. Usa `asset_id` como identidad primaria y retrieval timestamp local. Una lista vacía es completa únicamente tras validar cuenta y endpoint.
 - Activación opt-in: `ALPACA_PAPER_ENABLED=false`; requiere key, secret y `ALPACA_PAPER_EXPECTED_ACCOUNT_ID`. Sin ID esperado no se registra.
-- CI y revisión del PR pendientes. No se ha validado contra una cuenta Alpaca real ni se han usado credenciales.
+- CI del head exacto de PR #118: 609 tests Python passed; Docker build/runtime hardening passed. CI de sincronización #120 también pasó. No se ha validado contra una cuenta Alpaca real ni se han usado credenciales.
 - Siguiente trabajo separado: diseñar lectura de cuenta/balance con semántica contable explícita; no mapear buying power/equity a cash. Solo después considerar extender el snapshot coordinado de `spot` a `cash`/equity mediante migración y pruebas.
 
 ## Objetivo de producto
