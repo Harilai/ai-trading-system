@@ -27,6 +27,17 @@ El diseño está documentado en [`COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md`](COORD
 - CI del head exacto de PR #118: 609 tests Python passed; Docker build/runtime hardening passed. CI de sincronización #120 también pasó. No se ha validado contra una cuenta Alpaca real ni se han usado credenciales.
 - PR #123 fusionada en `main` (merge SHA `05870aa8c3f10b75a8d1bf46dd4856df1a3575ae`) y PR #124 sincronizada a `demo` (merge SHA `6445726293db4fd408bfa046b1b4d746bbeabc3e`). ADR `docs/ALPACA_ACCOUNT_FINANCIAL_SEMANTICS_ADR.md` define el modelo tipado para cash, equity, buying power, margen, valoración, transferencias pendientes y fees. La lectura de `/v2/account` no se declara como `AccountBalance`; no se activa `balances=true` ni se extiende aún el snapshot coordinado. CI de #123 y #124: Python tests y Docker build/runtime hardening pasaron.
 
+## Ledger financiero Alpaca Paper — implementación en curso
+
+Rama `feat/alpaca-financial-metrics-ledger` (pendiente de CI y revisión):
+- Lector de `GET /v2/account` de una sola llamada, con host Paper fijo, verificación del account ID esperado, currency y estado ACTIVE.
+- Contrato financiero tipado separado de `AccountBalance(free/used/total)`; cash, equity y buying_power nunca se intercambian.
+- Ledger SQLite append-only con request_id idempotente, hash de contenido, identidad de cuenta, environment Paper, currency, flags, timestamp y schema version.
+- Endpoints autenticados de captura e historial. Sin órdenes, cambios en cartera, Risk Manager, Chief, transferencias o retiradas.
+- Métricas opcionales ausentes se guardan como null; core completeness requiere cash, equity y buying_power. La CI aún debe validar la implementación.
+
+Siguiente: CI y revisión de esta fase; después extender el snapshot coordinado a mercado cash mediante transacción atómica que enlace el ledger financiero con el ledger de posiciones, manteniendo aislamiento y semántica contable.
+
 ## Objetivo de producto
 
 Construir una plataforma algorítmica multiactivo y multi-venue, preparada para capital real y extensible a los instrumentos accesibles mediante los proveedores conectados. El universo objetivo no se limita a crypto spot ni a EUR: incluye crypto CEX/DEX, acciones, ETF, FX, futuros, opciones, bonos, materias primas y otros instrumentos cuando existan adaptador, elegibilidad, datos, contabilidad y perfil de riesgo adecuados.
