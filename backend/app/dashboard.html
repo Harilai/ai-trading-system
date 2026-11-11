@@ -359,7 +359,7 @@
           if(categorySummary.length)node.appendChild(dataItem("Tipo de bloqueo",categorySummary.join(" · "),"Diagnóstico de validación","state-warn"));
           const sample=result.sample_adequacy||{};
           if(sample.available_bars!==undefined)
-            node.appendChild(dataItem("Suficiencia de muestra",String(sample.available_bars)+" velas disponibles",(sample.walk_forward_evaluation_bars||[]).join(" / ")+" velas por ventana · mínimo "+String(sample.minimum_walk_forward_bars_per_window??"—"),sample.status==="adequate_for_configured_walk_forward_gates"?"state-good":"state-warn"));
+            node.appendChild(dataItem("Cobertura walk-forward",String(sample.available_bars)+" velas disponibles",(sample.walk_forward_evaluation_bars||[]).join(" / ")+" velas por ventana · mínimo "+String(sample.minimum_walk_forward_bars_per_window??"—")+" · no demuestra robustez estadística",sample.status==="adequate_for_configured_walk_forward_gates"?"state-good":"state-warn"));
           if(result.history_source)
             node.appendChild(dataItem("Origen del histórico",String(result.history_source),String(result.history_bars??"—")+" velas usadas · "+String(result.persisted_finalized_bars_available??0)+" persistidas finalizadas"));
           const experimentalFailures=(result.experimental_validation_failures||[]).slice(0,3);
