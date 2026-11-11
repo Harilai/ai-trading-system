@@ -40,8 +40,9 @@ def test_binance_demo_wrapper_requires_explicit_account_scope():
 
 def test_binance_demo_wrapper_rejects_non_demo_or_production_capability():
     account = make_binance_demo_account()
+    original_description = account.describe()
     account.describe = lambda: {
-        **account.describe(),
+        **original_description,
         "environment": "live",
         "demo_only": False,
         "production_endpoint_allowed": True,
@@ -51,7 +52,7 @@ def test_binance_demo_wrapper_rejects_non_demo_or_production_capability():
 
 
 def test_binance_demo_wrapper_scopes_balance_snapshot_and_does_not_infer_positions():
-    account = FakeBinanceDemo()
+    account = make_binance_demo_account()
     adapter = BinanceSpotDemoScopedAdapter(account, account_id="binance-demo-account")
     snapshot = adapter.fetch_snapshot()
     assert snapshot.scope.environment is ExecutionEnvironment.DEMO
