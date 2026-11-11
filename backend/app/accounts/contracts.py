@@ -910,8 +910,8 @@ class AccountProviderRegistry:
         )
         if balances["market_type"] != positions["market_type"]:
             raise AccountProviderError("Balance and position market scopes do not match")
-        balances["timestamp_source"] = balances.get("timestamp_source", "provider")
-        positions["timestamp_source"] = positions.get("timestamp_source", "provider")
+        balances["timestamp_source"] = balances.get("timestamp_source", "retrieved_at")
+        positions["timestamp_source"] = positions.get("timestamp_source", "retrieved_at")
         return balances, positions
 
     def record_read_only_snapshot(
