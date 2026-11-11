@@ -382,16 +382,16 @@
             node.appendChild(dataItem("Riesgo por vela","Sharpe "+metricNumber(oos.sharpe_per_bar)+" · Sortino "+metricNumber(oos.sortino_per_bar),"Volatilidad "+metricPercent(oos.return_volatility_per_bar)+" · ratios no anualizados"));
             if(oos.spread_execution_count!==undefined){
               const spreadCoverage=result.spread_coverage||{};
-              const spreadState=result.spread_coverage_complete_for_promotion===true;
               const oosState=oos.spread_coverage_complete===true;
               const walkForwardState=result.walk_forward_spread_coverage_complete===true;
+              const spreadState=oosState&&walkForwardState;
               node.appendChild(dataItem(
                 "Cobertura de spread observado",
                 String(oos.spread_observed_execution_count??0)+"/"+String(oos.spread_execution_count??0)+" ejecuciones OOS con bid/ask válidos",
                 "OOS "+(oosState?"completo":"incompleto")+" · Walk-forward "+(walkForwardState?"completo":"incompleto")
                   +" · spread medio "+metricPercent(oos.average_observed_spread_fraction)
                   +" · snapshots "+String(spreadCoverage.observations??0)
-                  +" · "+(spreadState?"gate de spread superado":"promoción bloqueada"),
+                  +" · "+(spreadState?"cobertura observada completa":"coste de spread incompleto; interpretar con cautela"),
                 spreadState?"state-good":"state-warn"
               ));
             } else {
