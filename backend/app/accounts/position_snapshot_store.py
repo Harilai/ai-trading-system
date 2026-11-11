@@ -291,7 +291,6 @@ class PositionSnapshotStore:
                 for item in positions
             ],
         )
-    return self.get_snapshot(snapshot_id)
         return snapshot_id
 
     def record_snapshot(self, snapshot: dict) -> dict:
