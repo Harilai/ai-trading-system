@@ -97,3 +97,24 @@ def test_risk_reducing_sell_does_not_require_entry_preflight(tmp_path):
 
     assert result["status"] == "not_required"
     assert result["blockers"] == []
+
+
+
+def test_preflight_rejects_negative_or_inconsistent_cash_balance(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    _, adapter, service = make_service(tmp_path)
+    original = adapter.fetch_snapshot
+
+    def invalid_snapshot():
+        snapshot = original()
+        first = snapshot.balances[0]
+        invalid = replace(first, free="-1", used="0", total="-1")
+        return replace(snapshot, balances=(invalid, *snapshot.balances[1:]))
+
+    monkeypatch.setattr(adapter, "fetch_snapshot", invalid_snapshot)
+
+    result = service.evaluate(side="buy")
+
+    assert result["status"] == "blocked"
+    assert "balance_values_inconsistent" in result["blockers"]
