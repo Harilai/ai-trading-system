@@ -194,38 +194,13 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - PR #132 fusionada en main.
 - `main` y `demo` sincronizadas y compare verificado como `identical` tras los commits documentales de esta sesión; actualizar el SHA exacto al inicio de la próxima conversación.
 
-## Continuidad actual — execution adapter registry v2 / PR #133
+## Estado actual — registry y adaptadores scoped (2026-11-11)
 
-- PR abierta: https://github.com/Harilai/ai-trading-system/pull/133
-- Rama: `feat/scoped-execution-registry-v2`; base `main`.
-- Implementado: contrato de scope completo provider/venue/account/environment/market_type; entornos MOCK/BACKTEST/PAPER/DEMO/TESTNET/LIVE separados; capabilities de ejecución y cuenta independientes; evidencia con fuente y timestamp timezone-aware; caducidad 24 h; fail-closed para unknown/missing/future/stale; mínimos de readiness inmutables: idempotency, partial fills, cancel, reconciliation, balances y positions.
-- API: GET `/api/execution/registrations`, autenticada con X-Agent-Token, inventario vacío por defecto. No se serializa el objeto adaptador.
-- Elegibilidad: la ruta de catálogo no puede conocer account_id/environment; por eso mantiene execution_adapter_configured=false. No afirmar instrumento ejecutable desde market data solamente.
-- Límites: Binance Demo sigue usando BinanceSpotDemoExecution y su ledger/Decimal/idempotency/reconciliation propios; Alpaca Paper sigue read-only; PAPER sigue siendo el motor interno PaperPortfolio. Ningún wrapper se ha conectado en esta PR. No hay órdenes nuevas ni LIVE.
-- Head anterior `348768e8943a373282b3966c4d49e3d3d11c5880`: CI Python y Docker build/Compose/runtime hardening verdes. Tras últimos cambios de validación y tests, consultar el head/checks más recientes de #133; no fusionar con CI pendiente o fallida.
-- Próximo bloque: integrar wrappers especializados uno por uno, verificar ID real de cuenta desde el proveedor, account readiness, balance/position freshness, desconexión, reconciliación incompleta y scope mismatch; usar mocks en tests; conectar elegibilidad al RiskManager/preflight sin bloquear reducciones/emergency stop. Después verificar main/demo idénticas.
-- Estado de ramas previo a merge: main y demo siguen en `4ea6f3525c7b6a2826b8025d5916714179ecbde6`; la rama PR se separa intencionadamente hasta superar revisión y CI.
-
-## Continuidad — PR #133 y bloque de adaptadores scoped (#134)
-
-- PR #133 sigue abierta, mergeable, CI verde en SHA `41ebc666132b8152f2b2c2c361e51036f3d8001e`. La conexión GitHub autenticada es el propietario `Harilai`; GitHub rechaza autoaprobación. No se ha usado bypass. `main` y `demo` siguen iguales en `4ea6f3525c7b6a2826b8025d5916714179ecbde6`.
-- PR #134 se desarrolla sobre `feat/scoped-account-adapters`, basada temporalmente en la rama de #133. Debe permanecer dependiente hasta integrar #133.
-- Implementado en #134: `BinanceSpotDemoScopedAdapter` y `PaperPortfolioScopedAdapter`, snapshots normalizados con scope, balances y posiciones.
-- Binance Demo: balance snapshot sí; posiciones UNKNOWN (no se convierte cada token en posición sin mapping/valuation); `account_identity_verified=false` porque account_id es alias local, no identificador remoto verificado.
-- PAPER: ledger interno, no broker externo; balances/positions del snapshot; el alias de cuenta es local y no verificado (`account_identity_verified=false`). Scope limitado a crypto Spot y fills market inmediatos. Partial fills y cancelación exchange UNSUPPORTED porque el fill actual es atómico. El gate de readiness rechaza ambos adaptadores actualmente; es intencional.
-- No se registran adaptadores automáticamente ni se conectan endpoints de ejecución. No se han enviado órdenes. LIVE permanece deshabilitado.
-- Validación de PR #134 pendiente de CI exacto; no afirmar tests superados hasta que GitHub Actions termine.
-- Siguiente fase: mapping de posiciones Spot + valoración/timestamp; diseño de perfil de capabilities PAPER sin falsear parcial fills; integración de snapshot freshness, account scope y reconciliation en preflight/RiskManager, preservando cierres/reducciones y emergency stop.
-
-
-## Delegación vigente de PR y estado actual — 2026-11-11
-
-**Esta sección prevalece sobre cualquier nota histórica anterior de este handoff.**
-
-- El propietario ha delegado completamente en el Engineering Lead la revisión técnica, decisión de aprobación, publicación y merge de PR rutinarias. No pedirle que revise, apruebe ni fusione.
-- Para cada PR, el Lead debe revisar el diff completo, diseñar/ejecutar pruebas apropiadas, inspeccionar seguridad y efectos financieros, comprobar CI del SHA exacto y fusionar cuando todos los gates pasen.
-- No enviar una review GitHub APPROVE desde la cuenta autora ni saltarse protecciones. Solo si GitHub exige una aprobación externa de otra cuenta se registrará ese bloqueo de plataforma; no se traslada la tarea de revisión al propietario.
-- PR #133 está **fusionada** en `main`: merge commit `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`.
-- PR #134 está abierta, con base `main` (ya no depende de una rama intermedia), head `a7e4b035a04bb3961697f9528865438e34db1511`, mergeable=true. CI run `43049679926` terminó success en ese head. No hay reviews GitHub registradas; la revisión técnica interna sigue siendo responsabilidad del Engineering Lead.
-- En la última consulta, `main` apunta a `ffe940be7b7d399b8ad4409b09adf9e26c8cb872` y `demo` a `4ea6f3525c7b6a2826b8025d5916714179ecbde6`: **no son idénticas**. Sincronizar `demo` tras completar la promoción de los cambios documentales/PR, y verificar igualdad exacta de SHA.
-- No se han enviado órdenes ni realizado acciones financieras. LIVE sigue deshabilitado.
+- PR #133 está fusionada en `main`; merge commit `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`.
+- PR #134 (`feat/scoped-account-adapters`) está abierta y apunta directamente a `main`. Head anterior a los últimos cambios de revisión: `a7e4b035a04bb3961697f9528865438e34db1511`; el head actual debe consultarse en GitHub.
+- PR #134 añade `BinanceSpotDemoScopedAdapter` y `PaperPortfolioScopedAdapter`, snapshots con scope explícito, balances y posiciones. Binance Spot balances no se convierten artificialmente en posiciones; positions sigue UNKNOWN. Los account_id son alias locales no verificados como identidad remota.
+- PAPER sigue limitado a crypto Spot y simulación market atómica; partial fills y cancelación de exchange permanecen UNSUPPORTED. Readiness falla cerrado. Los wrappers no están registrados automáticamente ni conectados a rutas de envío.
+- La revisión técnica completa, la decisión de aprobación y el merge rutinario corresponden al Engineering Lead. El propietario no revisa ni fusiona PR ordinarias.
+- CI run `43049679926` pasó en el head previo `a7e4b035a04bb3961697f9528865438e34db1511`; cualquier cambio posterior exige CI verde en el SHA actualizado.
+- Última comparación: `main` = `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`; `demo` = `4ea6f3525c7b6a2826b8025d5916714179ecbde6`. Sincronizar demo después de integrar el bloque y verificar igualdad de SHA.
+- No se han enviado órdenes ni realizado acciones financieras. LIVE permanece deshabilitado.
