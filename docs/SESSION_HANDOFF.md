@@ -3,7 +3,7 @@
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
 > **Último cambio de código integrado:** PR #109 en `main`; sincronización de ramas PR #110.
-> **`main`:** `cbbd1510476a1ddb165aa70b3d027c0816ce9598`
+> **`main`:** `828abdd8597d3b6eec6733b5c167cd0bfef6bbbf`
 > **`demo`:** `7cc1f0e73f54e09e0f911ab5314db1d65bd1ce3b`
 > **Árboles:** idénticos, 109 archivos y 109 blob SHAs coincidentes.
 > **Operación:** paper trading y Binance Spot Demo aislado; live trading no implementado ni habilitado.
@@ -25,11 +25,11 @@
 - No ejecutar el drill de órdenes hasta que el preflight pase. El smoke test de órdenes Demo requiere autorización explícita del propietario y debe usar exclusivamente el host Demo; no se debe cambiar a producción.
 - Ningún test de CI sustituye la validación operativa contra la cuenta Demo real.
 
-## Snapshot coordinado — implementado en PR #113, pendiente de merge
+## Snapshot coordinado — implementado e integrado en PR #113
 
 La implementación está en `docs/COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md` y `backend/app/accounts/coordinated_snapshot_store.py`. Los stores de balances y posiciones ahora admiten inserts dentro de una transacción compartida. El coordinador crea referencias a ambos registros y el grupo en una sola transacción SQLite, sin duplicar los datos. También se añadió aislamiento de balance snapshots por entorno con migración legacy a `production`, idempotencia por request ID y API autenticada.
 
-CI sobre el SHA exacto `61f3240c3afc3fce3c1cf75597a850e45fd50a78`: 581 tests passed, 1 warning; Docker build/runtime hardening pasó, incluida validación Compose y ejecución non-root. No se ejecutó test local en el entorno del propietario.
+CI sobre el head exacto `800f8fd63d87fb8f1c6e2ed5c5bc12adb926b0b0`: 581 tests passed, 1 warning; Docker build/runtime hardening pasó, incluida validación Compose y ejecución non-root. PR #114 sincronizó la implementación a `demo`; los árboles `main` y `demo` vuelven a ser idénticos (112 archivos). No se ejecutó test local en el entorno del propietario.
 
 La implementación exige:
 - identidad común proveedor/cuenta/entorno/mercado y `capture_id`;
