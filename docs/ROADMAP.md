@@ -263,7 +263,7 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - Integrado mediante squash en `98760e46740556144478623929ed233f7e7402bd`. CI de PR #130: 645 tests Python pasaron (1 warning); Docker build/runtime hardening pasó. CI post-merge de `main` también pasó. Descubrimiento únicamente; no habilita negociación.
 
 
-## Elegibilidad de instrumentos — evaluación conservadora (en revisión)
+## Elegibilidad de instrumentos — evaluación conservadora (integrado, PR #131)
 
 - Nuevo evaluador read-only: separa disponibilidad de datos de capacidad real de ejecución.
 - Estados: supported, unsupported, not_configured y unknown; faltan metadatos críticos se informan explícitamente.
@@ -271,4 +271,5 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - Se comprueban estado activo, base/quote, precisión, mínimos, fees, zona horaria de sesión y vencimiento/strike/tipo/underlying/contrato cuando aplican.
 - Endpoint: GET /api/instruments/{catalogue_id}/eligibility.
 - La API no registra ni presume adaptadores de ejecución: el resultado supported solo es posible cuando se acredita el adaptador y todos los controles. El endpoint actual pasa execution_adapter_configured=false.
+- Integrado mediante squash en `9c0bca72e13ecd2edb8b2ff0649a42b0458c6940`. CI exacta PR #131: 655 tests Python passed (1 warning), Docker build/runtime hardening passed. CI post-merge pendiente.
 - No envía órdenes, no cambia RiskManager y no habilita PAPER/DEMO/LIVE.
