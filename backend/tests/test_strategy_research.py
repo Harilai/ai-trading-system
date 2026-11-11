@@ -663,3 +663,19 @@ def test_walk_forward_liquidation_cannot_borrow_quotes_from_later_windows():
     assert result["spread_observed_execution_count"] == 1
     assert result["spread_missing_execution_count"] == 1
     assert result["spread_coverage_complete"] is False
+
+
+def test_research_rejects_quote_event_timestamp_ahead_of_local_receipt():
+    rows = candles_from_closes([100.0 + index * 0.01 for index in range(120)])
+    with pytest.raises(ValueError, match="ahead of its receipt"):
+        StrategyResearchAgent().research(
+            rows,
+            quote_snapshots=[{
+                "timestamp_ms": rows[0]["timestamp"] + 60_000,
+                "retrieved_at_ms": rows[0]["timestamp"],
+                "bid": 99.0,
+                "ask": 101.0,
+                "timestamp_source": "exchange",
+                "source": "test",
+            }],
+        )
