@@ -135,11 +135,15 @@ class HistoricalCandleStore:
                     inserted += 1
                     continue
                 old_values = tuple(existing[k] for k in ("open", "high", "low", "close", "volume"))
-                if existing["is_final"] and old_values != values:
-                    raise HistoricalDataConflict(
-                        f"Conflicting finalized candle at {candle['timestamp']}"
-                    )
-                if old_values == values and bool(existing["is_final"]) == is_final:
+                if existing["is_final"]:
+                    if old_values != values:
+                        raise HistoricalDataConflict(
+                            f"Conflicting finalized candle at {candle['timestamp']}"
+                        )
+                    # A stale or backfilled response must never demote a final candle.
+                    unchanged += 1
+                    continue
+                if old_values == values and not is_final:
                     unchanged += 1
                     continue
                 db.execute(
@@ -228,6 +232,8 @@ class PaginatedCandleCollector:
                 raise HistoricalDataError("Provider returned duplicate or non-increasing candle timestamps")
             page = [row for row in page if cursor <= row["timestamp"] < until_ms]
             if not page:
+                if any(row["timestamp"] >= until_ms for row in rows):
+                    cursor = until_ms
                 break
             result = self.store.upsert(
                 provider_id, instrument_id, symbol, timeframe, page,
