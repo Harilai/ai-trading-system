@@ -170,7 +170,6 @@ def test_registration_timestamp_is_timezone_aware():
 
 
 def test_capability_evidence_without_verification_time_is_not_usable():
-    unchecked = evidence()
     unchecked = CapabilityEvidence(CapabilityState.SUPPORTED, "manual")
     assert capabilities(idempotent_client_order_id=unchecked).supports("idempotent_client_order_id") is False
 
