@@ -275,6 +275,7 @@ class HistoricalQuoteStore:
     def record(
         self, provider_id: str, instrument_id: str, symbol: str, timestamp_ms: int,
         bid, ask, *, timestamp_source: str, source: str = "public_ticker",
+        retrieved_at_ms: int | None = None,
     ) -> dict:
         HistoricalCandleStore._identity(provider_id, instrument_id, symbol, "quote")
         if (
@@ -294,8 +295,11 @@ class HistoricalQuoteStore:
         if Decimal(ask_value) < Decimal(bid_value):
             raise HistoricalDataError("Quote ask cannot be below bid")
         now_dt = datetime.now(timezone.utc)
+        now_ms = int(now_dt.timestamp() * 1000) if retrieved_at_ms is None else retrieved_at_ms
+        if isinstance(now_ms, bool) or not isinstance(now_ms, int) or now_ms <= 0:
+            raise HistoricalDataError("Quote retrieved_at_ms must be a positive integer")
+        now_dt = datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc)
         now = now_dt.isoformat()
-        now_ms = int(now_dt.timestamp() * 1000)
         key = (provider_id, instrument_id, timestamp_ms)
         with self.lock, self.connect() as db:
             existing = db.execute(
