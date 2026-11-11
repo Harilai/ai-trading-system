@@ -2,18 +2,22 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-> **Último cambio de código integrado:** PR #109 en `main`; sincronización de ramas PR #110.
-> **`main`:** `828abdd8597d3b6eec6733b5c167cd0bfef6bbbf`
-> **`demo`:** `7cc1f0e73f54e09e0f911ab5314db1d65bd1ce3b`
-> **Árboles:** idénticos, 109 archivos y 109 blob SHAs coincidentes.
+> **Último cambio integrado:** PR #113 (snapshot coordinado) en `main`, PR #114 y #115 sincronizadas a `demo`; último commit de documentación en `main`.
+> **`main`:** `c5481f03480dd9d74cfbffa7c1a1ec0494d44de1`
+> **`demo`:** `06e3d1cb56fde74e2a7b92b613355940d69bbbb6`
+> **Árboles:** idénticos en la última comparación, 112 archivos y 112 blob SHAs coincidentes.
+> **PR abiertas:** ninguna en la última consulta.
 > **Operación:** paper trading y Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
-## Trabajo cerrado en esta sesión
+## Integraciones recientes verificadas
 
-- PR #109 fusionada en `main`: diagnóstico seguro de asset keys inválidas en balances Binance Demo. El error muestra tipo y representación ASCII escapada/acotada de la clave, sin importes, credenciales ni payload completo.
-- PR #110 fusionada en `demo`: sincroniza el fix de #109. Se compararon los árboles recursivos completos antes de abrirla: 109 archivos en cada rama, sin rutas exclusivas y solo dos blobs distintos (`backend/app/accounts/binance_demo.py`, `backend/tests/test_binance_demo.py`). Tras merge, los árboles vuelven a ser idénticos.
-- CI de PR #110 pasó en el head exacto `cbbd1510476a1ddb165aa70b3d027c0816ce9598`: `Python tests` y `Docker build and runtime hardening` correctos, incluida validación Compose, build de imagen y ejecución non-root.
-- No hay PR abiertas tras integrar #110.
+- PR #109: diagnóstico seguro de claves de activo inválidas en Binance Demo.
+- PR #110: sincronización del fix a `demo`.
+- PR #113: snapshot coordinado balances+posiciones, persistencia atómica, idempotencia y API autenticada.
+- PR #114: sincronización de implementación a `demo`.
+- PR #115: sincronización de documentación a `demo`.
+- CI de PR #113: 581 tests passed, 1 warning; Docker/Compose/non-root correctos en el head exacto `800f8fd63d87fb8f1c6e2ed5c5bc12adb926b0b0`. CI de sincronización #114 y #115 también pasó en sus respectivos heads.
+- No hay PR abiertas en la última consulta del 2026-11-11. No se ejecutaron pruebas locales en este entorno.
 - Las funcionalidades #78–#80 (contratos de órdenes/fills, ledger y completitud/reconciliación read-only), #99 (ledger de posiciones) y #100 (diagnósticos experimentales y salidas seguras) están integradas en `main` y `demo`.
 - No se ha ejecutado un preflight posterior a #109 contra el contenedor Binance Demo local. El problema original de asset key sigue pendiente de confirmar con evidencia del contenedor del propietario.
 
@@ -52,6 +56,13 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - Una captura parcial/desconocida no permite concluir que una posición o activo haya desaparecido.
 - IA/Chief siempre detrás del Risk Manager.
 - Mantener idempotencia, exactitud decimal, append-only, aislamiento por cuenta/entorno/mercado y conciliación fail-closed.
+
+## Próxima prioridad técnica
+
+- Integrar un proveedor read-only de posiciones para acciones/ETF. Evaluación inicial: Alpaca Trading API ofrece `GET /v2/positions` en Paper y devuelve posiciones abiertas; una posición cerrada deja de aparecer. Esto es un candidato, no una integración aprobada ni probada.
+- Implementar primero un adaptador aislado con host Paper fijo, llamadas GET explícitas, identidad de cuenta, validación decimal y timestamps, cobertura documentada y tests de errores/respuestas vacías. No exponer métodos de escritura.
+- Investigar/implementar lectura de cuenta y balances con semántica correcta. No confundir buying power con efectivo y no habilitar snapshot coordinado hasta que ambos lados declaren cobertura verificable.
+- El store coordinado actualmente restringe `market_type=spot`; una integración equity requiere extender y migrar el modelo de forma explícita, sin relajar el guard.
 
 ## Continuidad
 
