@@ -2,10 +2,11 @@
 
  > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
- > **Último cambio integrado:** PR #155, merge SHA `23dcac3b65c46a59d3e24edf487cefe88ffc88fd`.
-> **main y demo:** mismo SHA `23dcac3b65c46a59d3e24edf487cefe88ffc88fd`; compare verificado como identical.
+ > **Último cambio de código integrado:** PR #155, merge SHA `23dcac3b65c46a59d3e24edf487cefe88ffc88fd`.
+> **main y demo:** deben permanecer idénticas por SHA; tras actualizar este handoff, sincronizar `demo` por fast-forward y verificar el compare.
 > **PR abiertas:** ninguna tras integrar PR #155.
-> **CI:** PR #155 head `4c4d30b781012c477f9f2c14fb35455bea00df8f`: 778 Python tests passed, 1 warning; Docker build/runtime hardening passed (run `43080178575`). Post-merge main CI run `43080343137` estaba en curso al actualizar este handoff.
+> **CI:** PR #155 head `4c4d30b781012c477f9f2c14fb35455bea00df8f`: 778 Python tests passed, 1 warning; Docker build/runtime hardening passed (run `43080178575`). Post-merge main CI run `43080343137`: success. Los checks de los commits documentales de esta sesión deben verificarse en sus SHA exactos.
+
 > **Validación local:** no se pudo clonar el repositorio desde el shell por falta de resolución de GitHub; no afirmar tests locales. La validación ejecutada fue GitHub Actions.
 > **Operación:** investigación y PAPER; LIVE sigue deshabilitado. No ejecutar operaciones reales ni usar credenciales productivas.
 
