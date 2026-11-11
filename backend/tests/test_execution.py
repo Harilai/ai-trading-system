@@ -82,6 +82,7 @@ def test_execution_router_is_disabled_by_default(instrument, order):
             order,
             "stable-id",
             risk_decision=type("Risk", (), {"accepted": True})(),
+        instrument_eligibility={"status": "supported", "provider_id": "fake-execution", "instrument_id": "fake-execution:spot:BTC/EUR", "execution_adapter_configured": True},
             instrument_eligibility={"status": "supported", "provider_id": "fake-execution", "instrument_id": "fake-execution:spot:BTC/EUR", "execution_adapter_configured": True},
         )
 
@@ -98,6 +99,7 @@ def test_execution_router_requires_risk_manager_approval(instrument, order):
             order,
             "stable-id",
             risk_decision=type("Risk", (), {"accepted": False})(),
+            instrument_eligibility={"status": "supported", "provider_id": "fake-execution", "instrument_id": "fake-execution:spot:BTC/EUR", "execution_adapter_configured": True},
         )
 
 
