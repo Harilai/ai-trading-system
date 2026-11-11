@@ -4,11 +4,12 @@
 
 Actualizado: 2026-11-10. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
-## Completado — promoción de snapshots y reconciliación de ramas (#99–#101)
+## Completado — promoción de snapshots y reconciliación de ramas (#99–#106)
 
 - PR #99 porta a `main` el ledger append-only de posiciones externas y sus endpoints autenticados. Requiere cobertura `complete/partial`, scope `market_type` en cuentas multi-market y proveedor read-only; los conectores actuales aún no habilitan captura.
 - PR #100 porta la trazabilidad experimental y el endurecimiento de salidas de Chief desde `demo`, conservando el monitor equity paper de #77.
 - PR #101 sincroniza `demo` con `main` usando un merge con ambos padres tras comprobar que no existían archivos exclusivos de `demo` ausentes en `main`.
+- PR #103 incorpora el preflight Binance Demo read-only. PR #104 actualiza el handoff operativo. PR #106 sincroniza los cinco archivos restantes de `main` a `demo`; comparación de árboles posterior: 109 archivos y cero diferencias. PR #105 se cerró como intento amplio sustituido por conflictos.
 - PR #74 se cerró como implementación sustituida. El snapshot coordinado balances+posiciones sigue pendiente como requisito, no se descarta.
 
 ## Siguiente fase — primer adaptador read-only de posiciones

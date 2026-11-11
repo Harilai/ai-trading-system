@@ -2,8 +2,8 @@
 
 > **Última revisión del repositorio:** 2026-11-11 Europe/Madrid
 > **Rama base:** `main`
-> **Último commit integrado en `main`:** `54518975048f22e2d672ec4f01afd0d1b0a9103f` — PR #103.
-> **Rama `demo`:** `34b589be83b4e35125182b511d249faf565314d7` — sincronizada mediante PR #101; contiene las fases de ejecución Demo y el ledger de posiciones.
+> **Último commit integrado en `main`:** `099d1b9f77f81f32df79692e47c570f3f273f379` — PR #104.
+> **Rama `demo`:** `1b7ea7749696d3c39f162720cba2bff2408bea18` — sincronizada con el árbol de `main` mediante PR #106; los 109 archivos versionados son idénticos.
 > **Modo de ejecución:** paper trading; Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
 ## Estado actual — 11 de noviembre de 2026
