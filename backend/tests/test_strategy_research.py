@@ -370,8 +370,9 @@ def test_research_uses_explicit_expected_cadence_for_gap_diagnostics():
 
 def test_research_rejects_invalid_expected_cadence():
     rows = candles_from_closes([100.0 + index * 0.01 for index in range(120)])
-    with pytest.raises(ValueError, match="expected_interval_seconds"):
-        StrategyResearchAgent().research(rows, expected_interval_seconds=0)
+    for invalid in (0, float("nan"), float("inf"), True):
+        with pytest.raises(ValueError, match="expected_interval_seconds"):
+            StrategyResearchAgent().research(rows, expected_interval_seconds=invalid)
 
 
 def test_research_reports_sample_adequacy_and_categorized_failure_reasons():
