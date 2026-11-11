@@ -1043,7 +1043,12 @@ def instrument_trading_eligibility(catalogue_id: str):
         item,
         capabilities,
         catalogue_id=catalogue_id,
-        execution_adapter_configured=execution_capabilities is not None,
+        execution_adapter_configured=(
+            execution_capabilities is not None
+            and execution_router.supports_instrument(
+                item.get("provider_id", ""), item.get("asset_class", ""), item.get("market_type", ""),
+            )
+        ),
     ).as_dict()
 
 
