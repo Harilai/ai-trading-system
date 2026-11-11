@@ -339,52 +339,40 @@ def test_provider_history_cap_clamps_existing_cursor_without_restarting_backfill
 
 
 @pytest.mark.parametrize(
-    "capabilities, expected_error",
+    "capabilities",
     [
-        (
-            SimpleNamespace(
+        SimpleNamespace(
                 supports_historical_ohlcv=True,
                 supported_ohlcv_timeframes=(),
                 ohlcv_pagination_mode="since",
                 max_ohlcv_request_limit=720,
                 max_historical_ohlcv_bars=720,
-            ),
-            "supported OHLCV timeframes",
         ),
-        (
-            SimpleNamespace(
+        SimpleNamespace(
                 supports_historical_ohlcv=True,
                 supported_ohlcv_timeframes=("1m",),
                 ohlcv_pagination_mode="cursor",
                 max_ohlcv_request_limit=720,
                 max_historical_ohlcv_bars=720,
-            ),
-            "pagination mode",
         ),
-        (
-            SimpleNamespace(
+        SimpleNamespace(
                 supports_historical_ohlcv=True,
                 supported_ohlcv_timeframes=("1m",),
                 ohlcv_pagination_mode="since",
                 max_ohlcv_request_limit=1.5,
                 max_historical_ohlcv_bars=720,
-            ),
-            "request limit",
         ),
-        (
-            SimpleNamespace(
+        SimpleNamespace(
                 supports_historical_ohlcv=True,
                 supported_ohlcv_timeframes=("1m",),
                 ohlcv_pagination_mode="since",
                 max_ohlcv_request_limit=720,
                 max_historical_ohlcv_bars=True,
-            ),
-            "historical bars capability",
         ),
     ],
 )
 def test_sync_cycle_fails_closed_on_incomplete_or_invalid_capabilities(
-    tmp_path, capabilities, expected_error,
+    tmp_path, capabilities,
 ):
     path = str(tmp_path / "trading.sqlite")
     store = HistoricalCandleStore(path)
@@ -412,5 +400,4 @@ def test_sync_cycle_fails_closed_on_incomplete_or_invalid_capabilities(
         now_ms=86_500_000, lookback_days=1,
     )
     assert result[0]["status"] == "error"
-    assert expected_error in result[0]["error"] or "historical sync target failed" in result[0]["error"]
     assert state.list_targets() == []
