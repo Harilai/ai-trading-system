@@ -30,6 +30,7 @@ def test_quote_store_persists_ordered_decimal_observations_and_provenance(tmp_pa
     assert rows[0]["bid"] == "100.1"
     assert rows[0]["ask"] == "100.3"
     assert rows[0]["timestamp_source"] == "retrieved_at"
+    assert isinstance(rows[0]["retrieved_at_ms"], int) and rows[0]["retrieved_at_ms"] > 0
     assert rows[1]["timestamp_source"] == "exchange"
     assert store.coverage("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR") == {
         "observations": 2,
