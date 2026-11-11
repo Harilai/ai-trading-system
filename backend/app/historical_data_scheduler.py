@@ -175,6 +175,8 @@ def run_sync_cycle(
             )
             if instrument is None:
                 raise ValueError("Target is not an active instrument in provider catalogue")
+            if target.timeframe.endswith("M"):
+                raise ValueError("Calendar-month timeframes are unsupported by fixed-interval pagination")
             interval_seconds = exchange.parse_timeframe(target.timeframe)
             if not isinstance(interval_seconds, (int, float)) or interval_seconds <= 0:
                 raise ValueError("Unsupported OHLCV timeframe")
@@ -302,7 +304,14 @@ def run_forever() -> None:
                 outcome.get("status"), outcome.get("provider_id"), outcome.get("symbol"),
                 outcome.get("timeframe"), outcome.get("pages", 0), outcome.get("received", 0),
             )
-        time.sleep(settings.historical_data_sync_interval_seconds)
+        statuses = {outcome.get("status") for outcome in outcomes}
+        if "backfill_in_progress" in statuses:
+            delay = settings.historical_data_sync_retry_seconds
+        elif "error" in statuses or "provider_unavailable" in statuses:
+            delay = max(settings.historical_data_sync_retry_seconds, 300)
+        else:
+            delay = settings.historical_data_sync_interval_seconds
+        time.sleep(delay)
 
 
 def main() -> int:
