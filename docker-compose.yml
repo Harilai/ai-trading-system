@@ -33,6 +33,45 @@ services:
         max-size: "10m"
         max-file: "5"
 
+  history-sync:
+    profiles: ["history-sync"]
+    build: ./backend
+    container_name: ai-trading-history-sync
+    command: ["python", "-m", "app.historical_data_scheduler"]
+    restart: unless-stopped
+    init: true
+    environment:
+      DATABASE_PATH: ${DATABASE_PATH:-data/trading.db}
+      HISTORICAL_DATA_SYNC_ENABLED: ${HISTORICAL_DATA_SYNC_ENABLED:-false}
+      HISTORICAL_DATA_SYNC_TARGETS: ${HISTORICAL_DATA_SYNC_TARGETS:-}
+      HISTORICAL_DATA_SYNC_INTERVAL_SECONDS: ${HISTORICAL_DATA_SYNC_INTERVAL_SECONDS:-3600}
+      HISTORICAL_DATA_SYNC_RETRY_SECONDS: ${HISTORICAL_DATA_SYNC_RETRY_SECONDS:-60}
+      HISTORICAL_DATA_SYNC_LOOKBACK_DAYS: ${HISTORICAL_DATA_SYNC_LOOKBACK_DAYS:-365}
+      HISTORICAL_DATA_SYNC_PAGE_LIMIT: ${HISTORICAL_DATA_SYNC_PAGE_LIMIT:-500}
+      HISTORICAL_DATA_SYNC_MAX_PAGES_PER_TARGET: ${HISTORICAL_DATA_SYNC_MAX_PAGES_PER_TARGET:-10}
+    volumes:
+      - trading_data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.historical_data_scheduler", "--healthcheck"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
   backup:
     build: ./backend
     container_name: ai-trading-backup

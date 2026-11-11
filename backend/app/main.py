@@ -13,6 +13,7 @@ from .config import settings
 from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
 from .market_data import MarketDataError
 from .historical_data import HistoricalCandleStore, HistoricalDataError, HistoricalDataConflict, PaginatedCandleCollector
+from .historical_data_scheduler import HistoricalSyncStateStore
 from .providers.ccxt_spot import CcxtSpotProvider
 from .providers.twelve_data import TwelveDataProvider
 from .providers.base import AssetClass
@@ -95,6 +96,7 @@ coordinated_cash_snapshot_store = CoordinatedCashSnapshotStore(
 demo_order_store = BinanceDemoOrderStore(settings.database_path)
 historical_candle_store = HistoricalCandleStore(settings.database_path)
 historical_candle_collector = PaginatedCandleCollector(historical_candle_store)
+historical_sync_state_store = HistoricalSyncStateStore(settings.database_path)
 
 _binance_key = settings.binance_readonly_api_key.get_secret_value().strip()
 _binance_secret = settings.binance_readonly_api_secret.get_secret_value().strip()
@@ -1673,6 +1675,7 @@ from .agent_api import router as agent_router
 agent_store = AutonomousStore(settings.database_path)
 scout = ScoutAgent(
     market,
+    historical_store=historical_candle_store,
     strategy_research=StrategyResearchAgent(
         fee_rate=settings.fee_rate,
         slippage_rate=settings.slippage_rate,
@@ -1724,6 +1727,22 @@ async def lifespan(app: FastAPI):
 
 app.router.lifespan_context = lifespan
 app.include_router(agent_router)
+
+
+@app.get("/api/market-data/history/scheduler")
+def get_historical_market_data_scheduler_status(
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    return {
+        "enabled": settings.historical_data_sync_enabled,
+        "targets_configured": bool(settings.historical_data_sync_targets.strip()),
+        "interval_seconds": settings.historical_data_sync_interval_seconds,
+        "retry_seconds": settings.historical_data_sync_retry_seconds,
+        "lookback_days": settings.historical_data_sync_lookback_days,
+        "targets": historical_sync_state_store.list_targets(),
+        "storage": historical_candle_store.storage_stats(),
+    }
 
 
 @app.get("/api/market-data/history")

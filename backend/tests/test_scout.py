@@ -57,3 +57,57 @@ def test_scout_includes_open_positions_for_exit_monitoring():
     assert result["discovered"] == 1
     assert result["analysed"] == 1
     assert result["analyses"][0]["market"]["included_open_position"] is True
+
+
+def test_scout_uses_deeper_finalized_persisted_history_for_strategy_research():
+    class HistoricalStore:
+        def get(self, provider_id, instrument_id, timeframe, *, limit):
+            assert provider_id == "ccxt:kraken"
+            assert instrument_id == "ccxt:kraken:spot:BTC/EUR"
+            assert timeframe == "1h"
+            assert limit == 5000
+            return [
+                {
+                    "timestamp_ms": 1_700_000_000_000 + index * 3_600_000,
+                    "open": "100", "high": "102", "low": "99",
+                    "close": "101", "volume": "10", "is_final": True,
+                }
+                for index in range(80)
+            ]
+
+    class Research:
+        def research(self, candles):
+            return {"status": "ok", "bars_seen": len(candles)}
+
+    result = ScoutAgent(
+        FakeMarketData(),
+        historical_store=HistoricalStore(),
+        strategy_research=Research(),
+    ).scan()
+
+    research = result["analyses"][0]["strategy_research"]
+    assert research["bars_seen"] == 80
+    assert research["history_bars"] == 80
+    assert research["persisted_finalized_bars_available"] == 80
+    assert research["history_source"] == "persistent_finalized_ohlcv"
+
+
+def test_scout_falls_back_to_recent_provider_history_when_store_is_unavailable():
+    import sqlite3
+
+    class UnavailableStore:
+        def get(self, *args, **kwargs):
+            raise sqlite3.OperationalError("database is locked")
+
+    class Research:
+        def research(self, candles):
+            return {"status": "ok", "bars_seen": len(candles)}
+
+    result = ScoutAgent(
+        FakeMarketData(),
+        historical_store=UnavailableStore(),
+        strategy_research=Research(),
+    ).scan()
+    research = result["analyses"][0]["strategy_research"]
+    assert research["bars_seen"] == 60
+    assert research["history_source"] == "provider_recent_store_unavailable"

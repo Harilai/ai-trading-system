@@ -63,6 +63,13 @@ class Settings(BaseSettings):
     backup_retention_days: int = Field(default=14, ge=1, le=365)
     backup_directory: str = str(PROJECT_ROOT / "data" / "backups")
     backup_external_enabled: bool = False
+    historical_data_sync_enabled: bool = False
+    historical_data_sync_targets: str = ""
+    historical_data_sync_interval_seconds: int = Field(default=3600, ge=60, le=86400)
+    historical_data_sync_retry_seconds: int = Field(default=60, ge=10, le=3600)
+    historical_data_sync_lookback_days: int = Field(default=365, ge=1, le=3650)
+    historical_data_sync_page_limit: int = Field(default=500, ge=1, le=1000)
+    historical_data_sync_max_pages_per_target: int = Field(default=10, ge=1, le=100)
     backup_s3_bucket: str = ""
     backup_s3_region: str = "us-east-1"
     backup_s3_endpoint_url: str = ""

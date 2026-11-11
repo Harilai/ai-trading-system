@@ -185,6 +185,32 @@ class HistoricalCandleStore:
             for row in rows
         ]
 
+    def storage_stats(self) -> dict:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT COUNT(*) AS bars, "
+                "SUM(CASE WHEN is_final=0 THEN 1 ELSE 0 END) AS provisional_bars "
+                "FROM historical_candles"
+            ).fetchone()
+            targets = db.execute(
+                "SELECT COUNT(DISTINCT provider_id || '|' || instrument_id || '|' || timeframe) "
+                "AS series FROM historical_candles"
+            ).fetchone()["series"]
+        size_bytes = 0
+        for suffix in ("", "-wal", "-shm"):
+            try:
+                size_bytes += Path(self.path + suffix).stat().st_size
+            except OSError:
+                continue
+        return {
+            "bars": row["bars"] or 0,
+            "provisional_bars": row["provisional_bars"] or 0,
+            "series": targets or 0,
+            "database_size_bytes": size_bytes,
+            "retention_policy": "retain_indefinitely",
+            "automatic_pruning": False,
+        }
+
     def coverage(self, provider_id: str, instrument_id: str, timeframe: str) -> dict:
         with self.connect() as db:
             row = db.execute(
