@@ -2,10 +2,10 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-  > **Último cambio integrado:** PR #148, merge SHA `094df642ee1366f63c80c48f1a99bbbfe21d9161`.
-> **main y demo:** mismo SHA `094df642ee1366f63c80c48f1a99bbbfe21d9161`; compare verificado como identical.
-> **PR abiertas:** ninguna en la última auditoría.
-> **CI:** PR #142–#148 superaron Python tests y Docker build/runtime hardening. CI post-merge de PR #148 run pendiente de comprobación final.
+   > **Último cambio integrado:** PR #149, merge SHA `80cc8ff1f502a254821ef9f7691074ad0643e7c9`.
+> **main y demo:** mismo SHA `80cc8ff1f502a254821ef9f7691074ad0643e7c9`; compare verificado como identical.
+> **PR abiertas:** ninguna al iniciar este bloque.
+> **CI:** PR #146/#148: 744 Python tests y Docker hardening correctos; CI post-merge #148 y #149 success.
 > **Validación local:** no se pudo clonar el repositorio desde el shell por falta de resolución de GitHub; no afirmar tests locales. La validación ejecutada fue GitHub Actions.
 > **Operación:** investigación y PAPER; LIVE sigue deshabilitado. No ejecutar operaciones reales ni usar credenciales productivas.
 
@@ -269,3 +269,23 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 - Canonicalización decimal para que `10`, `10.0` y `10.000` sean idempotentes sin redondear valores.
 - Rechazo explícito de timestamps fraccionarios, evitando truncamientos silenciosos.
 - PR #148 merge SHA `094df642ee1366f63c80c48f1a99bbbfe21d9161`; CI del head: 744 passed, 1 warning; Docker build/runtime hardening passed.
+
+## Bloque en desarrollo — scheduler incremental e integración de histórico (2026-11-11)
+
+- Rama: feat/incremental-historical-data-scheduler; base 80cc8ff1f502a254821ef9f7691074ad0643e7c9; al iniciar se verificó main y demo idénticas, PR abiertas 0.
+- Implementación nueva: backend/app/historical_data_scheduler.py, con allowlist explícita, parser de targets, cursor persistente por proveedor/instrumento/timeframe, backfill paginado reanudable, refresco de vela provisional, estado por target y errores acotados.
+- Doble opt-in: Compose profile history-sync y setting HISTORICAL_DATA_SYNC_ENABLED=false por defecto. La lista HISTORICAL_DATA_SYNC_TARGETS exige destinos explícitos en formato ccxt:kraken,BTC/EUR,1h; varios se separan por punto y coma.
+- Servicio aislado history-sync comparte solo el volumen SQLite, no recibe .env ni credenciales de brokers. Ejecuta exclusivamente OHLCV público con CCXT rate limiting, secuencialmente y con límite de páginas por target/ciclo.
+- Retención: indefinida y sin poda automática; storage stats suman DB/WAL/SHM. Se pospone cualquier borrado hasta diseñar exportación y recuperación.
+- Scout ahora conserva velas recientes del proveedor para Charts y, si el histórico persistido tiene más velas finalizadas, lo usa para Strategy Research. Velas provisionales excluidas; fallback a datos recientes ante ausencia/error del store. La fuente y número de barras quedan registrados en el resultado.
+- Nuevo endpoint autenticado GET /api/market-data/history/scheduler; runbook docs/HISTORICAL_DATA_SYNC.md; variables añadidas a .env.example; README actualizado.
+- Tests añadidos para allowlist, rechazo de proveedores no soportados, persistencia/reanudación de cursor, refresco de provisional, política de retención, status API y consumo de histórico en Scout.
+- CI pendiente en el head final; no se han ejecutado tests locales ni sincronización real contra un exchange. Scheduler desactivado por defecto.
+- LIVE deshabilitado; sin órdenes ni acciones financieras.
+
+### Siguiente bloque tras integrar
+
+1. Verificar paginación y límites reales por exchange, incluyendo since, límite máximo y cadencia.
+2. Añadir diagnóstico de huecos/cobertura por sesión/venue, sin aplicar heurísticas crypto 24/7 a equities/FX.
+3. Conectar Strategy Research a rangos persistidos y medir la suficiencia OOS/walk-forward real antes de introducir más estrategias.
+4. Modelar spread y costes observables, y después añadir candidatos estructuralmente distintos con control de selección múltiple.
