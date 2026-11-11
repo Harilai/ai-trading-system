@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import math
-
-from typing import Any
 import re
 import sqlite3
+from typing import Any
 
 from .agents.charts import ChartsAgent
 from .agents.contracts import MarketAnalysis
