@@ -233,6 +233,8 @@ class ExecutionAdapterRegistry:
             "partial_fills",
             "cancellation",
             "order_reconciliation",
+            "balances",
+            "positions",
         ),
         now: datetime | None = None,
         evidence_max_age: timedelta = timedelta(hours=24),
