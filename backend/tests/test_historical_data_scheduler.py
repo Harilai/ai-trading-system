@@ -280,6 +280,7 @@ def test_sync_cycle_rejects_timeframe_not_declared_by_provider(tmp_path):
     provider = SimpleNamespace(
         exchange=Exchange(),
         capabilities=lambda: SimpleNamespace(
+            provider_id="ccxt:kraken",
             supports_historical_ohlcv=True,
             ohlcv_pagination_mode="since",
             supported_ohlcv_timeframes=("1m", "1h"),
