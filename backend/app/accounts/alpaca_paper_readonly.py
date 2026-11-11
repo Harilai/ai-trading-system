@@ -9,7 +9,7 @@ import httpx
 
 
 PAPER_API_BASE_URL = "https://paper-api.alpaca.markets"
-_DECIMAL = re.compile(r"-?\\d+(?:\\.\\d+)?")
+_DECIMAL = re.compile(r"-?\d+(?:\.\d+)?")
 _IDENTIFIER = re.compile(r"[A-Za-z0-9._:/-]{1,128}")
 _SYMBOL = re.compile(r"[A-Za-z0-9._-]{1,32}")
 
