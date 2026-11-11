@@ -20,6 +20,7 @@ class FakeExecutionProvider:
             venue_type=VenueType.BROKER,
             asset_classes=self._asset_classes,
             market_types=self._market_types,
+            public_market_data=True,
             order_management=True,
             supports_limit_orders=True,
             supports_client_order_id=True,
