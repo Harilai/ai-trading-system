@@ -179,3 +179,13 @@ def test_quote_store_migrates_legacy_rows_with_receipt_timestamp(tmp_path):
     rows = store.get("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR")
     assert len(rows) == 1
     assert rows[0]["retrieved_at_ms"] == 1_700_000_060_000
+
+
+def test_quote_store_rejects_event_timestamp_ahead_of_receipt_time(tmp_path):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    with pytest.raises(HistoricalDataError, match="ahead of receipt"):
+        store.record(
+            "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+            1_700_000_000_001, "100", "101",
+            timestamp_source="exchange", retrieved_at_ms=1_700_000_000_000,
+        )
