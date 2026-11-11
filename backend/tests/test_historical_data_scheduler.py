@@ -356,6 +356,15 @@ def test_provider_history_cap_clamps_existing_cursor_without_restarting_backfill
     "capabilities",
     [
         SimpleNamespace(
+                provider_id="ccxt:kraken",
+                supports_historical_ohlcv=1,
+                supported_ohlcv_timeframes=("1m",),
+                ohlcv_pagination_mode="since",
+                max_ohlcv_request_limit=720,
+                max_historical_ohlcv_bars=720,
+        ),
+        SimpleNamespace(
+                provider_id="ccxt:kraken",
                 supports_historical_ohlcv=True,
                 supported_ohlcv_timeframes=(),
                 ohlcv_pagination_mode="since",
@@ -363,6 +372,7 @@ def test_provider_history_cap_clamps_existing_cursor_without_restarting_backfill
                 max_historical_ohlcv_bars=720,
         ),
         SimpleNamespace(
+                provider_id="ccxt:kraken",
                 supports_historical_ohlcv=True,
                 supported_ohlcv_timeframes=("1m",),
                 ohlcv_pagination_mode="cursor",
@@ -370,6 +380,7 @@ def test_provider_history_cap_clamps_existing_cursor_without_restarting_backfill
                 max_historical_ohlcv_bars=720,
         ),
         SimpleNamespace(
+                provider_id="ccxt:kraken",
                 supports_historical_ohlcv=True,
                 supported_ohlcv_timeframes=("1m",),
                 ohlcv_pagination_mode="since",
@@ -377,6 +388,7 @@ def test_provider_history_cap_clamps_existing_cursor_without_restarting_backfill
                 max_historical_ohlcv_bars=720,
         ),
         SimpleNamespace(
+                provider_id="ccxt:kraken",
                 supports_historical_ohlcv=True,
                 supported_ohlcv_timeframes=("1m",),
                 ohlcv_pagination_mode="since",
