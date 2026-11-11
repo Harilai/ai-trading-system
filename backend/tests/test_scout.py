@@ -105,8 +105,8 @@ def test_scout_falls_back_to_recent_provider_history_when_store_is_unavailable()
             raise sqlite3.OperationalError("database is locked")
 
     class Research:
-        def research(self, candles):
-            return {"status": "ok", "bars_seen": len(candles)}
+        def research(self, candles, **kwargs):
+            return {"status": "ok", "bars_seen": len(candles), "research_kwargs": kwargs}
 
     result = ScoutAgent(
         FakeMarketData(),
