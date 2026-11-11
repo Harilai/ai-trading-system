@@ -79,6 +79,8 @@ class CapabilityEvidence:
         if not isinstance(self.source, str) or not self.source.strip():
             raise ExecutionRegistryError("Capability evidence source is required")
         if self.verified_at is not None:
+            if not isinstance(self.verified_at, str):
+                raise ExecutionRegistryError("Capability verification timestamp must be text")
             try:
                 parsed = datetime.fromisoformat(self.verified_at.replace("Z", "+00:00"))
             except (TypeError, ValueError) as exc:
@@ -161,8 +163,14 @@ class ExecutionRegistration:
     registered_at: str
 
     def __post_init__(self) -> None:
+        if not isinstance(self.scope, ExecutionScope):
+            raise ExecutionRegistryError("Registration scope is invalid")
+        if not isinstance(self.capabilities, ExecutionCapabilities):
+            raise ExecutionRegistryError("Registration capabilities are invalid")
         if self.adapter is None:
             raise ExecutionRegistryError("Execution adapter is required")
+        if not isinstance(self.registered_at, str):
+            raise ExecutionRegistryError("Registration timestamp must be text")
         try:
             timestamp = datetime.fromisoformat(self.registered_at.replace("Z", "+00:00"))
         except (TypeError, ValueError) as exc:
@@ -190,7 +198,10 @@ class ExecutionAdapterRegistry:
             raise ExecutionRegistryError("A complete execution scope is mandatory")
         if not isinstance(capabilities, ExecutionCapabilities):
             raise ExecutionRegistryError("Explicit execution capabilities are mandatory")
-        registered_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc).isoformat()
+        reference_time = now or datetime.now(timezone.utc)
+        if not isinstance(reference_time, datetime) or reference_time.tzinfo is None:
+            raise ExecutionRegistryError("Registration time must include a timezone")
+        registered_at = reference_time.astimezone(timezone.utc).isoformat()
         registration = ExecutionRegistration(scope, capabilities, adapter, registered_at)
         with self._lock:
             if scope.key in self._registrations:
@@ -228,14 +239,7 @@ class ExecutionAdapterRegistry:
         *,
         asset_class: str,
         order_type: str,
-        required_capabilities: tuple[str, ...] = (
-            "idempotent_client_order_id",
-            "partial_fills",
-            "cancellation",
-            "order_reconciliation",
-            "balances",
-            "positions",
-        ),
+        additional_required_capabilities: tuple[str, ...] = (),
         now: datetime | None = None,
         evidence_max_age: timedelta = timedelta(hours=24),
     ) -> bool:
@@ -245,9 +249,20 @@ class ExecutionAdapterRegistry:
         capabilities = registration.capabilities
         if asset_class not in capabilities.asset_classes or order_type not in capabilities.order_types:
             return False
+        if not isinstance(additional_required_capabilities, tuple):
+            raise ExecutionRegistryError("Additional required capabilities must be a tuple")
+        required = (
+            "idempotent_client_order_id",
+            "partial_fills",
+            "cancellation",
+            "order_reconciliation",
+            "balances",
+            "positions",
+            *additional_required_capabilities,
+        )
         return all(
             capabilities.supports(name, now=now, max_age=evidence_max_age)
-            for name in required_capabilities
+            for name in required
         )
 
     def __len__(self) -> int:
