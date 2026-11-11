@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 import httpx
 import pytest
 
@@ -25,7 +23,7 @@ POSITION = {
 }
 
 
-def make_provider(positions=None, *, account=ACCOUNT, status=200, expected_account_id=None):
+def make_provider(positions=None, *, account=ACCOUNT, status=200, expected_account_id="paper-account-123"):
     requests = []
 
     def handler(request):
