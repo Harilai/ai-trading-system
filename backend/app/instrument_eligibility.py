@@ -13,6 +13,7 @@ class InstrumentEligibility:
     status: str
     provider_id: str
     catalogue_id: str
+    instrument_id: str
     asset_class: str
     market_type: str
     market_data_available: bool
@@ -58,6 +59,7 @@ def evaluate_instrument_eligibility(
             status="not_configured",
             provider_id=provider_id,
             catalogue_id=catalogue_id,
+            instrument_id=str(instrument.get("instrument_id") or ""),
             asset_class=asset_class,
             market_type=market_type,
             market_data_available=False,
@@ -231,6 +233,7 @@ def evaluate_instrument_eligibility(
         status=status,
         provider_id=provider_id,
         catalogue_id=catalogue_id,
+        instrument_id=str(instrument.get("instrument_id") or ""),
         asset_class=asset_class,
         market_type=market_type,
         market_data_available=market_data_available,

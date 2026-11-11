@@ -6,7 +6,26 @@ from .contracts import RiskContext, RiskDecision, TradeProposal
 class RiskManager:
     """Deterministic risk gate for explicitly supported paper spot instruments."""
 
-    def evaluate(self, proposal: TradeProposal, context: RiskContext) -> RiskDecision:
+    def evaluate(
+        self,
+        proposal: TradeProposal,
+        context: RiskContext,
+        *,
+        instrument_eligibility: dict | None = None,
+    ) -> RiskDecision:
+        # When an execution-readiness assessment is supplied, it is a mandatory
+        # precondition. Missing, malformed, stale or non-supported evidence fails closed.
+        if instrument_eligibility is not None:
+            if not isinstance(instrument_eligibility, dict):
+                return RiskDecision(accepted=False, reason="Instrument execution eligibility evidence is invalid")
+            if instrument_eligibility.get("status") != "supported":
+                return RiskDecision(accepted=False, reason="Instrument is not eligible for execution")
+            if instrument_eligibility.get("provider_id") != proposal.provider_id:
+                return RiskDecision(accepted=False, reason="Instrument eligibility provider identity mismatch")
+            if proposal.instrument_id and instrument_eligibility.get("instrument_id") != proposal.instrument_id:
+                return RiskDecision(accepted=False, reason="Instrument eligibility identity mismatch")
+            if instrument_eligibility.get("execution_adapter_configured") is not True:
+                return RiskDecision(accepted=False, reason="Execution adapter is not explicitly configured")
         symbol = proposal.symbol.strip().upper()
         numeric = (
             proposal.quantity,

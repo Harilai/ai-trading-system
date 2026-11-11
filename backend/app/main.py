@@ -17,6 +17,7 @@ from .providers.twelve_data import TwelveDataProvider
 from .providers.base import AssetClass
 from .instrument_catalog import InstrumentCatalog, InstrumentCatalogError
 from .instrument_eligibility import evaluate_instrument_eligibility
+from .execution import ExecutionRouter
 from .equity_research import EquityEtfResearchAgent
 from .equity_exits import EquityExitMonitor
 from .providers.registry import ProviderRegistry
@@ -50,6 +51,9 @@ WORKER_HEARTBEAT_MAX_AGE_SECONDS = 600
 
 app = FastAPI(title="AI Trading System", version="0.1.0", description="Paper trading only; live execution is not implemented.")
 market = ProviderRegistry()
+# Deliberately empty until a compatible execution adapter is explicitly registered.
+# Market-data discovery must never populate this registry.
+execution_router = ExecutionRouter(live_enabled=False)
 for configured_provider in settings.market_data_provider_ids.split(','):
     provider_id = configured_provider.strip().lower()
     if provider_id:
@@ -1030,12 +1034,21 @@ def instrument_trading_eligibility(catalogue_id: str):
         None,
     )
     # Market-data registration is not an execution adapter registration.
-    # No adapter is currently wired into this eligibility endpoint.
+    # Query only the dedicated execution registry; never infer execution from discovery.
+    try:
+        execution_capabilities = execution_router.capabilities_for(item.get("provider_id", ""))
+    except (AttributeError, TypeError, ValueError):
+        execution_capabilities = None
     return evaluate_instrument_eligibility(
         item,
         capabilities,
         catalogue_id=catalogue_id,
-        execution_adapter_configured=False,
+        execution_adapter_configured=(
+            execution_capabilities is not None
+            and execution_router.supports_instrument(
+                item.get("provider_id", ""), item.get("asset_class", ""), item.get("market_type", ""),
+            )
+        ),
     ).as_dict()
 
 
