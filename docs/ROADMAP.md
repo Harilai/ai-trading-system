@@ -2,7 +2,7 @@
 
 > Continuity between ChatGPT sessions: read [`docs/SESSION_HANDOFF.md`](SESSION_HANDOFF.md) for project state and [`docs/AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) for the mandatory multi-agent development method.
 
-Actualizado: 2026-11-11 (PR #137 integrada; account readiness PAPER conectada y main/demo sincronizadas). Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
+Actualizado: 2026-11-11 (PR #142–#144 integradas; métricas de backtest, calidad de histórico y dashboard de investigación ampliados). main y demo sincronizadas. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
 ## Completado — promoción de snapshots y reconciliación de ramas (#99–#106)
 
@@ -335,3 +335,31 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 4. Emitir snapshot de balances+posiciones con cobertura y procedencia explícitas; conservar UNKNOWN cuando el proveedor no pueda probar completitud.
 5. Integrar el adaptador solo cuando identidad y posiciones estén verificadas; mantener los gates de partial fills, cancelación, reconciliación y account scope.
 6. Preparar el smoke test Demo read-only y después el drill de órdenes exclusivamente en el host Demo, con credenciales configuradas en el servidor y autorización explícita. No usar producción ni LIVE.
+
+
+## Bloque de fiabilidad de Strategy Research — implementado (#142–#144)
+
+- **PR #142 — métricas de rendimiento:** el backtester expone exposición temporal, duración media de operaciones, retorno medio por operación, ganancia/pérdida media, payoff ratio, volatilidad por vela y ratios Sharpe/Sortino por vela. Los ratios no se anualizan porque el contrato actual no garantiza un calendario/frecuencia homogéneos.
+- La liquidación final se incorpora al último punto de la curva de equity, evitando crear una observación temporal ficticia solo por cerrar la posición al final del backtest.
+- **PR #143 — calidad de datos:** la investigación informa barras, duración del histórico, cadencia mediana, intervalos anómalos (>1,5 veces la cadencia mediana), velas OOS y barras evaluadas por ventana walk-forward. La detección de huecos es diagnóstica y no aplica calendario de mercado; no debe interpretarse sin adaptar la lógica para acciones/FX con sesiones.
+- **PR #144 — persistencia y dashboard:** los diagnósticos de calidad del histórico se conservan en el historial de investigación; el dashboard muestra rentabilidad OOS, drawdown, operaciones, acierto, profit factor, exposición, duración, expectativa, payoff, ratios por vela y cobertura histórica. Los registros antiguos siguen siendo válidos y muestran n/d cuando carecen de métricas.
+- CI de PR #142: Python tests y Docker build/runtime hardening correctos; CI post-merge de main run 43066016747 success.
+- CI de PR #143: Python tests y Docker build/runtime hardening correctos; CI post-merge de main run 43066501575 success.
+- CI de PR #144: Python tests y Docker build/runtime hardening correctos; verificar el run post-merge 43066860684 antes de declarar toda la validación post-merge cerrada.
+- No se relajaron gates de promoción, límites de riesgo ni reglas de ejecución. No se añadieron estrategias nuevas en este bloque.
+
+### Diagnóstico de profundidad de histórico
+
+- ScoutAgent usa actualmente timeframe 1h y candle_limit=250 por defecto.
+- 250 velas horarias cubren aproximadamente 10,4 días; el split 70/30 deja unas 75 velas OOS y cada una de las tres ventanas walk-forward evalúa aproximadamente 49 barras.
+- Esta muestra es corta para inferir robustez de estrategias. Los fallos por muestra insuficiente deben distinguirse de los fallos por rentabilidad negativa.
+- El evaluador actual contiene tres candidatos: EMA 12/26, RSI(14) mean reversion y Bollinger(20,2) mean reversion.
+- No ampliar el catálogo de estrategias antes de mejorar la profundidad histórica y el control de selección múltiple: añadir candidatos sin más evidencia puede aumentar el sobreajuste y los falsos positivos.
+
+### Siguiente prioridad
+
+1. Diseñar histórico persistente/paginado y cobertura multi-timeframe, respetando rate limits y límites reales de cada proveedor.
+2. Separar explícitamente los fallos de calidad de datos, insuficiencia estadística, rentabilidad negativa, drawdown y sensibilidad a costes.
+3. Revisar el modelo de costes para incorporar spread observable y, cuando los datos lo permitan, liquidez/impacto.
+4. Añadir estrategias estructuralmente distintas (p. ej. breakout, momentum y volatilidad) solo con un protocolo común y corrección/diagnóstico de selección múltiple.
+5. Validar en ventanas holdout posteriores no usadas para seleccionar parámetros; conservar los gates actuales hasta disponer de evidencia suficiente.

@@ -2,11 +2,12 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-> **Último cambio integrado:** PR #132 (execution eligibility gate), merge SHA `15e80e59dc05348581cee8acb29f7fee76df6341`.
-> **`main`:** PR #132 integrada; documentación de continuidad actualizada en esta sesión. **`demo`:** debe sincronizarse al SHA final de `main` tras estos commits documentales.
-> **Historial previo de demo:** preservado en `archive/demo-before-main-sync-2026-11-11`; no se integró en main porque main es la fuente de verdad.
-> **PR abiertas:** PR #132 integrada; verificar nuevas PR al inicio de la siguiente sesión.
-> **Operación:** paper trading y Binance Spot Demo aislado; live trading no implementado ni habilitado.
+> **Último cambio integrado:** PR #144, merge SHA `24d2235fd7fba9a9158fe688c92e5df087cdf387`.
+> **main y demo:** mismo SHA `24d2235fd7fba9a9158fe688c92e5df087cdf387`; compare debe verificarse al inicio de la próxima sesión.
+> **PR abiertas:** ninguna en la última auditoría.
+> **CI:** PR #142, #143 y #144 superaron Python tests y Docker build/runtime hardening. CI post-merge de PR #144 run `43066860684` success.
+> **Validación local:** no se pudo clonar el repositorio desde el shell por falta de resolución de GitHub; no afirmar tests locales. La validación ejecutada fue GitHub Actions.
+> **Operación:** investigación y PAPER; LIVE sigue deshabilitado. No ejecutar operaciones reales ni usar credenciales productivas.
 
 ## Integraciones recientes verificadas
 
@@ -226,3 +227,24 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - `main` y `demo` se sincronizaron al SHA `23f437ebc2e3a9a06c2f0c8f5f822178714fba83`; compare verificado `identical` (0 ahead/behind).
 - Próximo bloque: identidad verificable de cuenta Binance Spot Demo, mapeo balances→posiciones por instrumento con valoración/timestamps y cobertura, manteniendo UNKNOWN cuando no haya evidencia.
 
+
+
+## Continuidad — fiabilidad de Strategy Research (#142–#144)
+
+- PR #142 añade exposición, duración media, expectancy, media de ganadoras/perdedoras, payoff, volatilidad por vela y Sharpe/Sortino por vela. Ratios no anualizados. La liquidación final reemplaza el último mark de equity y no crea un periodo artificial.
+- PR #143 añade `data_quality`: número de velas, días cubiertos, cadencia mediana, huecos >1,5x cadencia, velas OOS y barras por ventana walk-forward. El detector no conoce calendarios de mercado; aplicarlo a acciones/FX requiere calendario por venue.
+- PR #144 persiste `data_quality` en `strategy_research_history` y presenta las métricas OOS y calidad del histórico en el dashboard. Registros históricos incompletos siguen siendo válidos.
+- PR #142 merge SHA `257aabafd2ea8dfbb8f0a8726688abc81b13b18a`; PR #143 merge SHA `59b3f7ed960911240134295e9e3a7cace3b6b09c`; PR #144 merge SHA `24d2235fd7fba9a9158fe688c92e5df087cdf387`.
+- CI PR #142 run `43065850901` success y post-merge `43066016747` success. CI PR #143 run `43066316270` success y post-merge `43066501575` success. CI PR #144 run `43066715216` success y post-merge `43066860684` success.
+- `ScoutAgent` usa timeframe `1h` y `candle_limit=250`; unas 10,4 jornadas, 75 barras OOS y 49 barras por ventana walk-forward. La muestra es demasiado corta para afirmar robustez.
+- El universo de estrategia tiene tres candidatos: EMA 12/26, RSI(14) mean reversion y Bollinger(20,2) mean reversion. No se añadieron estrategias nuevas ni se relajaron gates.
+
+## Siguiente bloque recomendado
+
+1. Histórico persistente/paginado y análisis multi-timeframe sin exceder rate limits ni límites de proveedores.
+2. Diagnóstico separado de insuficiencia de muestra, gaps, trades insuficientes, pérdidas, drawdown y sensibilidad a costes.
+3. Spread observable y costes de liquidez/impacto cuando haya datos suficientes.
+4. Añadir candidatos diversos (breakout, momentum, volatilidad) con corrección/diagnóstico de selección múltiple.
+5. Validación holdout independiente antes de cambiar cualquier promoción o habilitar PAPER experimental adicional.
+
+LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe permanecer idéntica a `main`.
