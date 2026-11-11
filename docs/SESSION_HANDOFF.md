@@ -1,11 +1,11 @@
 # Session handoff — AI Trading System
 
-> **Última revisión:** 2026-11-11 Europe/Madrid
+ > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-   > **Último cambio integrado:** PR #149, merge SHA `80cc8ff1f502a254821ef9f7691074ad0643e7c9`.
-> **main y demo:** mismo SHA `80cc8ff1f502a254821ef9f7691074ad0643e7c9`; compare verificado como identical.
-> **PR abiertas:** ninguna al iniciar este bloque.
-> **CI:** PR #146/#148: 744 Python tests y Docker hardening correctos; CI post-merge #148 y #149 success.
+> **Último cambio integrado:** PR #150, merge SHA `89bb3e76e3bab21ae2b98496f0fc54b801ec0f93`.
+> **main y demo:** mismo SHA `89bb3e76e3bab21ae2b98496f0fc54b801ec0f93`; compare verificado como identical.
+> **PR abiertas:** ninguna tras integrar PR #150.
+> **CI:** PR #150 head: 760 Python tests passed, 1 warning; Docker build/runtime hardening passed. Post-merge run 43073260919: Python tests y Docker hardening success.
 > **Validación local:** no se pudo clonar el repositorio desde el shell por falta de resolución de GitHub; no afirmar tests locales. La validación ejecutada fue GitHub Actions.
 > **Operación:** investigación y PAPER; LIVE sigue deshabilitado. No ejecutar operaciones reales ni usar credenciales productivas.
 
@@ -241,11 +241,11 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 
 ## Siguiente bloque recomendado
 
-1. Histórico persistente/paginado y análisis multi-timeframe sin exceder rate limits ni límites de proveedores.
-2. Diagnóstico separado de insuficiencia de muestra, gaps, trades insuficientes, pérdidas, drawdown y sensibilidad a costes.
-3. Spread observable y costes de liquidez/impacto cuando haya datos suficientes.
-4. Añadir candidatos diversos (breakout, momentum, volatilidad) con corrección/diagnóstico de selección múltiple.
-5. Validación holdout independiente antes de cambiar cualquier promoción o habilitar PAPER experimental adicional.
+1. Verificar paginación, límites máximos y cadencia por exchange antes de ampliar targets.
+2. Añadir diagnóstico de huecos/cobertura por calendario y sesión de cada venue.
+3. Conectar Strategy Research a muestras históricas más profundas y separar insuficiencia de muestra, pérdidas, drawdown y sensibilidad a costes.
+4. Incorporar spread/costes observables y después estrategias distintas con control de selección múltiple.
+5. Validar con holdouts independientes; mantener los gates y límites actuales.
 
 LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe permanecer idéntica a `main`.
 
@@ -257,9 +257,8 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 - Las velas provisionales se pueden refrescar. Las finalizadas son inmutables: discrepancias rechazan la operación y hacen rollback; un replay antiguo no degrada una vela finalizada.
 - Colector paginado con `since`, `limit`, orden temporal estricto, límite de páginas y cursor `next_since_ms` para reanudar.
 - Endpoints autenticados `POST /api/market-data/history/sync` y `GET /api/market-data/history`. La sincronización requiere instrumento activo del catálogo del proveedor y reutiliza rate limiting CCXT. Otros proveedores no se habilitan sin soporte paginado declarado.
-- CI PR #146: 741 tests Python passed, 1 warning; Docker build/runtime hardening passed. PR #148: 744 tests Python passed, 1 warning; Docker build/runtime hardening passed. CI post-merge #148 pendiente de comprobación.
-- No se ejecutaron tests locales ni validación operativa contra proveedores reales. No hay scheduler de backfill automático ni retención configurada todavía.
-- Siguiente prioridad: añadir un scheduler incremental seguro, definir política de retención y diagnosticar cobertura/gaps por timeframe/proveedor antes de ampliar la investigación a múltiples timeframes. LIVE permanece deshabilitado.
+- CI PR #146: 741 tests Python passed, 1 warning; Docker build/runtime hardening passed. PR #148: 744 tests Python passed, 1 warning; Docker build/runtime hardening passed. CI post-merge #148 success.
+- No se ejecutaron tests locales ni validación operativa contra proveedores reales. El scheduler incremental se integra en PR #150, es opt-in y la retención raw se define indefinida, sin poda automática. LIVE permanece deshabilitado.
 
 
 
@@ -270,9 +269,9 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 - Rechazo explícito de timestamps fraccionarios, evitando truncamientos silenciosos.
 - PR #148 merge SHA `094df642ee1366f63c80c48f1a99bbbfe21d9161`; CI del head: 744 passed, 1 warning; Docker build/runtime hardening passed.
 
-## Bloque en desarrollo — scheduler incremental e integración de histórico (2026-11-11)
+## Bloque integrado — scheduler incremental e integración de histórico (PR #150)
 
-- Rama: feat/incremental-historical-data-scheduler; base 80cc8ff1f502a254821ef9f7691074ad0643e7c9; al iniciar se verificó main y demo idénticas, PR abiertas 0.
+- PR #150 integrada por squash; head validado 9e5d139b97ce7c0cc102fd5912b9412d57185389; merge SHA 89bb3e76e3bab21ae2b98496f0fc54b801ec0f93. main y demo se compararon como identical.
 - Implementación nueva: backend/app/historical_data_scheduler.py, con allowlist explícita, parser de targets, cursor persistente por proveedor/instrumento/timeframe, backfill paginado reanudable, refresco de vela provisional, estado por target y errores acotados.
 - Doble opt-in: Compose profile history-sync y setting HISTORICAL_DATA_SYNC_ENABLED=false por defecto. La lista HISTORICAL_DATA_SYNC_TARGETS exige destinos explícitos en formato ccxt:kraken,BTC/EUR,1h; varios se separan por punto y coma.
 - Servicio aislado history-sync comparte solo el volumen SQLite, no recibe .env ni credenciales de brokers. Ejecuta exclusivamente OHLCV público con CCXT rate limiting, secuencialmente y con límite de páginas por target/ciclo.
@@ -280,10 +279,10 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 - Scout ahora conserva velas recientes del proveedor para Charts y, si el histórico persistido tiene más velas finalizadas, lo usa para Strategy Research. Velas provisionales excluidas; fallback a datos recientes ante ausencia/error del store. La fuente y número de barras quedan registrados en el resultado.
 - Nuevo endpoint autenticado GET /api/market-data/history/scheduler; runbook docs/HISTORICAL_DATA_SYNC.md; variables añadidas a .env.example; README actualizado.
 - Tests añadidos para allowlist, rechazo de proveedores no soportados, persistencia/reanudación de cursor, refresco de provisional, política de retención, status API y consumo de histórico en Scout.
-- CI pendiente en el head final; no se han ejecutado tests locales ni sincronización real contra un exchange. Scheduler desactivado por defecto.
+- CI head exacto: 760 passed, 1 warning; Docker hardening passed. CI post-merge run 43073260919: ambos jobs success. No se ejecutaron tests locales ni sincronización real contra un exchange. Scheduler desactivado por defecto.
 - LIVE deshabilitado; sin órdenes ni acciones financieras.
 
-### Siguiente bloque tras integrar
+### Siguiente bloque
 
 1. Verificar paginación y límites reales por exchange, incluyendo since, límite máximo y cadencia.
 2. Añadir diagnóstico de huecos/cobertura por sesión/venue, sin aplicar heurísticas crypto 24/7 a equities/FX.
