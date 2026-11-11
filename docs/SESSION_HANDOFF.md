@@ -209,16 +209,19 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - No se han enviado órdenes ni realizado acciones financieras. LIVE permanece deshabilitado.
 
 
-## Continuity update — account readiness preflight block (2026-11-11)
+## Continuity update — account readiness preflight integrado (2026-11-11)
 
-- Base at block start: `main=demo=c7c2b729873cb4e11067ea546d4d3bf00fdd7be1`; no open PRs.
-- Working branch: `feat/paper-account-readiness-preflight`.
-- Added `backend/app/account_readiness.py` with fail-closed preflight for the internal PAPER ledger. It verifies exact internal scope, local identity basis, source, snapshot timestamp/freshness, Decimal cash/position integrity, EUR cash existence, and order-intent reconciliation.
-- Registered only `PaperPortfolioScopedAdapter` in the scoped execution registry. Its profile still declares partial fills and exchange cancellation UNSUPPORTED, so it cannot pass generic exchange readiness or route through the generic ExecutionRouter.
-- Added authenticated `POST /api/execution/preflight`.
-- Manual buy orders (crypto PAPER and Twelve Data USD cash equity/ETF PAPER) now require account readiness, pass evidence into RiskManager, and recheck immediately before execution. Sells retain the existing exact-position/no-shorting checks and do not require entry preflight.
-- Production Chief requires account readiness for new entries. Autonomous worker preflights before Chief entry selection, rechecks before executing new buys, and rechecks persisted buy-intent resumes. Failed rechecks reject/expire the intent without executing. Existing position exits are not blocked by entry readiness.
-- RiskManager validates the exact `paper-primary` internal ledger scope, local identity basis (not remote account verification), reconciliation state, and evidence freshness.
-- New tests cover readiness, stale/mismatched snapshots, bad balances, unresolved intents, resume exclusions, risk gate behavior, API auth/blocked buys, conservative registry capabilities, and sell preservation.
-- PR/CI status: implementation branch in progress; PR not yet opened at this handoff point. No local test run claimed. Next: inspect diff, open PR, verify exact-head Python/Docker CI, fix any failures, review and merge, then sync `demo` to `main` and verify identical SHA.
-- No external account credentials used, no Binance Demo orders sent, and LIVE remains disabled.
+- PR #137 integrada en `main` mediante squash; merge commit `e3158a8999a7571dce79aa40809beddbbff792f5`.
+- Head exacto validado: `8c7ecea237d52d6a12bddc7d569b83dd5a2d6eaa`; CI run `43053950094`: 718 Python tests passed, 1 warning; Docker build/runtime hardening success.
+- `PaperAccountReadiness` verifica scope interno `internal:paper-portfolio / internal-ledger / paper-primary / PAPER / spot`, origen y frescura del snapshot, integridad Decimal de balances/posiciones y conciliación de todos los intents no terminales.
+- La identidad es la del ledger local, no una cuenta remota verificada. No afirmar que `paper-primary` sea un UID de broker.
+- El adaptador interno PAPER está registrado en el registry scoped, pero mantiene partial fills y cancelación de exchange UNSUPPORTED; no pasa generic exchange readiness y no se conecta al ExecutionRouter.
+- Endpoint autenticado `POST /api/execution/preflight`.
+- Compras manuales PAPER crypto y Twelve Data equity/ETF pasan preflight, entregan evidencia al RiskManager y revalidan inmediatamente antes de ejecución. Las ventas mantienen controles independientes y no se bloquean por el gate de entrada.
+- Chief de producción exige readiness para nuevas compras autónomas. El worker revalida antes de ejecutar y al reanudar intents persistidos; ante fallo rechaza/caduca el intent y no ejecuta.
+- Añadido `PaperPortfolio.list_unresolved_order_intents()` para inventario completo sin límite de paginación.
+- La CI de PR #137 está verde (718 tests, 1 warning; Docker hardening success). CI post-merge de main pendiente de comprobación final.
+- No se ejecutaron tests locales. No se utilizaron credenciales externas ni se enviaron órdenes. LIVE sigue deshabilitado.
+- `main` y `demo` se sincronizaron tras el merge a `e3158a8999a7571dce79aa40809beddbbff792f5`; volver a comprobar tras la PR documental de este handoff.
+- Próximo bloque: identidad verificable de cuenta Binance Spot Demo, mapeo balances→posiciones por instrumento con valoración/timestamps y cobertura, manteniendo UNKNOWN cuando no haya evidencia.
+
