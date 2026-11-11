@@ -465,12 +465,13 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - No se ejecutaron tests locales ni validación operativa contra un exchange real. No se usaron credenciales privadas ni se ejecutaron órdenes. LIVE permanece deshabilitado.
 
 
-## En curso — comisiones por proveedor/instrumento (PR #158)
+## Completado — contrato de comisiones por proveedor/instrumento (PR #158)
 
-- Rama `feat/provider-instrument-fee-schedules`; PR #158 abierta y pendiente de CI/revisión.
+- PR #158 integrada por squash en `main`, merge SHA `691155745c3cc7d0adfa8f2bb2f94edf2696c60b`; `demo` sincronizada por fast-forward y verificada idéntica.
 - Nuevo contrato fail-closed para schedules ligados a `provider_id`, `instrument_id` y `market_type`, con maker/taker, divisa de comisión, procedencia, instante de observación y periodo efectivo.
 - Strategy Research aplica exclusivamente la tarifa taker para sus fills marketables y solo si el schedule observado antes del primer candle cubre todo el periodo de investigación.
 - La comisión configurada global sigue siendo un supuesto explícito cuando no se suministra evidencia verificada. No hay todavía captura automática ni persistencia histórica de tarifas de proveedor/cuenta.
 - Solo se aceptan fees denominadas en quote currency; fees en base/tercer token requieren conversión FX/asset con timestamp y procedencia y quedan rechazadas por ahora.
+- CI PR #158 head `38a64857d76c468ce3c8edc1fec395a2e6e0c330`: 825 tests Python passed, 1 warning; Docker build/runtime hardening passed (run `43087483676`). CI post-merge main run `43087629033` en progreso al actualizar esta nota. No se ejecutaron tests locales.
 - No se modifica ejecución, riesgo ni LIVE. No se consultan cuentas privadas ni tiers de usuario.
 - Siguiente paso tras integrar el contrato: conectar fuentes públicas verificables y un histórico point-in-time de schedules por proveedor/instrumento/market type; luego modelar liquidez/impacto con profundidad observable y construir holdouts independientes/control de selección múltiple.
