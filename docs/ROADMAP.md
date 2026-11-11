@@ -450,3 +450,14 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 4. Añadir holdouts temporales independientes y control de selección múltiple antes de ampliar el catálogo de estrategias.
 5. No atribuir límites/cadencias crypto 24/7 a acciones, ETF o FX; exigir contratos de venue/sesión antes de incorporar esos mercados a investigación.
 
+
+
+## En desarrollo — costes con spread observado y timestamps (2026-11-11)
+
+- Rama `feat/research-observed-spread-costs`; PR pendiente de CI/revisión.
+- Store separado `HistoricalQuoteStore` captura bid/ask públicos validados por proveedor/instrumento, conserva timestamp de exchange y timestamp local de recepción, y rechaza snapshots conflictivos.
+- Scout registra snapshots disponibles y entrega el histórico al evaluador. Los datos faltantes no se convierten en spread cero.
+- Strategy Research aplica medio spread por lado únicamente cuando el snapshot fue recibido antes del fill simulado y sigue dentro de la edad máxima. Se bloquea promoción si falta cobertura observada en cualquier ejecución.
+- Fees y slippage siguen siendo supuestos configurados independientes; no se afirma que reflejen el tier real de la cuenta.
+- Los quotes históricos no se pueden reconstruir desde OHLCV; la cobertura se acumula hacia delante. Los periodos previos sin snapshots quedan explícitamente incompletos.
+- Pendiente tras integración: revisar comisiones maker/taker por instrumento/proveedor y modelar liquidez/impacto sin look-ahead; no añadir estrategias ni relajar gates hasta completar esta fase.
