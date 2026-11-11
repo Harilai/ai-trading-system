@@ -156,3 +156,40 @@ def test_binance_demo_scope_alias_is_not_misrepresented_as_verified_exchange_ide
     )
     assert adapter.scope.account_id == "operator-configured-alias"
     assert adapter.account_identity_verified is False
+
+
+
+def test_paper_wrapper_preserves_tiny_positive_spot_quantity_exactly(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "paper.sqlite"), initial_cash=20)
+    portfolio.snapshot = lambda: {
+        "cash_balances": [],
+        "positions": [{
+            "provider_id": "ccxt:kraken",
+            "instrument_id": "BTC/EUR",
+            "symbol": "BTC/EUR",
+            "quantity": "1e-400",
+            "average_price": "60000.00",
+            "quote_currency": "EUR",
+        }],
+    }
+    snapshot = PaperPortfolioScopedAdapter(portfolio, account_id="paper-primary").fetch_snapshot()
+    assert len(snapshot.positions) == 1
+    assert snapshot.positions[0].quantity == "1E-400"
+
+
+def test_paper_wrapper_rejects_non_finite_position_quantity(tmp_path):
+    portfolio = PaperPortfolio(str(tmp_path / "paper.sqlite"), initial_cash=20)
+    portfolio.snapshot = lambda: {
+        "cash_balances": [],
+        "positions": [{
+            "provider_id": "ccxt:kraken",
+            "instrument_id": "BTC/EUR",
+            "symbol": "BTC/EUR",
+            "quantity": "NaN",
+            "average_price": "60000",
+            "quote_currency": "EUR",
+        }],
+    }
+    adapter = PaperPortfolioScopedAdapter(portfolio, account_id="paper-primary")
+    with pytest.raises(ScopedAccountAdapterError, match="finite"):
+        adapter.fetch_snapshot()
