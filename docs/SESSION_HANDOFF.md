@@ -112,11 +112,19 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 
 - Rama feat/provider-discovery-contract-validation: valida identidad, asset class y market type de cada instrumento descubierto contra las capacidades declaradas y los filtros solicitados.
 - Los registros incompatibles se descartan con fallos tipados; los errores de proveedor no propagan texto arbitrario potencialmente sensible.
-- Tests añadidos en backend/tests/test_providers.py; CI pendiente.
+- Tests añadidos en backend/tests/test_providers.py. PR #129 integrada por squash en `e7bccdb62ddb5ac3464049c41a95686d3b45085f`; CI Python y Docker pasó.
 
 
 ## Continuidad — filtros de descubrimiento por proveedor
 
 - Rama feat/provider-scoped-instrument-discovery añade provider_ids a ProviderRegistry.discover_markets.
 - API GET /api/markets y POST /api/instruments/refresh aceptan provider_id y asset_class; refresh continúa protegido por X-Agent-Token.
-- Se cubren proveedor inexistente, clase no soportada, aislamiento de proveedores y filtro global. CI pendiente.
+- Se cubren proveedor inexistente, clase no soportada, aislamiento de proveedores, filtro global, filtros vacíos y compatibilidad de mocks API.
+- PR #130 integrada por squash en `98760e46740556144478623929ed233f7e7402bd`; CI Python: 645 passed, 1 warning; Docker build/runtime hardening pasó. CI post-merge de main pasó.
+
+
+## Estado de ramas tras PR #130
+
+- `main` y `demo` sincronizadas al SHA `98760e46740556144478623929ed233f7e7402bd`; compare `main...demo` verificado como `identical` (0 ahead/behind, 0 commits).
+- No había PR abiertas en la última consulta.
+- Próximo bloque: revisar cobertura real de los adaptadores y diseñar el siguiente proveedor/clase de activo a partir de capacidades verificadas. No inferir soporte por catálogo de enum; no habilitar ejecución por el mero hecho de descubrir instrumentos.
