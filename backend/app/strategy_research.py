@@ -265,7 +265,7 @@ class StrategyResearchAgent:
             quote = quote_snapshots[index]
             event_timestamp = quote["timestamp_ms"]
             retrieved_at = quote["retrieved_at_ms"]
-            age_ms = execution_timestamp_ms - event_timestamp
+            age_ms = execution_timestamp_ms - retrieved_at
             if (
                 event_timestamp <= execution_timestamp_ms
                 and retrieved_at <= execution_timestamp_ms
@@ -306,7 +306,7 @@ class StrategyResearchAgent:
         ):
             raise ValueError("candle_interval_ms must be a positive integer")
         quote_snapshots = list(quote_snapshots or [])
-        quote_timestamps = [quote["available_at_ms"] for quote in quote_snapshots]
+        quote_timestamps = [quote["retrieved_at_ms"] for quote in quote_snapshots]
         cash = 1.0
         units = 0.0
         entry_equity = 0.0
@@ -565,14 +565,14 @@ class StrategyResearchAgent:
             normalized_quotes.append({
                 "timestamp_ms": timestamp,
                 "retrieved_at_ms": retrieved_at_ms,
-                "available_at_ms": max(timestamp, retrieved_at_ms),
+                "available_at_ms": retrieved_at_ms,
                 "bid": bid,
                 "ask": ask,
                 "timestamp_source": timestamp_source,
                 "source": source,
             })
 
-        normalized_quotes.sort(key=lambda quote: (quote["available_at_ms"], quote["timestamp_ms"]))
+        normalized_quotes.sort(key=lambda quote: (quote["retrieved_at_ms"], quote["timestamp_ms"]))
         data_quality = _candle_data_quality(
             normalized, expected_interval_seconds=expected_interval_seconds,
             calendar_model=calendar_model,
@@ -606,7 +606,7 @@ class StrategyResearchAgent:
             "last_timestamp_ms": max((quote["timestamp_ms"] for quote in normalized_quotes), default=None),
             "timestamp_sources": quote_timestamp_sources,
             "max_quote_age_seconds": max_quote_age_seconds,
-            "method": "latest_bid_ask_at_or_before_execution_time",
+            "method": "latest_bid_ask_observation_received_at_or_before_execution_time",
         }
 
         split = int(len(normalized) * 0.7)
