@@ -109,3 +109,16 @@ def test_fee_schedule_rejects_invalid_rates(field, value):
             start_timestamp_ms=1_700_000_000_000,
             end_timestamp_ms=1_700_050_000_000,
         )
+
+
+def test_fee_schedule_rejects_blank_fee_currency():
+    with pytest.raises(FeeScheduleError, match="currencies are required"):
+        resolve_taker_fee(
+            valid_schedule(fee_currency=" "),
+            provider_id="ccxt:kraken",
+            instrument_id="ccxt:kraken:spot:BTC/EUR",
+            market_type="spot",
+            quote_currency="EUR",
+            start_timestamp_ms=1_700_000_000_000,
+            end_timestamp_ms=1_700_050_000_000,
+        )
