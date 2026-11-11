@@ -2,11 +2,11 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-> **Último cambio integrado:** PR #123 (ADR de semántica financiera Alpaca) en `main`; PR #124 sincronizada a `demo`.
+> **Último cambio integrado:** PR #125 (ADR de semántica financiera Alpaca documentado en main) y PR #126 (sincronización a demo). Rama de trabajo actual: `feat/alpaca-financial-metrics-ledger`.
 > **`main`:** `05870aa8c3f10b75a8d1bf46dd4856df1a3575ae`
 > **`demo`:** `6445726293db4fd408bfa046b1b4d746bbeabc3e`
 > **Árboles:** divergencia histórica de commits; los ocho archivos del adaptador Alpaca y su documentación tienen blobs idénticos en `main` y `demo`.
-> **PR abiertas:** ninguna tras la integración de #123 y #124 (verificado 2026-11-11).
+> **PR abiertas:** verificar GitHub antes de continuar; implementación financiera Alpaca en desarrollo, aún sin PR.
 > **Operación:** paper trading y Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
 ## Integraciones recientes verificadas
@@ -70,14 +70,14 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - No conecta snapshots a cartera, Chief, Risk Manager ni ejecución. El snapshot coordinado sigue limitado a `spot`; balances/cash y extensión a `cash` quedan como fase separada.
 
 
-## Semántica financiera Alpaca — ADR integrado
+## Semántica financiera Alpaca — ADR integrado y ledger inicial en desarrollo
 
 - Documento: `docs/ALPACA_ACCOUNT_FINANCIAL_SEMANTICS_ADR.md` (PR #123 en `main`, PR #124 en `demo`).
 - `cash` se modela como saldo de efectivo; `equity` como valor neto de la cuenta; `buying_power` como capacidad de compra dependiente de reglas/multiplicador. Nunca son intercambiables.
 - `portfolio_value` es equivalente/deprecado respecto a equity; no se suma dos veces.
 - `cash_withdrawable/transferable`, transferencias pendientes, valores de mercado, margen y fees son métricas independientes, no saldos fungibles.
 - No reutilizar `AccountBalance(free/used/total)` ni ampliar el store Spot-only para almacenar métricas Alpaca.
-- Próxima implementación separada: snapshot financiero tipado y ledger append-only; después coordinarlo con posiciones `cash` solo con cobertura, identidad, timestamp/skew y atomicidad verificables.
+- Rama `feat/alpaca-financial-metrics-ledger`: añade lector `GET /v2/account` de una sola llamada, snapshot financiero tipado, ledger SQLite append-only/idempotente y endpoints autenticados de captura/historial. Requiere CI/revisión antes de integrarse.
 - No se conecta a cartera paper, Chief, Risk Manager ni ejecución. No se habilitan transferencias, retiradas ni LIVE.
 
 ## Continuidad
