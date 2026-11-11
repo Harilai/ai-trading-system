@@ -50,11 +50,13 @@ def test_quote_store_is_idempotent_and_rejects_conflicting_same_timestamp(tmp_pa
         "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
         1_700_000_000_000, "100", "101",
     )
-    assert store.record(*args, timestamp_source="exchange")["status"] == "inserted"
-    assert store.record(*args, timestamp_source="exchange")["status"] == "unchanged"
+    receipt_ms = 1_700_000_060_000
+    assert store.record(*args, timestamp_source="exchange", retrieved_at_ms=receipt_ms)["status"] == "inserted"
+    assert store.record(*args, timestamp_source="exchange", retrieved_at_ms=receipt_ms)["status"] == "unchanged"
     with pytest.raises(HistoricalDataConflict, match="Conflicting quote snapshot"):
         store.record(
             *args[:4], "100", "102", timestamp_source="exchange",
+            retrieved_at_ms=receipt_ms,
         )
 
 
@@ -189,3 +191,26 @@ def test_quote_store_rejects_event_timestamp_ahead_of_receipt_time(tmp_path):
             1_700_000_000_001, "100", "101",
             timestamp_source="exchange", retrieved_at_ms=1_700_000_000_000,
         )
+
+
+def test_quote_store_keeps_repeated_exchange_timestamp_as_separate_receipts(tmp_path):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    base = 1_700_000_000_000
+    first = store.record(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+        base, "100", "101", timestamp_source="exchange",
+        retrieved_at_ms=base + 1_000,
+    )
+    second = store.record(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+        base, "100", "101", timestamp_source="exchange",
+        retrieved_at_ms=base + 2_000,
+    )
+    assert first["status"] == second["status"] == "inserted"
+    rows = store.get(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR",
+        received_since_ms=base + 1_000,
+        received_until_ms=base + 3_000,
+    )
+    assert len(rows) == 2
+    assert [row["retrieved_at_ms"] for row in rows] == [base + 1_000, base + 2_000]
