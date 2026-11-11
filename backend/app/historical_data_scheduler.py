@@ -39,7 +39,9 @@ def parse_sync_targets(value: str) -> list[HistoricalSyncTarget]:
         provider_id, symbol, timeframe = parts
         if not provider_id.startswith("ccxt:") or not provider_id[5:]:
             raise ValueError("Historical sync currently supports explicit ccxt:<exchange> targets only")
-        key = (provider_id.lower(), symbol.upper(), timeframe.lower())
+        provider_id = provider_id.lower()
+        timeframe = timeframe.lower()
+        key = (provider_id, symbol.upper(), timeframe)
         if key in seen:
             raise ValueError("Duplicate historical sync target")
         seen.add(key)
