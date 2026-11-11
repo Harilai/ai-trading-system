@@ -79,8 +79,8 @@ def test_scout_uses_deeper_finalized_persisted_history_for_strategy_research():
             ]
 
     class Research:
-        def research(self, candles):
-            return {"status": "ok", "bars_seen": len(candles)}
+        def research(self, candles, **kwargs):
+            return {"status": "ok", "bars_seen": len(candles), "research_kwargs": kwargs}
 
     result = ScoutAgent(
         FakeMarketData(),
@@ -93,6 +93,8 @@ def test_scout_uses_deeper_finalized_persisted_history_for_strategy_research():
     assert research["history_bars"] == 80
     assert research["persisted_finalized_bars_available"] == 80
     assert research["history_source"] == "persistent_finalized_ohlcv"
+    assert research["research_kwargs"]["expected_interval_seconds"] == 3600
+    assert research["research_kwargs"]["calendar_model"] == "crypto_24x7"
 
 
 def test_scout_falls_back_to_recent_provider_history_when_store_is_unavailable():
@@ -114,3 +116,4 @@ def test_scout_falls_back_to_recent_provider_history_when_store_is_unavailable()
     research = result["analyses"][0]["strategy_research"]
     assert research["bars_seen"] == 60
     assert research["history_source"] == "provider_recent_store_unavailable"
+    assert research["research_kwargs"]["calendar_model"] == "crypto_24x7"
