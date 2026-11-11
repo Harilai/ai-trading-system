@@ -138,6 +138,56 @@ class AlpacaPaperReadOnlyAccount:
             raise AlpacaPaperAccountError("Alpaca Paper account identity does not match configuration")
         return account_id
 
+    def fetch_financial_metrics_snapshot(self) -> dict:
+        """Read Alpaca Paper account identity and financial metrics in one GET."""
+        account = self._get_json("/v2/account")
+        if not isinstance(account, dict):
+            raise AlpacaPaperAccountError("Alpaca Paper account response is invalid")
+        account_id = account.get("id")
+        if not isinstance(account_id, str) or not _IDENTIFIER.fullmatch(account_id):
+            raise AlpacaPaperAccountError("Alpaca Paper account identity is missing or invalid")
+        if account_id != self.expected_account_id:
+            raise AlpacaPaperAccountError("Alpaca Paper account identity does not match configuration")
+        currency = account.get("currency")
+        if not isinstance(currency, str) or not re.fullmatch(r"[A-Z]{3,8}", currency):
+            raise AlpacaPaperAccountError("Alpaca Paper account currency is missing or invalid")
+        status = account.get("status")
+        if status != "ACTIVE":
+            raise AlpacaPaperAccountError("Alpaca Paper account is not in ACTIVE status")
+        metrics = {}
+        for field in (
+            "cash", "equity", "buying_power", "portfolio_value", "regt_buying_power",
+            "non_marginable_buying_power", "options_buying_power", "cash_withdrawable",
+            "cash_transferable", "pending_transfer_in", "pending_transfer_out",
+            "long_market_value", "short_market_value", "initial_margin",
+            "maintenance_margin", "last_equity", "last_cash", "accrued_fees",
+            "pending_reg_taf_fees",
+        ):
+            value = account.get(field)
+            if value is None:
+                metrics[field] = None
+            else:
+                metrics[field] = self._decimal(
+                    value, field, signed=field in {"equity", "last_equity"},
+                )
+        flags = {}
+        for field in ("trading_blocked", "transfers_blocked", "account_blocked"):
+            value = account.get(field)
+            if not isinstance(value, bool):
+                raise AlpacaPaperAccountError(f"Alpaca Paper account {field} flag is missing or invalid")
+            flags[field] = value
+        return {
+            "provider_id": self.provider_id,
+            "account_alias": self.account_alias,
+            "environment": "paper",
+            "account_id": account_id,
+            "currency": currency,
+            "account_status": status,
+            "fetched_at": datetime.now(timezone.utc).isoformat(),
+            **metrics,
+            **flags,
+        }
+
     def fetch_positions(self) -> list[dict]:
         """Compatibility reader for the generic positions endpoint; still verifies account identity."""
         return self.fetch_positions_snapshot(market_type="cash")["positions"]
