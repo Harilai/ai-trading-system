@@ -159,55 +159,58 @@ class AccountFinancialMetricsStore:
         result["flags"] = json.loads(result.pop("flags_json"))
         return result
 
-    def record_snapshot(self, request_id: str, raw: dict) -> dict:
+    def _record_snapshot_in_transaction(self, request_id: str, raw: dict, db) -> str:
         if not isinstance(request_id, str) or not _IDENTIFIER.fullmatch(request_id):
             raise FinancialMetricsError("Financial metrics request_id is invalid")
         normalized = normalize_financial_metrics(raw)
         canonical = json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         scope = (normalized["provider_id"], normalized["account_alias"], normalized["environment"], request_id)
+        existing = db.execute(
+            """SELECT * FROM account_financial_metric_snapshots
+               WHERE provider_id=? AND account_alias=? AND environment=? AND request_id=?""",
+            scope,
+        ).fetchone()
+        if existing:
+            if existing["content_hash"] != digest:
+                raise FinancialMetricsError("Financial metrics request_id is already bound to a different payload")
+            return existing["snapshot_id"]
+        latest = db.execute(
+            """SELECT fetched_at FROM account_financial_metric_snapshots
+               WHERE provider_id=? AND account_alias=? AND environment=?
+               ORDER BY fetched_at DESC,recorded_at DESC LIMIT 1""",
+            scope[:3],
+        ).fetchone()
+        if latest and normalized["fetched_at"] < latest["fetched_at"]:
+            raise FinancialMetricsError("Financial metrics snapshot is older than the latest stored observation")
+        snapshot_id = str(uuid4())
+        recorded_at = datetime.now(timezone.utc).isoformat()
+        db.execute(
+            """INSERT INTO account_financial_metric_snapshots(
+                snapshot_id,request_id,provider_id,account_alias,environment,account_id,
+                currency,account_status,fetched_at,recorded_at,coverage_status,schema_version,
+                metrics_json,flags_json,content_hash
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                snapshot_id, request_id, normalized["provider_id"], normalized["account_alias"],
+                normalized["environment"], normalized["account_id"], normalized["currency"],
+                normalized["account_status"], normalized["fetched_at"], recorded_at,
+                normalized["coverage_status"], normalized["schema_version"],
+                json.dumps(normalized["metrics"], sort_keys=True),
+                json.dumps(normalized["flags"], sort_keys=True), digest,
+            ),
+        )
+        return snapshot_id
+
+    def record_snapshot(self, request_id: str, raw: dict) -> dict:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            existing = db.execute(
-                """SELECT * FROM account_financial_metric_snapshots
-                   WHERE provider_id=? AND account_alias=? AND environment=? AND request_id=?""",
-                scope,
-            ).fetchone()
-            if existing:
-                if existing["content_hash"] != digest:
-                    raise FinancialMetricsError("Financial metrics request_id is already bound to a different payload")
-                return self._result(existing)
-            latest = db.execute(
-                """SELECT fetched_at FROM account_financial_metric_snapshots
-                   WHERE provider_id=? AND account_alias=? AND environment=?
-                   ORDER BY fetched_at DESC,recorded_at DESC LIMIT 1""",
-                scope[:3],
-            ).fetchone()
-            if latest and normalized["fetched_at"] < latest["fetched_at"]:
-                raise FinancialMetricsError("Financial metrics snapshot is older than the latest stored observation")
-            snapshot_id = str(uuid4())
-            recorded_at = datetime.now(timezone.utc).isoformat()
-            db.execute(
-                """INSERT INTO account_financial_metric_snapshots(
-                    snapshot_id,request_id,provider_id,account_alias,environment,account_id,
-                    currency,account_status,fetched_at,recorded_at,coverage_status,schema_version,
-                    metrics_json,flags_json,content_hash
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    snapshot_id, request_id, normalized["provider_id"], normalized["account_alias"],
-                    normalized["environment"], normalized["account_id"], normalized["currency"],
-                    normalized["account_status"], normalized["fetched_at"], recorded_at,
-                    normalized["coverage_status"], normalized["schema_version"],
-                    json.dumps(normalized["metrics"], sort_keys=True),
-                    json.dumps(normalized["flags"], sort_keys=True), digest,
-                ),
-            )
+            snapshot_id = self._record_snapshot_in_transaction(request_id, raw, db)
             row = db.execute(
                 "SELECT * FROM account_financial_metric_snapshots WHERE snapshot_id=?",
                 (snapshot_id,),
             ).fetchone()
             return self._result(row)
-
     def get_by_request_id(self, request_id: str, *, provider_id: str, account_alias: str) -> dict | None:
         if not isinstance(request_id, str) or not _IDENTIFIER.fullmatch(request_id):
             raise FinancialMetricsError("Financial metrics request_id is invalid")
