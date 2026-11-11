@@ -160,8 +160,12 @@ class StrategyResearchAgent:
         cash = 1.0
         units = 0.0
         entry_equity = 0.0
+        entry_index = None
         closed_returns = []
+        trade_durations = []
         equity_curve = [1.0]
+        evaluated_bars = 0
+        exposure_bars = 0
         effective_fee_rate = self.fee_rate if fee_rate is None else fee_rate
         effective_slippage_rate = (
             self.slippage_rate if slippage_rate is None else slippage_rate
@@ -180,13 +184,20 @@ class StrategyResearchAgent:
             if units > 0 and not desired:
                 proceeds = units * execution_price * sell_multiplier
                 closed_returns.append(proceeds / entry_equity - 1.0)
+                trade_durations.append(index + 1 - entry_index)
                 cash += proceeds
                 units = 0.0
                 entry_equity = 0.0
+                entry_index = None
             elif units == 0 and desired:
                 entry_equity = cash * self.max_position_fraction
                 units = entry_equity * buy_multiplier / execution_price
                 cash -= entry_equity
+                entry_index = index + 1
+
+            evaluated_bars += 1
+            if units > 0:
+                exposure_bars += 1
 
             marked = cash + units * float(candles[index + 1]["close"])
             equity_curve.append(marked)
@@ -195,9 +206,16 @@ class StrategyResearchAgent:
             final_price = float(candles[end - 1]["close"])
             proceeds = units * final_price * sell_multiplier
             closed_returns.append(proceeds / entry_equity - 1.0)
+            trade_durations.append(end - 1 - entry_index)
             cash += proceeds
             units = 0.0
-        equity_curve.append(cash)
+            # Replace the final mark with liquidation value. Appending a second
+            # point here would create a fictitious extra return period.
+            if len(equity_curve) > 1:
+                equity_curve[-1] = cash
+            else:
+                equity_curve.append(cash)
+
         peak = equity_curve[0]
         max_drawdown = 0.0
         for equity in equity_curve:
@@ -208,15 +226,67 @@ class StrategyResearchAgent:
         gains = sum(value for value in closed_returns if value > 0)
         losses = -sum(value for value in closed_returns if value < 0)
         profit_factor = gains / losses if losses > 0 else (float("inf") if gains > 0 else 0.0)
+        period_returns = [
+            current / previous - 1.0
+            for previous, current in zip(equity_curve[:-1], equity_curve[1:])
+            if previous > 0
+        ]
+        mean_period_return = (
+            sum(period_returns) / len(period_returns) if period_returns else 0.0
+        )
+        return_variance = (
+            sum((value - mean_period_return) ** 2 for value in period_returns)
+            / len(period_returns)
+            if period_returns else 0.0
+        )
+        return_volatility = math.sqrt(return_variance)
+        downside_deviation = (
+            math.sqrt(
+                sum(min(value, 0.0) ** 2 for value in period_returns)
+                / len(period_returns)
+            )
+            if period_returns else 0.0
+        )
+        winning_trades = [value for value in closed_returns if value > 0]
+        losing_trades = [value for value in closed_returns if value < 0]
+        average_win = sum(winning_trades) / len(winning_trades) if winning_trades else None
+        average_loss = sum(losing_trades) / len(losing_trades) if losing_trades else None
+        average_trade_return = (
+            sum(closed_returns) / len(closed_returns) if closed_returns else None
+        )
+        payoff_ratio = (
+            average_win / abs(average_loss)
+            if average_win is not None and average_loss is not None and average_loss != 0
+            else None
+        )
         return {
             "net_return": cash - 1.0,
             "max_drawdown": max_drawdown,
             "trades": len(closed_returns),
             "win_rate": (
-                sum(value > 0 for value in closed_returns) / len(closed_returns)
-                if closed_returns else 0.0
+                len(winning_trades) / len(closed_returns) if closed_returns else 0.0
             ),
             "profit_factor": (profit_factor if math.isfinite(profit_factor) else None),
+            "evaluation_bars": evaluated_bars,
+            "exposure_bars": exposure_bars,
+            "exposure_fraction": (
+                exposure_bars / evaluated_bars if evaluated_bars else 0.0
+            ),
+            "average_trade_duration_bars": (
+                sum(trade_durations) / len(trade_durations) if trade_durations else None
+            ),
+            "average_trade_return": average_trade_return,
+            "average_win_return": average_win,
+            "average_loss_return": average_loss,
+            "payoff_ratio": payoff_ratio,
+            "return_volatility_per_bar": return_volatility,
+            "sharpe_per_bar": (
+                mean_period_return / return_volatility if return_volatility > 0 else None
+            ),
+            "sortino_per_bar": (
+                mean_period_return / downside_deviation
+                if downside_deviation > 0 else None
+            ),
         }
 
     def research(self, candles: Sequence[dict]) -> dict:
