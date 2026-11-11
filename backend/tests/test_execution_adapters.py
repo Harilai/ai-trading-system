@@ -59,6 +59,7 @@ def test_binance_demo_wrapper_scopes_balance_snapshot_and_does_not_infer_positio
     assert snapshot.scope.account_id == "binance-demo-account"
     assert [item.asset for item in snapshot.balances] == ["EUR", "BTC"]
     assert snapshot.positions == ()
+    assert adapter.account_identity_verified is False
     assert adapter.capabilities().positions.state is CapabilityState.UNKNOWN
 
 
@@ -88,6 +89,7 @@ def test_paper_wrapper_exposes_internal_ledger_scope_and_snapshot(tmp_path):
     assert snapshot.scope.account_id == "paper-primary"
     eur = next(item for item in snapshot.balances if item.asset == "EUR")
     assert eur.total == "250.0"
+    assert adapter.account_identity_verified is True
     capabilities = adapter.capabilities()
     assert capabilities.supports("balances")
     assert capabilities.supports("positions")
@@ -126,3 +128,29 @@ def test_paper_readiness_fails_closed_until_partial_fill_and_cancel_semantics_ex
         asset_class="crypto",
         order_type="limit",
     )
+
+
+
+def test_binance_demo_wrapper_rejects_naive_snapshot_timestamp():
+    account = make_binance_demo_account()
+    account.fetch_balances = lambda: {
+        "provider_id": "ccxt:binance-demo",
+        "environment": "demo",
+        "market_type": "spot",
+        "demo_only": True,
+        "withdrawals_enabled": False,
+        "fetched_at": "2026-11-11T10:00:00",
+        "balances": [],
+    }
+    adapter = BinanceSpotDemoScopedAdapter(account, account_id="binance-demo-account")
+    with pytest.raises(ScopedAccountAdapterError, match="timezone"):
+        adapter.fetch_snapshot()
+
+
+def test_binance_demo_scope_alias_is_not_misrepresented_as_verified_exchange_identity():
+    adapter = BinanceSpotDemoScopedAdapter(
+        make_binance_demo_account(),
+        account_id="operator-configured-alias",
+    )
+    assert adapter.scope.account_id == "operator-configured-alias"
+    assert adapter.account_identity_verified is False
