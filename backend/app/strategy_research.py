@@ -565,6 +565,8 @@ class StrategyResearchAgent:
                 or retrieved_at_ms <= 0
             ):
                 raise ValueError("Quote retrieval timestamp must be a positive integer")
+            if timestamp > retrieved_at_ms + 30_000:
+                raise ValueError("Quote event timestamp is ahead of its receipt time")
             if normalized_quotes and timestamp <= normalized_quotes[-1]["timestamp_ms"]:
                 raise ValueError("Quote timestamps must be strictly increasing")
             normalized_quotes.append({
