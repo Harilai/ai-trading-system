@@ -253,3 +253,11 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - Registros malformados o incompatibles se rechazan individualmente sin descartar instrumentos válidos de otros proveedores.
 - Los errores de adaptadores se registran por tipo de excepción, no copiando texto arbitrario que podría contener credenciales o cabeceras.
 - Pendiente CI y revisión de la PR; no implica que todos los proveedores soporten todas las clases ni habilita ejecución.
+
+
+## Descubrimiento multiactivo — filtros explícitos por proveedor y clase (en desarrollo)
+
+- Registry: descubrimiento limitado a proveedores seleccionados, con error explícito para proveedor inexistente o clase no soportada cuando el proveedor se solicita expresamente.
+- API: GET /api/markets y POST /api/instruments/refresh aceptan provider_id y asset_class; el refresh conserva el token de control.
+- El filtro global por clase omite proveedores que no ofrecen esa clase sin marcarlos como fallidos; el filtro explícito por proveedor sí informa de incompatibilidad.
+- Pendiente CI, revisión y merge. Descubrimiento únicamente; no habilita negociación.
