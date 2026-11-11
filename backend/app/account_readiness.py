@@ -6,7 +6,7 @@ from typing import Any
 
 from .execution_adapters import PaperPortfolioScopedAdapter, ScopedAccountAdapterError
 from .execution_registry import ExecutionEnvironment
-from .portfolio import PaperPortfolio, PortfolioError
+from .portfolio import PaperPortfolio
 
 
 class AccountReadinessError(RuntimeError):
@@ -20,7 +20,6 @@ class PaperAccountReadiness:
     the local PaperPortfolio ledger and its explicit internal scope.
     """
 
-    TERMINAL_INTENT_STATES = {"filled", "rejected", "expired"}
     EXPECTED_ACCOUNT_ID = "paper-primary"
 
     def __init__(
@@ -134,18 +133,18 @@ class PaperAccountReadiness:
             if "EUR" not in balances_by_asset:
                 blockers.append("eur_cash_balance_missing")
 
-            position_ids: set[str] = set()
+            position_ids: set[tuple[str, str]] = set()
             for position in snapshot.positions:
                 if (
                     not position.provider_id.strip()
                     or not position.instrument_id.strip()
                     or not position.symbol.strip()
                     or not position.quote_currency.strip()
-                    or position.instrument_id in position_ids
+                    or (position.provider_id, position.instrument_id) in position_ids
                 ):
                     blockers.append("position_identity_missing_or_duplicated")
                     continue
-                position_ids.add(position.instrument_id)
+                position_ids.add((position.provider_id, position.instrument_id))
                 quantity = self._decimal(position.quantity, "position_quantity")
                 if quantity <= 0:
                     blockers.append("position_quantity_invalid")
