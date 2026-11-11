@@ -2,10 +2,10 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-> **Último cambio integrado:** PR #128 (snapshot coordinado Alpaca Paper cash), merge SHA `7ab1e0056c3f1fd749d26cdfc52eca0ac6abad6a`.
-> **`main` y `demo`:** ambos apuntan exactamente a `7ab1e0056c3f1fd749d26cdfc52eca0ac6abad6a` (verificado por ref y compare idéntico).
+ > **Último cambio integrado:** PR #131 (elegibilidad conservadora de instrumentos), merge SHA `9c0bca72e13ecd2edb8b2ff0649a42b0458c6940`.
+> **`main` y `demo`:** sincronizar y verificar al cerrar el bloque documental de PR #131.
 > **Historial previo de demo:** preservado en `archive/demo-before-main-sync-2026-11-11`; no se integró en main porque main es la fuente de verdad.
-> **PR abiertas:** comprobar GitHub antes de continuar. PR #128 integrada.
+> **PR abiertas:** ninguna tras integrar PR #131 (verificar GitHub al retomar).
 > **Operación:** paper trading y Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
 ## Integraciones recientes verificadas
@@ -19,7 +19,10 @@
 - PR #118: adaptador Alpaca Paper read-only fusionado en `main` (SHA `d42b9fada02d60d7073bbc76171bd69c31a9e8a3`); CI exacta: 609 tests Python passed y Docker build/runtime hardening passed.
 - PR #120: sincronización del adaptador a `demo` (SHA `23fa997a878da7fe7ba7735b2baa80f035f7a8d7`); CI Python y Docker pasó. PR #119 se cerró como intento directo `main`→`demo` marcado dirty; #120 preservó commits exclusivos de demo y sincronizó solo ocho archivos.
 - CI de PR #113: 581 tests passed, 1 warning; Docker/Compose/non-root correctos en el head exacto `800f8fd63d87fb8f1c6e2ed5c5bc12adb926b0b0`. CI de sincronización #114 y #115 también pasó en sus respectivos heads.
-- PR #123 y #124 integradas con CI Python y Docker exitosa; no hay PR abiertas tras su integración. No se ejecutaron pruebas locales en este entorno.
+- PR #123 y #124 integradas con CI Python y Docker exitosa; no se ejecutaron pruebas locales en este entorno.
+- PR #129: validación de discovery contra provider identity/capabilities, merge `e7bccdb62ddb5ac3464049c41a95686d3b45085f`; CI Python y Docker passed.
+- PR #130: filtros por proveedor/clase en discovery, merge `98760e46740556144478623929ed233f7e7402bd`; CI Python 645 passed y Docker passed.
+- PR #131: evaluación fail-closed de elegibilidad de instrumentos, merge `9c0bca72e13ecd2edb8b2ff0649a42b0458c6940`; CI Python 655 passed y Docker passed.
 - Las funcionalidades #78–#80 (contratos de órdenes/fills, ledger y completitud/reconciliación read-only), #99 (ledger de posiciones) y #100 (diagnósticos experimentales y salidas seguras) están integradas en `main` y `demo`.
 - No se ha ejecutado un preflight posterior a #109 contra el contenedor Binance Demo local. El problema original de asset key sigue pendiente de confirmar con evidencia del contenedor del propietario.
 
@@ -130,11 +133,18 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - Próximo bloque: revisar cobertura real de los adaptadores y diseñar el siguiente proveedor/clase de activo a partir de capacidades verificadas. No inferir soporte por catálogo de enum; no habilitar ejecución por el mero hecho de descubrir instrumentos.
 
 
-## Bloque en curso — elegibilidad de instrumentos
+## Bloque integrado — elegibilidad de instrumentos (PR #131)
 
 - Rama feat/instrument-trading-eligibility.
 - Se añade un evaluador read-only para diferenciar soporte de datos, soporte declarado de trading, configuración del adaptador de ejecución y completitud de metadatos.
 - Se bloquea el estado supported si faltan capacidades de idempotencia, fills parciales, cancelación, conciliación, balances o posiciones.
 - API GET /api/instruments/{catalogue_id}/eligibility.
-- Tests unitarios y de API añadidos; pendientes CI y revisión.
+- Tests unitarios y de API añadidos; CI exacta 655 passed, 1 warning y Docker build/runtime hardening passed. Merge completado.
 - No cambia el comportamiento de órdenes ni activa LIVE.
+
+
+## Estado tras PR #131
+
+- Evaluador read-only y endpoint `GET /api/instruments/{catalogue_id}/eligibility` integrados.
+- La API no marca instrumentos como operables porque no tiene un registro de adaptadores de ejecución conectado a este evaluador; `execution_adapter_configured=false` de forma explícita.
+- Siguiente bloque: conectar una fuente verificable de capacidades de ejecución y requisitos de mercado al gate de elegibilidad sin duplicar el registro de adaptadores; después validar integración Demo/Paper con mocks y preflight. LIVE permanece deshabilitado.
