@@ -160,3 +160,10 @@ def test_history_storage_stats_make_no_pruning_policy_explicit(tmp_path):
     assert stats["database_size_bytes"] > 0
     assert stats["retention_policy"] == "retain_indefinitely"
     assert stats["automatic_pruning"] is False
+
+
+def test_parse_sync_targets_preserves_case_sensitive_exchange_timeframes():
+    assert parse_sync_targets("ccxt:kraken,BTC/EUR,1M;ccxt:kraken,BTC/EUR,1m") == [
+        HistoricalSyncTarget("ccxt:kraken", "BTC/EUR", "1M"),
+        HistoricalSyncTarget("ccxt:kraken", "BTC/EUR", "1m"),
+    ]
