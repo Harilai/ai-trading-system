@@ -99,7 +99,7 @@ def test_binance_demo_balance_error_identifies_invalid_asset_without_exposing_am
 
 def test_binance_demo_balance_invalid_asset_diagnostic_escapes_control_characters():
     exchange = FakeBinanceDemoExchange(response={
-        "free": {"BTC\\nFORGED": "1"},
+        "free": {"BTC\nFORGED": "1"},
         "used": {},
         "total": {},
     })
@@ -111,7 +111,6 @@ def test_binance_demo_balance_invalid_asset_diagnostic_escapes_control_character
     with pytest.raises(BinanceDemoError) as error:
         provider.fetch_balances()
 
-    assert "\\\\n" in str(error.value)
     assert "\\nFORGED" in str(error.value)
 
 
