@@ -170,7 +170,13 @@ class BinanceSpotDemoAccount:
         for raw_asset in sorted(assets, key=lambda item: str(item).upper()):
             asset = str(raw_asset).strip().upper()
             if not re.fullmatch(r"[A-Z0-9._-]{1,24}", asset):
-                raise BinanceDemoError("Binance Spot Demo returned an invalid asset code")
+                # Asset identifiers are safe diagnostic context; keep them bounded
+                # and ASCII-escaped so control characters cannot forge log lines.
+                raw_label = ascii(str(raw_asset))[:80]
+                raise BinanceDemoError(
+                    "Binance Spot Demo returned an invalid asset code "
+                    f"(type={type(raw_asset).__name__}, value={raw_label})"
+                )
             free = self._amount(free_map.get(raw_asset), asset=asset, field="free")
             used = self._amount(used_map.get(raw_asset), asset=asset, field="used")
             total = self._amount(total_map.get(raw_asset), asset=asset, field="total")
