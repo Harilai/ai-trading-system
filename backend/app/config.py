@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     ccxt_readonly_account_alias: str = ""
     ccxt_readonly_api_key: SecretStr = Field(default=SecretStr(""), repr=False)
     ccxt_readonly_api_secret: SecretStr = Field(default=SecretStr(""), repr=False)
+    alpaca_paper_enabled: bool = False
+    alpaca_paper_api_key: SecretStr = Field(default=SecretStr(""), repr=False)
+    alpaca_paper_api_secret: SecretStr = Field(default=SecretStr(""), repr=False)
+    alpaca_paper_account_alias: str = "alpaca-paper-readonly"
+    alpaca_paper_expected_account_id: str = ""
     binance_spot_demo_enabled: bool = False
     binance_spot_demo_api_key: SecretStr = Field(default=SecretStr(""), repr=False)
     binance_spot_demo_api_secret: SecretStr = Field(default=SecretStr(""), repr=False)
