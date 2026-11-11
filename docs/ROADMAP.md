@@ -2,7 +2,7 @@
 
 > Continuity between ChatGPT sessions: read [`docs/SESSION_HANDOFF.md`](SESSION_HANDOFF.md) for project state and [`docs/AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) for the mandatory multi-agent development method.
 
-Actualizado: 2026-11-11 (PR #150 integrada; scheduler incremental de histórico e integración con Strategy Research). Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
+Actualizado: 2026-11-11 (PR #150 y #152 integradas; scheduler de histórico y diagnósticos de Strategy Research). Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
 ## Completado — promoción de snapshots y reconciliación de ramas (#99–#106)
 
@@ -398,3 +398,22 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 3. Medir suficiencia OOS y walk-forward con los históricos persistidos y separar falta de muestra de rentabilidad negativa.
 4. Incorporar spread y costes observables; añadir después estrategias estructuralmente distintas con control de selección múltiple.
 5. Validar en ventanas holdout independientes antes de cambiar gates o habilitar más riesgo.
+
+
+## Completado — clasificación de fallos y suficiencia de muestra (PR #152)
+
+- PR #152 integrada por squash; head validado 8aa757c7004fb46e8db66170ba818f69108c3d79; merge SHA d2bd60484a121bd1c93bf643c418233a12191be8.
+- Cada candidato clasifica los gates fallidos en muestra, rendimiento, riesgo y costes; los códigos originales de validation_failures se conservan para compatibilidad.
+- sample_adequacy separa el mínimo técnico de 120 velas y el número evaluable de barras por ventana walk-forward frente al umbral configurado. Cumplir el umbral no implica robustez estadística.
+- Scout distingue insuficiencia de histórico de OHLCV inválido y registra barras disponibles, procedencia y mínimo requerido.
+- AutonomousStore persiste categorías, suficiencia de muestra y origen del histórico; el dashboard muestra categorías y cobertura walk-forward.
+- No cambian estrategias, parámetros, comisiones, slippage, promotion gates, riesgo ni ejecución.
+- CI del head exacto: 763 tests Python passed, 1 warning; Docker build/runtime hardening passed. CI post-merge run 43074905339: ambos jobs success. No se ejecutaron tests locales.
+- LIVE continúa deshabilitado.
+
+### Siguiente prioridad
+
+1. Verificar límites y cadencias de paginación por exchange y documentar las capacidades reales de cada adaptador.
+2. Añadir cobertura/gap diagnostics conscientes del calendario de cada venue; el detector crypto 24/7 no debe aplicarse a equities/FX.
+3. Integrar spread y costes observables y ampliar holdout independiente antes de añadir estrategias nuevas.
+4. Mantener gates y límites de riesgo actuales hasta disponer de evidencia suficiente.

@@ -2,10 +2,10 @@
 
  > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-> **Último cambio integrado:** PR #150, merge SHA `89bb3e76e3bab21ae2b98496f0fc54b801ec0f93`.
-> **main y demo:** mismo SHA `89bb3e76e3bab21ae2b98496f0fc54b801ec0f93`; compare verificado como identical.
-> **PR abiertas:** ninguna tras integrar PR #150.
-> **CI:** PR #150 head: 760 Python tests passed, 1 warning; Docker build/runtime hardening passed. Post-merge run 43073260919: Python tests y Docker hardening success.
+ > **Último cambio integrado:** PR #152, merge SHA `d2bd60484a121bd1c93bf643c418233a12191be8`.
+> **main y demo:** mismo SHA `d2bd60484a121bd1c93bf643c418233a12191be8`; compare verificado como identical.
+> **PR abiertas:** ninguna tras integrar PR #152.
+> **CI:** PR #152 head: 763 Python tests passed, 1 warning; Docker build/runtime hardening passed. Post-merge run 43074905339: ambos jobs success.
 > **Validación local:** no se pudo clonar el repositorio desde el shell por falta de resolución de GitHub; no afirmar tests locales. La validación ejecutada fue GitHub Actions.
 > **Operación:** investigación y PAPER; LIVE sigue deshabilitado. No ejecutar operaciones reales ni usar credenciales productivas.
 
@@ -288,3 +288,21 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 2. Añadir diagnóstico de huecos/cobertura por sesión/venue, sin aplicar heurísticas crypto 24/7 a equities/FX.
 3. Conectar Strategy Research a rangos persistidos y medir la suficiencia OOS/walk-forward real antes de introducir más estrategias.
 4. Modelar spread y costes observables, y después añadir candidatos estructuralmente distintos con control de selección múltiple.
+
+
+## Bloque integrado — clasificación de fallos y suficiencia de muestra (PR #152)
+
+- PR #152 integrada por squash; head validado 8aa757c7004fb46e8db66170ba818f69108c3d79; merge SHA d2bd60484a121bd1c93bf643c418233a12191be8. main y demo verificadas como identical.
+- StrategyResearchAgent añade validation_failure_categories por candidato: sample, performance, risk, cost y other. Los validation_failures originales se mantienen.
+- Añade sample_adequacy con barras disponibles, OOS bars, barras por ventana walk-forward y umbral configurado. El estado solo informa cumplimiento del mínimo de barras, no robustez estadística.
+- Scout conserva el estado compatible insufficient_or_invalid_history y añade diagnostic_code/failure_category para diferenciar insufficient_history de invalid_history; valida OHLCV antes de clasificar muestras cortas.
+- AutonomousStore persiste categorías y sample_adequacy; dashboard muestra los tipos de bloqueo y la cobertura de ventanas.
+- CI head: 763 passed, 1 warning; Docker build/runtime hardening passed. Post-merge run 43074905339: Python tests y Docker hardening success. Sin tests locales.
+- No se modifican promotion gates, riesgo, estrategias, costes ni ejecución. LIVE deshabilitado.
+
+## Siguiente bloque recomendado
+
+1. Verificar límites reales de paginación y cadencia por exchange y mejorar el contrato de capacidades del adaptador.
+2. Cobertura y gaps con calendarios/sesiones por venue, manteniendo separado crypto 24/7 de equities/FX.
+3. Costes observables de spread/liquidez y validación holdout independiente.
+4. Después, ampliar candidatos de estrategia con control de selección múltiple; no relajar gates.
