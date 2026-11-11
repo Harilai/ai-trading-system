@@ -188,9 +188,6 @@ def run_sync_cycle(
 ) -> list[dict]:
     if now_ms <= 0 or lookback_days < 1:
         raise ValueError("Invalid historical sync clock or lookback")
-    collector = PaginatedCandleCollector(
-        store, page_limit=page_limit, max_pages=max_pages_per_target,
-    )
     outcomes = []
     for target in targets:
         instrument = None
@@ -205,6 +202,21 @@ def run_sync_cycle(
             exchange = getattr(provider, "exchange", None)
             if exchange is None or not callable(getattr(exchange, "fetch_ohlcv", None)):
                 raise ValueError("Provider does not expose CCXT OHLCV pagination")
+            capabilities_method = getattr(provider, "capabilities", None)
+            capabilities = capabilities_method() if callable(capabilities_method) else None
+            if capabilities is not None:
+                if not capabilities.supports_historical_ohlcv:
+                    raise ValueError("Provider does not declare historical OHLCV support")
+                supported_timeframes = capabilities.supported_ohlcv_timeframes
+                if supported_timeframes and target.timeframe not in supported_timeframes:
+                    raise ValueError("Timeframe is not supported by the selected provider")
+                max_request_limit = capabilities.max_ohlcv_request_limit
+                max_history_bars = capabilities.max_historical_ohlcv_bars
+            else:
+                # Test doubles and legacy adapters without a capability contract
+                # remain usable, but their historical retention limit is unknown.
+                max_request_limit = None
+                max_history_bars = None
             instrument = next(
                 (item for item in provider.discover_markets()
                  if item.symbol == target.symbol and item.active),
@@ -220,12 +232,41 @@ def run_sync_cycle(
             interval_ms = int(interval_seconds * 1000)
             if interval_ms <= 0:
                 raise ValueError("OHLCV timeframe is below millisecond precision")
-            initial_since_ms = max(1, now_ms - lookback_days * DAY_MS)
-            initial_since_ms = (initial_since_ms // interval_ms) * interval_ms
-            initial_since_ms = max(1, initial_since_ms)
+
+            requested_since_ms = max(1, now_ms - lookback_days * DAY_MS)
+            requested_since_ms = max(1, (requested_since_ms // interval_ms) * interval_ms)
+            initial_since_ms = requested_since_ms
+            if max_history_bars is not None:
+                if isinstance(max_history_bars, bool) or max_history_bars < 1:
+                    raise ValueError("Provider max historical bars capability is invalid")
+                cap_since_ms = max(1, now_ms - max_history_bars * interval_ms)
+                # Round forward to a candle boundary so the effective range
+                # cannot exceed the provider's documented maximum candle count.
+                cap_since_ms = max(
+                    1, ((cap_since_ms + interval_ms - 1) // interval_ms) * interval_ms,
+                )
+                initial_since_ms = max(initial_since_ms, cap_since_ms)
+            history_window_limited = initial_since_ms > requested_since_ms
+            history_limit_status = (
+                "provider_limit_applied" if history_window_limited
+                else "within_provider_limit" if max_history_bars is not None
+                else "provider_limit_unknown"
+            )
+            effective_page_limit = page_limit
+            if max_request_limit is not None:
+                if isinstance(max_request_limit, bool) or max_request_limit < 1:
+                    raise ValueError("Provider max OHLCV request limit is invalid")
+                effective_page_limit = min(effective_page_limit, max_request_limit)
+            collector = PaginatedCandleCollector(
+                store, page_limit=effective_page_limit, max_pages=max_pages_per_target,
+            )
             state, created = state_store.ensure_target(
                 target.provider_id, instrument.instrument_id, target.symbol,
                 target.timeframe, initial_since_ms,
+                requested_since_ms=requested_since_ms,
+                max_history_bars=max_history_bars,
+                history_window_limited=history_window_limited,
+                history_limit_status=history_limit_status,
             )
             latest = store.get(
                 target.provider_id, instrument.instrument_id, target.timeframe, limit=1,
@@ -241,18 +282,26 @@ def run_sync_cycle(
             ):
                 # Re-fetch the last provisional candle only after the backfill
                 # cursor has reached/passed it; do not skip older missing history.
-                cursor = int(latest[-1]["timestamp_ms"])
+                cursor = max(initial_since_ms, int(latest[-1]["timestamp_ms"]))
             elif state["next_since_ms"] is not None:
-                cursor = int(state["next_since_ms"])
+                cursor = max(initial_since_ms, int(state["next_since_ms"]))
             elif latest:
-                cursor = int(latest[-1]["timestamp_ms"]) + interval_ms
+                cursor = max(initial_since_ms, int(latest[-1]["timestamp_ms"]) + interval_ms)
             else:
-                cursor = int(state["initial_since_ms"])
+                cursor = initial_since_ms
+            metadata = {
+                "requested_since_ms": requested_since_ms,
+                "effective_since_ms": initial_since_ms,
+                "max_history_bars": max_history_bars,
+                "history_window_limited": history_window_limited,
+                "history_limit_status": history_limit_status,
+                "effective_page_limit": effective_page_limit,
+            }
             if cursor >= now_ms:
                 outcomes.append({
-                    "provider_id": target.provider_id, "symbol": target.symbol,
-                    "timeframe": target.timeframe, "status": "waiting_for_data",
-                    "pages": 0, "received": 0,
+                    "provider_id": target.provider_id, "instrument_id": instrument.instrument_id,
+                    "symbol": target.symbol, "timeframe": target.timeframe,
+                    "status": "waiting_for_data", "pages": 0, "received": 0, **metadata,
                 })
                 continue
             state_store.record_start(
@@ -275,9 +324,8 @@ def run_sync_cycle(
                 target.provider_id, instrument.instrument_id, target.timeframe,
                 result, status=status,
             )
-            outcomes.append({**result, "status": status})
+            outcomes.append({**result, **metadata, "status": status})
         except Exception as exc:
-            # Persist a bounded diagnostic, not provider request/credential details.
             safe_error = f"{type(exc).__name__}: historical sync target failed"
             try:
                 if instrument is not None:
