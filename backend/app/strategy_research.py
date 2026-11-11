@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Callable, Sequence
+from statistics import median
 import math
 
 
@@ -98,6 +99,45 @@ def _market_regime(closes: Sequence[float]) -> dict[str, float | str]:
         "trend_efficiency_ratio": efficiency,
         "realized_volatility_20": current_volatility,
         "volatility_percentile": percentile,
+    }
+
+
+def _candle_data_quality(candles: Sequence[dict]) -> dict:
+    """Summarize timestamp coverage without assuming a venue trading calendar."""
+    timestamps = [int(candle["timestamp"]) for candle in candles]
+    intervals_ms = [
+        current - previous
+        for previous, current in zip(timestamps[:-1], timestamps[1:])
+    ]
+    median_interval_ms = median(intervals_ms) if intervals_ms else None
+    gap_intervals = (
+        [
+            interval for interval in intervals_ms
+            if interval > median_interval_ms * 1.5
+        ]
+        if median_interval_ms is not None else []
+    )
+    history_span_seconds = (
+        (timestamps[-1] - timestamps[0]) / 1000.0 if len(timestamps) > 1 else 0.0
+    )
+    return {
+        "status": "available" if len(timestamps) > 1 else "insufficient_history",
+        "bars": len(timestamps),
+        "history_span_seconds": history_span_seconds,
+        "history_span_days": history_span_seconds / 86400.0,
+        "median_candle_interval_seconds": (
+            median_interval_ms / 1000.0 if median_interval_ms is not None else None
+        ),
+        "maximum_candle_interval_seconds": (
+            max(intervals_ms) / 1000.0 if intervals_ms else None
+        ),
+        "gap_count": len(gap_intervals),
+        "largest_gap_seconds": (
+            max(gap_intervals) / 1000.0 if gap_intervals else 0.0
+        ),
+        "gap_detection_threshold_multiplier": 1.5,
+        "gap_detection_method": "intervals_above_1_5x_median_cadence",
+        "calendar_adjustment": False,
     }
 
 
@@ -332,6 +372,7 @@ class StrategyResearchAgent:
             len(normalized),
         )
         results = []
+        data_quality = _candle_data_quality(normalized)
         market_regime = _market_regime([row["close"] for row in normalized])
         stress_multipliers = (1.5, 2.0)
         benchmark_cost_sensitivity = {}
@@ -525,6 +566,15 @@ class StrategyResearchAgent:
                 "must_remain_profitable_and_beat_buy_and_hold_at_1_5x_costs": True,
             },
             "market_regime": market_regime,
+            "data_quality": {
+                **data_quality,
+                "out_of_sample_bars": len(normalized) - split,
+                "walk_forward_evaluation_bars": [
+                    max(0, end - max(warmup, start) - 1)
+                    for start, end in walk_forward_boundaries
+                    for warmup in [max(spec[3] for spec in self._specs())]
+                ],
+            },
             "benchmark": {
                 "name": "buy_and_hold",
                 "out_of_sample": benchmark,
