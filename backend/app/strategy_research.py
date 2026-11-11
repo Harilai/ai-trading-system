@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Callable, Sequence
+from bisect import bisect_right
 from statistics import median
 from math import isfinite
 import math
@@ -238,6 +239,7 @@ class StrategyResearchAgent:
         stressed_result = scenario.get("out_of_sample") or {}
         return (
             stressed_result.get("net_return", 0.0) > 0
+            and stressed_result.get("spread_coverage_complete") is True
             and scenario.get("beats_buy_and_hold") is True
         )
 
@@ -249,7 +251,49 @@ class StrategyResearchAgent:
             ("bollinger_20_reversion", "Bollinger(20,2) lower-band entry / mean exit", _bollinger_signal, 20),
         ]
 
-    def _backtest(self, candles, signal, warmup, start, end, *, fee_rate=None, slippage_rate=None):
+    @staticmethod
+    def _spread_at_execution(
+        execution_timestamp_ms: int,
+        quote_snapshots: Sequence[dict],
+        quote_timestamps: Sequence[int],
+        max_quote_age_ms: int,
+    ) -> float | None:
+        index = bisect_right(quote_timestamps, execution_timestamp_ms) - 1
+        if index < 0:
+            return None
+        quote = quote_snapshots[index]
+        age_ms = execution_timestamp_ms - quote["timestamp_ms"]
+        if age_ms < 0 or age_ms > max_quote_age_ms:
+            return None
+        bid = float(quote["bid"])
+        ask = float(quote["ask"])
+        midpoint = (bid + ask) / 2
+        if midpoint <= 0 or ask < bid:
+            return None
+        spread = (ask - bid) / midpoint
+        return spread if math.isfinite(spread) and 0 <= spread < 1 else None
+
+    def _backtest(
+        self, candles, signal, warmup, start, end, *,
+        fee_rate=None, slippage_rate=None, quote_snapshots=None,
+        max_quote_age_ms=0, spread_multiplier=1.0,
+        final_execution_timestamp_ms=None,
+    ):
+        if (
+            isinstance(spread_multiplier, bool)
+            or not isinstance(spread_multiplier, (int, float))
+            or not math.isfinite(spread_multiplier)
+            or spread_multiplier < 0
+        ):
+            raise ValueError("spread_multiplier must be finite and non-negative")
+        if (
+            isinstance(max_quote_age_ms, bool)
+            or not isinstance(max_quote_age_ms, int)
+            or max_quote_age_ms < 0
+        ):
+            raise ValueError("max_quote_age_ms must be a non-negative integer")
+        quote_snapshots = list(quote_snapshots or [])
+        quote_timestamps = [quote["timestamp_ms"] for quote in quote_snapshots]
         cash = 1.0
         units = 0.0
         entry_equity = 0.0
@@ -259,22 +303,41 @@ class StrategyResearchAgent:
         equity_curve = [1.0]
         evaluated_bars = 0
         exposure_bars = 0
+        spread_execution_count = 0
+        spread_missing_execution_count = 0
+        observed_spreads = []
         effective_fee_rate = self.fee_rate if fee_rate is None else fee_rate
         effective_slippage_rate = (
             self.slippage_rate if slippage_rate is None else slippage_rate
         )
         fee_multiplier = 1.0 - effective_fee_rate
-        buy_multiplier = fee_multiplier * (1.0 - effective_slippage_rate)
-        sell_multiplier = fee_multiplier * (1.0 - effective_slippage_rate)
+        base_execution_multiplier = fee_multiplier * (1.0 - effective_slippage_rate)
+
+        def execution_multiplier(timestamp_ms):
+            nonlocal spread_execution_count, spread_missing_execution_count
+            spread_execution_count += 1
+            spread = self._spread_at_execution(
+                timestamp_ms, quote_snapshots, quote_timestamps, max_quote_age_ms,
+            )
+            if spread is None:
+                spread_missing_execution_count += 1
+                return base_execution_multiplier
+            observed_spreads.append(spread)
+            half_spread = spread * 0.5 * spread_multiplier
+            if half_spread >= 1:
+                raise ValueError("Observed spread cost is outside the valid range")
+            return base_execution_multiplier * (1.0 - half_spread)
 
         for index in range(max(warmup, start), end - 1):
             closes = [float(candle["close"]) for candle in candles[: index + 1]]
             desired = signal(closes, index, units > 0)
+            execution_timestamp_ms = int(candles[index + 1]["timestamp"])
             execution_price = float(candles[index + 1]["open"])
             if execution_price <= 0:
                 raise ValueError("Candle prices must be positive")
 
             if units > 0 and not desired:
+                sell_multiplier = execution_multiplier(execution_timestamp_ms)
                 proceeds = units * execution_price * sell_multiplier
                 closed_returns.append(proceeds / entry_equity - 1.0)
                 trade_durations.append(index + 1 - entry_index)
@@ -283,6 +346,7 @@ class StrategyResearchAgent:
                 entry_equity = 0.0
                 entry_index = None
             elif units == 0 and desired:
+                buy_multiplier = execution_multiplier(execution_timestamp_ms)
                 entry_equity = cash * self.max_position_fraction
                 units = entry_equity * buy_multiplier / execution_price
                 cash -= entry_equity
@@ -297,13 +361,17 @@ class StrategyResearchAgent:
 
         if units > 0:
             final_price = float(candles[end - 1]["close"])
+            final_timestamp = (
+                int(final_execution_timestamp_ms)
+                if final_execution_timestamp_ms is not None
+                else int(candles[end - 1]["timestamp"])
+            )
+            sell_multiplier = execution_multiplier(final_timestamp)
             proceeds = units * final_price * sell_multiplier
             closed_returns.append(proceeds / entry_equity - 1.0)
             trade_durations.append(end - 1 - entry_index)
             cash += proceeds
             units = 0.0
-            # Replace the final mark with liquidation value. Appending a second
-            # point here would create a fictitious extra return period.
             if len(equity_curve) > 1:
                 equity_curve[-1] = cash
             else:
@@ -352,6 +420,9 @@ class StrategyResearchAgent:
             if average_win is not None and average_loss is not None and average_loss != 0
             else None
         )
+        spread_coverage_complete = (
+            bool(quote_snapshots) and spread_missing_execution_count == 0
+        )
         return {
             "net_return": cash - 1.0,
             "max_drawdown": max_drawdown,
@@ -382,6 +453,17 @@ class StrategyResearchAgent:
                 mean_period_return / downside_deviation
                 if downside_deviation > 0 else None
             ),
+            "spread_coverage_complete": spread_coverage_complete,
+            "spread_execution_count": spread_execution_count,
+            "spread_missing_execution_count": spread_missing_execution_count,
+            "spread_observed_execution_count": len(observed_spreads),
+            "average_observed_spread_fraction": (
+                sum(observed_spreads) / len(observed_spreads) if observed_spreads else None
+            ),
+            "maximum_observed_spread_fraction": (
+                max(observed_spreads) if observed_spreads else None
+            ),
+            "spread_multiplier": spread_multiplier,
         }
 
     def research(
