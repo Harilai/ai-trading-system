@@ -119,6 +119,11 @@ def test_initial_ccxt_adapter_is_public_data_only():
     assert capabilities.balances is False
     assert capabilities.supports_withdrawals is False
     assert capabilities.connectivity_status == "not_checked"
+    assert capabilities.supports_historical_ohlcv is True
+    assert "1m" in capabilities.supported_ohlcv_timeframes
+    assert capabilities.ohlcv_pagination_mode == "since"
+    assert capabilities.max_ohlcv_request_limit == 720
+    assert capabilities.max_historical_ohlcv_bars == 720
 
 
 
