@@ -908,9 +908,34 @@ def risk_profiles():
     }
 
 
+def _parse_discovery_asset_class(asset_class: str | None) -> tuple[AssetClass, ...] | None:
+    if asset_class is None:
+        return None
+    try:
+        return (AssetClass(asset_class.strip().lower()),)
+    except ValueError as exc:
+        allowed = ", ".join(sorted(item.value for item in AssetClass))
+        raise HTTPException(422, f"Unsupported asset_class; allowed values: {allowed}") from exc
+
+
+def _parse_discovery_provider_id(provider_id: str | None) -> tuple[str, ...] | None:
+    if provider_id is None:
+        return None
+    normalized = provider_id.strip().lower()
+    if not normalized:
+        raise HTTPException(422, "provider_id must not be empty")
+    return (normalized,)
+
+
 @app.get("/api/markets")
-def markets():
-    instruments, failures = market.discover_markets()
+def markets(
+    provider_id: str | None = None,
+    asset_class: str | None = None,
+):
+    instruments, failures = market.discover_markets(
+        asset_classes=_parse_discovery_asset_class(asset_class),
+        provider_ids=_parse_discovery_provider_id(provider_id),
+    )
     try:
         catalogue_sync = instrument_catalog.record_discovery(instruments, failures)
     except InstrumentCatalogError as exc:
@@ -1000,10 +1025,17 @@ def instrument_discovery_runs(limit: int = Query(50, ge=1, le=200)):
 
 
 @app.post("/api/instruments/refresh")
-def refresh_instrument_catalogue(x_agent_token: str | None = Header(default=None)):
+def refresh_instrument_catalogue(
+    provider_id: str | None = None,
+    asset_class: str | None = None,
+    x_agent_token: str | None = Header(default=None),
+):
     require_order_control_token(x_agent_token)
     started_at = datetime.now(timezone.utc)
-    instruments, failures = market.discover_markets()
+    instruments, failures = market.discover_markets(
+        asset_classes=_parse_discovery_asset_class(asset_class),
+        provider_ids=_parse_discovery_provider_id(provider_id),
+    )
     return instrument_catalog.record_discovery(
         instruments,
         failures,

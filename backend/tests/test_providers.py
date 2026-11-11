@@ -499,3 +499,61 @@ def test_registry_rejects_provider_returning_asset_outside_requested_filter():
         "provider_id": "filter-ignoring",
         "reason": "Provider returned an asset class outside the requested filter",
     }]
+
+
+
+def test_registry_scopes_discovery_to_explicit_provider_only():
+    calls = []
+
+    class TrackingProvider(FakeProvider):
+        def discover_markets(self, asset_classes=None):
+            calls.append(self.provider_id)
+            return super().discover_markets(asset_classes)
+
+    registry = ProviderRegistry()
+    registry.register(TrackingProvider("provider-one"))
+    registry.register(TrackingProvider("provider-two"))
+
+    instruments, failures = registry.discover_markets(provider_ids=("provider-two",))
+
+    assert calls == ["provider-two"]
+    assert failures == []
+    assert {item.provider_id for item in instruments} == {"provider-two"}
+
+
+def test_registry_reports_unknown_explicit_provider_without_fallback():
+    registry = ProviderRegistry()
+    registry.register(FakeProvider("configured"))
+    instruments, failures = registry.discover_markets(provider_ids=("missing",))
+
+    assert instruments == []
+    assert failures == [{
+        "provider_id": "missing",
+        "reason": "Provider is not configured",
+    }]
+
+
+def test_registry_reports_unsupported_asset_class_for_explicit_provider():
+    registry = ProviderRegistry()
+    registry.register(FakeProvider("crypto-only"))
+    instruments, failures = registry.discover_markets(
+        asset_classes=(AssetClass.EQUITY,),
+        provider_ids=("crypto-only",),
+    )
+
+    assert instruments == []
+    assert failures == [{
+        "provider_id": "crypto-only",
+        "reason": "Requested asset classes are not supported by this provider",
+    }]
+
+
+def test_registry_global_asset_filter_skips_unrelated_provider_without_failure():
+    registry = ProviderRegistry()
+    registry.register(FakeProvider("crypto-only"))
+    instruments, failures = registry.discover_markets(
+        asset_classes=(AssetClass.EQUITY,),
+    )
+
+    assert instruments == []
+    assert failures == []

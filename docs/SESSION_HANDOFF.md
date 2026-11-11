@@ -113,3 +113,10 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - Rama feat/provider-discovery-contract-validation: valida identidad, asset class y market type de cada instrumento descubierto contra las capacidades declaradas y los filtros solicitados.
 - Los registros incompatibles se descartan con fallos tipados; los errores de proveedor no propagan texto arbitrario potencialmente sensible.
 - Tests añadidos en backend/tests/test_providers.py; CI pendiente.
+
+
+## Continuidad — filtros de descubrimiento por proveedor
+
+- Rama feat/provider-scoped-instrument-discovery añade provider_ids a ProviderRegistry.discover_markets.
+- API GET /api/markets y POST /api/instruments/refresh aceptan provider_id y asset_class; refresh continúa protegido por X-Agent-Token.
+- Se cubren proveedor inexistente, clase no soportada, aislamiento de proveedores y filtro global. CI pendiente.
