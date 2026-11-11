@@ -500,6 +500,7 @@ def test_strategy_research_history_persists_versioned_candidate_evidence(tmp_pat
         "cost_model": {"fee_rate_per_side": 0.0026, "slippage_rate_per_side": 0.0005},
         "promotion_gates": {"must_beat_buy_and_hold": True},
         "market_regime": {"status": "available", "structure": "trending_up", "volatility": "normal"},
+        "data_quality": {"bars": 250, "history_span_days": 10.375, "out_of_sample_bars": 75, "gap_count": 0},
         "candidates": [
             {
                 "strategy_id": "ema_12_26",
@@ -507,7 +508,7 @@ def test_strategy_research_history_persists_versioned_candidate_evidence(tmp_pat
                 "eligible": False,
                 "score": None,
                 "validation_failures": ["does_not_beat_buy_and_hold"],
-                "out_of_sample": {"net_return": -0.01, "trades": 4},
+                "out_of_sample": {"net_return": -0.01, "trades": 4, "sharpe_per_bar": -0.12},
                 "walk_forward": {"positive_windows": 1},
                 "cost_sensitivity": {"2.0": {"beats_buy_and_hold": False}},
             },
@@ -539,6 +540,8 @@ def test_strategy_research_history_persists_versioned_candidate_evidence(tmp_pat
     assert rejected["validation_failures"] == ["does_not_beat_buy_and_hold"]
     assert rejected["result"]["cost_sensitivity"]["2.0"]["beats_buy_and_hold"] is False
     assert rejected["result"]["market_regime"]["structure"] == "trending_up"
+    assert rejected["result"]["data_quality"]["bars"] == 250
+    assert rejected["result"]["out_of_sample"]["sharpe_per_bar"] == -0.12
     promoted = by_id["rsi_14_reversion"]
     assert promoted["eligible"] is True
     assert promoted["strategy_version"].startswith("rsi_14_reversion:logic-v1:config-")
