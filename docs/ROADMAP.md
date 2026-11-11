@@ -247,17 +247,17 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - El historial divergente previo de `demo` se conserva en `archive/demo-before-main-sync-2026-11-11`; no se incorpora a `main` salvo selección explícita de cambios necesarios.
 
 
-## Descubrimiento multiactivo — endurecimiento del contrato de proveedores (en revisión)
+## Descubrimiento multiactivo — endurecimiento del contrato de proveedores (integrado, PR #129)
 
 - La registry valida cada instrumento descubierto contra la identidad del adaptador, las clases de activo y tipos de mercado declarados, y el filtro solicitado.
 - Registros malformados o incompatibles se rechazan individualmente sin descartar instrumentos válidos de otros proveedores.
 - Los errores de adaptadores se registran por tipo de excepción, no copiando texto arbitrario que podría contener credenciales o cabeceras.
-- Pendiente CI y revisión de la PR; no implica que todos los proveedores soporten todas las clases ni habilita ejecución.
+- Integrado mediante squash en `e7bccdb62ddb5ac3464049c41a95686d3b45085f`. CI de PR #129: Python tests y Docker build/runtime hardening pasaron. No implica que todos los proveedores soporten todas las clases ni habilita ejecución.
 
 
-## Descubrimiento multiactivo — filtros explícitos por proveedor y clase (en desarrollo)
+## Descubrimiento multiactivo — filtros explícitos por proveedor y clase (integrado, PR #130)
 
 - Registry: descubrimiento limitado a proveedores seleccionados, con error explícito para proveedor inexistente o clase no soportada cuando el proveedor se solicita expresamente.
 - API: GET /api/markets y POST /api/instruments/refresh aceptan provider_id y asset_class; el refresh conserva el token de control.
 - El filtro global por clase omite proveedores que no ofrecen esa clase sin marcarlos como fallidos; el filtro explícito por proveedor sí informa de incompatibilidad.
-- Pendiente CI, revisión y merge. Descubrimiento únicamente; no habilita negociación.
+- Integrado mediante squash en `98760e46740556144478623929ed233f7e7402bd`. CI de PR #130: 645 tests Python pasaron (1 warning); Docker build/runtime hardening pasó. CI post-merge de `main` también pasó. Descubrimiento únicamente; no habilita negociación.
