@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from .config import settings
 from .indicators import atr, bollinger_bands, ema, macd, rsi, sma
 from .market_data import MarketDataError
-from .historical_data import HistoricalCandleStore, HistoricalDataError, HistoricalDataConflict, PaginatedCandleCollector
+from .historical_data import HistoricalCandleStore, HistoricalQuoteStore, HistoricalDataError, HistoricalDataConflict, PaginatedCandleCollector
 from .historical_data_scheduler import HistoricalSyncStateStore
 from .providers.ccxt_spot import CcxtSpotProvider
 from .providers.twelve_data import TwelveDataProvider
@@ -95,6 +95,7 @@ coordinated_cash_snapshot_store = CoordinatedCashSnapshotStore(
 )
 demo_order_store = BinanceDemoOrderStore(settings.database_path)
 historical_candle_store = HistoricalCandleStore(settings.database_path)
+historical_quote_store = HistoricalQuoteStore(settings.database_path)
 historical_candle_collector = PaginatedCandleCollector(historical_candle_store)
 historical_sync_state_store = HistoricalSyncStateStore(settings.database_path)
 
@@ -1676,6 +1677,7 @@ agent_store = AutonomousStore(settings.database_path)
 scout = ScoutAgent(
     market,
     historical_store=historical_candle_store,
+    quote_store=historical_quote_store,
     strategy_research=StrategyResearchAgent(
         fee_rate=settings.fee_rate,
         slippage_rate=settings.slippage_rate,
