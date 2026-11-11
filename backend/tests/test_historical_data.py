@@ -114,3 +114,34 @@ def test_range_query_and_coverage_report(tmp_path):
         "bars": 3, "first_timestamp_ms": 1000, "last_timestamp_ms": 3000,
         "provisional_bars": 1, "status": "available",
     }
+
+
+def test_stale_replay_cannot_demote_finalized_candle(tmp_path):
+    db = store(tmp_path)
+    db.upsert("p", "i", "BTC/EUR", "1m", [row(1000)],
+              finalized_before_ms=2000)
+    replay = db.upsert("p", "i", "BTC/EUR", "1m", [row(1000)],
+                       finalized_before_ms=1000)
+    assert replay["unchanged"] == 1
+    assert db.get("p", "i", "1m")[0]["is_final"] is True
+
+
+def test_pagination_rejects_out_of_order_provider_rows(tmp_path):
+    collector = PaginatedCandleCollector(store(tmp_path), page_limit=2)
+    with pytest.raises(HistoricalDataError, match="non-increasing"):
+        collector.collect(
+            "p", "i", "BTC/EUR", "1s", 1000, 5000,
+            lambda *args, **kwargs: [row(2000), row(1000)],
+            candle_interval_ms=1000, finalized_before_ms=5000,
+        )
+
+
+def test_pagination_completes_when_provider_reaches_requested_end(tmp_path):
+    collector = PaginatedCandleCollector(store(tmp_path), page_limit=2)
+    result = collector.collect(
+        "p", "i", "BTC/EUR", "1s", 1000, 3000,
+        lambda *args, **kwargs: [row(3000), row(4000)],
+        candle_interval_ms=1000, finalized_before_ms=5000,
+    )
+    assert result["complete"] is True
+    assert result["next_since_ms"] is None
