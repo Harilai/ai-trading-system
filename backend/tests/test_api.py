@@ -2054,3 +2054,76 @@ def test_instrument_refresh_rejects_empty_provider_filter(monkeypatch):
 
     assert response.status_code == 422
     assert response.json()["detail"] == "provider_id must not be empty"
+
+
+
+def test_instrument_eligibility_endpoint_reports_data_only_provider(monkeypatch):
+    from types import SimpleNamespace
+    from app.providers.base import AssetClass, MarketType, ProviderCapabilities, VenueType
+
+    catalogue_item = {
+        "catalogue_id": "inst_test",
+        "provider_id": "twelve_data",
+        "asset_class": "equity",
+        "market_type": "cash_equity",
+        "base": "ACME",
+        "quote": "USD",
+        "native_symbol": "ACME",
+        "active": True,
+        "trading_status": "active",
+        "minimum_amount": 1,
+        "minimum_cost": 1,
+        "maker_fee": 0,
+        "taker_fee": 0.001,
+        "precision_mode": "tick_size",
+        "price_tick": 0.01,
+        "amount_step": 1,
+        "session_timezone": "America/New_York",
+    }
+    caps = ProviderCapabilities(
+        provider_id="twelve_data",
+        venue_type=VenueType.DATA,
+        asset_classes=(AssetClass.EQUITY,),
+        market_types=(MarketType.CASH_EQUITY,),
+        public_market_data=True,
+        order_management=False,
+    )
+    monkeypatch.setattr(
+        "app.main.instrument_catalog.get_instrument",
+        lambda catalogue_id: catalogue_item if catalogue_id == "inst_test" else None,
+    )
+    monkeypatch.setattr("app.main.market.capability_matrix", lambda: [caps])
+
+    response = client.get("/api/instruments/inst_test/eligibility")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "unsupported"
+    assert payload["market_data_available"] is True
+    assert payload["execution_capability"] == "unsupported"
+    assert payload["execution_adapter_configured"] is False
+    assert any("data-only" in item for item in payload["blockers"])
+
+
+def test_instrument_eligibility_endpoint_returns_not_configured_for_unknown_provider(monkeypatch):
+    item = {
+        "provider_id": "provider-not-loaded",
+        "asset_class": "crypto",
+        "market_type": "spot",
+    }
+    monkeypatch.setattr("app.main.instrument_catalog.get_instrument", lambda _catalogue_id: item)
+    monkeypatch.setattr("app.main.market.capability_matrix", lambda: [])
+
+    response = client.get("/api/instruments/inst_unknown/eligibility")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "not_configured"
+    assert response.json()["execution_capability"] == "unknown"
+
+
+def test_instrument_eligibility_endpoint_returns_404_for_missing_catalogue_item(monkeypatch):
+    monkeypatch.setattr("app.main.instrument_catalog.get_instrument", lambda _catalogue_id: None)
+
+    response = client.get("/api/instruments/not-found/eligibility")
+
+    assert response.status_code == 404

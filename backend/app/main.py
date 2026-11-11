@@ -16,6 +16,7 @@ from .providers.ccxt_spot import CcxtSpotProvider
 from .providers.twelve_data import TwelveDataProvider
 from .providers.base import AssetClass
 from .instrument_catalog import InstrumentCatalog, InstrumentCatalogError
+from .instrument_eligibility import evaluate_instrument_eligibility
 from .equity_research import EquityEtfResearchAgent
 from .equity_exits import EquityExitMonitor
 from .providers.registry import ProviderRegistry
@@ -1014,6 +1015,28 @@ def instrument_catalogue_item(catalogue_id: str):
     if item is None:
         raise HTTPException(404, "Instrument catalogue entry not found")
     return item
+
+
+@app.get("/api/instruments/{catalogue_id}/eligibility")
+def instrument_trading_eligibility(catalogue_id: str):
+    item = instrument_catalog.get_instrument(catalogue_id)
+    if item is None:
+        raise HTTPException(404, "Instrument catalogue entry not found")
+    capabilities = next(
+        (
+            capability for capability in market.capability_matrix()
+            if capability.provider_id == item.get("provider_id")
+        ),
+        None,
+    )
+    # Market-data registration is not an execution adapter registration.
+    # No adapter is currently wired into this eligibility endpoint.
+    return evaluate_instrument_eligibility(
+        item,
+        capabilities,
+        catalogue_id=catalogue_id,
+        execution_adapter_configured=False,
+    ).as_dict()
 
 
 @app.get("/api/instrument-discovery/runs")
