@@ -90,3 +90,24 @@ def test_scout_uses_deeper_finalized_persisted_history_for_strategy_research():
     assert research["history_bars"] == 80
     assert research["persisted_finalized_bars_available"] == 80
     assert research["history_source"] == "persistent_finalized_ohlcv"
+
+
+def test_scout_falls_back_to_recent_provider_history_when_store_is_unavailable():
+    import sqlite3
+
+    class UnavailableStore:
+        def get(self, *args, **kwargs):
+            raise sqlite3.OperationalError("database is locked")
+
+    class Research:
+        def research(self, candles):
+            return {"status": "ok", "bars_seen": len(candles)}
+
+    result = ScoutAgent(
+        FakeMarketData(),
+        historical_store=UnavailableStore(),
+        strategy_research=Research(),
+    ).scan()
+    research = result["analyses"][0]["strategy_research"]
+    assert research["bars_seen"] == 60
+    assert research["history_source"] == "provider_recent_store_unavailable"
