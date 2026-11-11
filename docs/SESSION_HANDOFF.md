@@ -306,3 +306,14 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 2. Cobertura y gaps con calendarios/sesiones por venue, manteniendo separado crypto 24/7 de equities/FX.
 3. Costes observables de spread/liquidez y validación holdout independiente.
 4. Después, ampliar candidatos de estrategia con control de selección múltiple; no relajar gates.
+
+
+## Bloque en desarrollo — cobertura de histórico consciente de la cadencia (2026-11-11)
+
+- Estado base verificado: main y demo identical en 41e069fd4f20f6a2ed70587df3c0665725857402; PR abiertas 0 tras PR #153.
+- PR #153 documenta la integración de #152 y su evidencia CI: 763 tests Python y Docker hardening correctos; run post-merge #153 aún pendiente al iniciar este bloque.
+- En rama feat/venue-aware-research-coverage se añade expected_interval_seconds opcional a StrategyResearchAgent; el diagnóstico explicita cadence_source, expected interval, estimated_missing_intervals y calendar_model.
+- Scout transmite la cadencia derivada de timeframe para su universo crypto spot EUR y declara crypto_24x7 solo para ese universo. Timeframes calendario/mes no se convierten a duración fija.
+- Se mantiene calendar_adjustment=false: esto detecta desviaciones de cadencia, no aplica calendario bursátil ni prueba que el dato ausente sea negociable.
+- Tests añadidos para huecos con cadencia explícita, estimación de barras ausentes y rechazo de intervalos cero/NaN/Inf/bool. CI pendiente; no tests locales.
+- No se cambian estrategias ni gates. LIVE deshabilitado.
