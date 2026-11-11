@@ -2,7 +2,7 @@
 
  > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-    > **Último cambio integrado:** PR #150, merge SHA `89bb3e76e3bab21ae2b98496f0fc54b801ec0f93`.
+> **Último cambio integrado:** PR #150, merge SHA `89bb3e76e3bab21ae2b98496f0fc54b801ec0f93`.
 > **main y demo:** mismo SHA `89bb3e76e3bab21ae2b98496f0fc54b801ec0f93`; compare verificado como identical.
 > **PR abiertas:** ninguna tras integrar PR #150.
 > **CI:** PR #150 head: 760 Python tests passed, 1 warning; Docker build/runtime hardening passed. Post-merge run 43073260919: Python tests y Docker hardening success.
@@ -257,9 +257,8 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 - Las velas provisionales se pueden refrescar. Las finalizadas son inmutables: discrepancias rechazan la operación y hacen rollback; un replay antiguo no degrada una vela finalizada.
 - Colector paginado con `since`, `limit`, orden temporal estricto, límite de páginas y cursor `next_since_ms` para reanudar.
 - Endpoints autenticados `POST /api/market-data/history/sync` y `GET /api/market-data/history`. La sincronización requiere instrumento activo del catálogo del proveedor y reutiliza rate limiting CCXT. Otros proveedores no se habilitan sin soporte paginado declarado.
-- CI PR #146: 741 tests Python passed, 1 warning; Docker build/runtime hardening passed. PR #148: 744 tests Python passed, 1 warning; Docker build/runtime hardening passed. CI post-merge #148 pendiente de comprobación.
-- No se ejecutaron tests locales ni validación operativa contra proveedores reales. No hay scheduler de backfill automático ni retención configurada todavía.
-- Siguiente prioridad: añadir un scheduler incremental seguro, definir política de retención y diagnosticar cobertura/gaps por timeframe/proveedor antes de ampliar la investigación a múltiples timeframes. LIVE permanece deshabilitado.
+- CI PR #146: 741 tests Python passed, 1 warning; Docker build/runtime hardening passed. PR #148: 744 tests Python passed, 1 warning; Docker build/runtime hardening passed. CI post-merge #148 success.
+- No se ejecutaron tests locales ni validación operativa contra proveedores reales. El scheduler incremental se integra en PR #150, es opt-in y la retención raw se define indefinida, sin poda automática. LIVE permanece deshabilitado.
 
 
 
