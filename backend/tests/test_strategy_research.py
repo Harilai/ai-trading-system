@@ -456,6 +456,12 @@ def test_backtest_applies_observed_half_spread_on_entry_and_exit():
     assert spread_adjusted["spread_observed_execution_count"] == 2
     assert spread_adjusted["spread_missing_execution_count"] == 0
     assert spread_adjusted["average_observed_spread_fraction"] == pytest.approx(0.02)
+    stressed = agent._backtest(
+        candles, signal, 0, 0, len(candles),
+        quote_snapshots=quotes, max_quote_age_ms=0, spread_multiplier=1.5,
+        candle_interval_ms=3_600_000,
+    )
+    assert stressed["net_return"] < spread_adjusted["net_return"]
 
 
 def test_backtest_never_uses_a_quote_timestamped_after_execution():
