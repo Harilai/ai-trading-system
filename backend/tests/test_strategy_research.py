@@ -687,3 +687,30 @@ def test_research_rejects_quote_event_timestamp_ahead_of_local_receipt():
                 "source": "test",
             }],
         )
+
+
+def test_spread_freshness_uses_local_receipt_time_not_last_trade_timestamp():
+    candles = candles_from_closes([100.0] * 5)
+    entry_time = candles[1]["timestamp"]
+    quotes = [{
+        "timestamp_ms": entry_time - 600_000,
+        "retrieved_at_ms": entry_time - 1_000,
+        "bid": 99.0,
+        "ask": 101.0,
+        "timestamp_source": "exchange",
+        "source": "test",
+    }]
+    result = StrategyResearchAgent(fee_rate=0.0, slippage_rate=0.0)._backtest(
+        candles,
+        lambda closes, index, in_position: index == 0 and not in_position,
+        0,
+        0,
+        len(candles),
+        quote_snapshots=quotes,
+        max_quote_age_ms=5_000,
+        candle_interval_ms=3_600_000,
+    )
+
+    assert result["spread_observed_execution_count"] == 1
+    assert result["spread_missing_execution_count"] == 1
+    assert result["spread_coverage_complete"] is False
