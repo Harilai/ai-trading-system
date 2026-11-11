@@ -57,7 +57,8 @@ market = ProviderRegistry()
 # Deliberately empty until a compatible execution adapter is explicitly registered.
 # Market-data discovery must never populate this registry.
 execution_router = ExecutionRouter(live_enabled=False)
-# Scoped account/environment registry remains empty until account identity is verified.
+# External broker scopes remain unregistered until their account identity is verified.
+# The internal PAPER ledger is explicitly registered after its scoped adapter is built.
 execution_adapter_registry = ExecutionAdapterRegistry()
 for configured_provider in settings.market_data_provider_ids.split(','):
     provider_id = configured_provider.strip().lower()
