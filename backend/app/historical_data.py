@@ -175,7 +175,7 @@ class HistoricalCandleStore:
         with self.connect() as db:
             rows = db.execute(
                 "SELECT * FROM historical_candles WHERE " + " AND ".join(clauses)
-                + " ORDER BY retrieved_at_ms DESC,timestamp_ms DESC,id DESC LIMIT ?", params,
+                + " ORDER BY timestamp_ms DESC LIMIT ?", params,
             ).fetchall()
         rows = list(reversed(rows))
         return [
@@ -268,7 +268,9 @@ class HistoricalQuoteStore:
                                     retrieved = retrieved.replace(tzinfo=timezone.utc)
                                 retrieved_ms = int(retrieved.timestamp() * 1000)
                             except (TypeError, ValueError, OverflowError):
-                                retrieved_ms = int(legacy["timestamp_ms"])
+                                retrieved_ms = 0
+                            if retrieved_ms < int(legacy["timestamp_ms"]):
+                                retrieved_ms = 0
                         db.execute(
                             "INSERT OR IGNORE INTO historical_quotes "
                             "(provider_id,instrument_id,symbol,timestamp_ms,bid,ask,timestamp_source,source,retrieved_at,retrieved_at_ms) "
@@ -294,7 +296,9 @@ class HistoricalQuoteStore:
                                 retrieved = retrieved.replace(tzinfo=timezone.utc)
                             retrieved_ms = int(retrieved.timestamp() * 1000)
                         except (TypeError, ValueError, OverflowError):
-                            retrieved_ms = int(legacy["timestamp_ms"])
+                            retrieved_ms = 0
+                        if retrieved_ms < int(legacy["timestamp_ms"]):
+                            retrieved_ms = 0
                         db.execute(
                             "UPDATE historical_quotes SET retrieved_at_ms=? WHERE id=?",
                             (retrieved_ms, legacy["id"]),
@@ -383,7 +387,7 @@ class HistoricalQuoteStore:
         HistoricalCandleStore._identity(provider_id, instrument_id, "quote", "quote")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100_000:
             raise HistoricalDataError("quote limit must be between 1 and 100000")
-        clauses = ["provider_id=?", "instrument_id=?", "retrieved_at_ms>0"]
+        clauses = ["provider_id=?", "instrument_id=?", "retrieved_at_ms>=timestamp_ms"]
         params: list = [provider_id, instrument_id]
         if since_ms is not None:
             if isinstance(since_ms, bool) or not isinstance(since_ms, int) or since_ms <= 0:
@@ -416,7 +420,7 @@ class HistoricalQuoteStore:
         with self.connect() as db:
             rows = db.execute(
                 "SELECT * FROM historical_quotes WHERE " + " AND ".join(clauses)
-                + " ORDER BY timestamp_ms DESC LIMIT ?",
+                + " ORDER BY timestamp_ms DESC,retrieved_at_ms DESC,id DESC LIMIT ?",
                 params,
             ).fetchall()
         return [
@@ -440,10 +444,10 @@ class HistoricalQuoteStore:
         with self.connect() as db:
             row = db.execute(
                 "SELECT COUNT(*) AS observations,"
-                "SUM(CASE WHEN retrieved_at_ms>0 THEN 1 ELSE 0 END) AS valid_observations,"
-                "SUM(CASE WHEN retrieved_at_ms<=0 OR retrieved_at_ms IS NULL THEN 1 ELSE 0 END) AS invalid_observations,"
-                "MIN(CASE WHEN retrieved_at_ms>0 THEN timestamp_ms END) AS first_ms,"
-                "MAX(CASE WHEN retrieved_at_ms>0 THEN timestamp_ms END) AS last_ms "
+                "SUM(CASE WHEN retrieved_at_ms>=timestamp_ms THEN 1 ELSE 0 END) AS valid_observations,"
+                "SUM(CASE WHEN retrieved_at_ms<timestamp_ms OR retrieved_at_ms IS NULL THEN 1 ELSE 0 END) AS invalid_observations,"
+                "MIN(CASE WHEN retrieved_at_ms>=timestamp_ms THEN timestamp_ms END) AS first_ms,"
+                "MAX(CASE WHEN retrieved_at_ms>=timestamp_ms THEN timestamp_ms END) AS last_ms "
                 "FROM historical_quotes WHERE provider_id=? AND instrument_id=?",
                 (provider_id, instrument_id),
             ).fetchone()
