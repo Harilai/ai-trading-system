@@ -185,6 +185,7 @@ _VALIDATION_FAILURE_CATEGORIES = {
     "oos_drawdown_exceeded": "risk",
     "walk_forward_drawdown_exceeded": "risk",
     "fails_1_5x_cost_stress": "cost",
+    "insufficient_spread_coverage": "cost",
 }
 
 
@@ -778,6 +779,8 @@ class StrategyResearchAgent:
                 out_sample["spread_coverage_complete"]
                 and walk_forward_spread_coverage_complete
             )
+            if not spread_coverage_complete_for_promotion:
+                validation_failures.append("insufficient_spread_coverage")
             if not self._passes_cost_stress(cost_sensitivity, "1.5"):
                 validation_failures.append("fails_1_5x_cost_stress")
             eligible = not validation_failures
