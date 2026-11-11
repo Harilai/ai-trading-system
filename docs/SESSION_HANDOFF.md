@@ -211,7 +211,7 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - PR #134 se desarrolla sobre `feat/scoped-account-adapters`, basada temporalmente en la rama de #133. Debe permanecer dependiente hasta integrar #133.
 - Implementado en #134: `BinanceSpotDemoScopedAdapter` y `PaperPortfolioScopedAdapter`, snapshots normalizados con scope, balances y posiciones.
 - Binance Demo: balance snapshot sí; posiciones UNKNOWN (no se convierte cada token en posición sin mapping/valuation); `account_identity_verified=false` porque account_id es alias local, no identificador remoto verificado.
-- PAPER: ledger interno, no broker externo; balances/positions del snapshot. Partial fills y cancelación exchange UNSUPPORTED porque el fill actual es atómico. El gate de readiness rechaza ambos adaptadores actualmente; es intencional.
+- PAPER: ledger interno, no broker externo; balances/positions del snapshot; el alias de cuenta es local y no verificado (`account_identity_verified=false`). Scope limitado a crypto Spot y fills market inmediatos. Partial fills y cancelación exchange UNSUPPORTED porque el fill actual es atómico. El gate de readiness rechaza ambos adaptadores actualmente; es intencional.
 - No se registran adaptadores automáticamente ni se conectan endpoints de ejecución. No se han enviado órdenes. LIVE permanece deshabilitado.
 - Validación de PR #134 pendiente de CI exacto; no afirmar tests superados hasta que GitHub Actions termine.
 - Siguiente fase: mapping de posiciones Spot + valoración/timestamp; diseño de perfil de capabilities PAPER sin falsear parcial fills; integración de snapshot freshness, account scope y reconciliation en preflight/RiskManager, preservando cierres/reducciones y emergency stop.
