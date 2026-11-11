@@ -161,7 +161,20 @@ class ScoutAgent:
                 try:
                     research = self.strategy_research.research(research_candles)
                 except ValueError as exc:
-                    research = {"status": "insufficient_or_invalid_history", "reason": str(exc)}
+                    insufficient_history = "At least 120 candles are required" in str(exc)
+                    research = {
+                        "status": "insufficient_or_invalid_history",
+                        "reason": str(exc),
+                        "diagnostic_code": (
+                            "insufficient_history" if insufficient_history else "invalid_history"
+                        ),
+                        "failure_category": "sample" if insufficient_history else "data_quality",
+                        "sample_adequacy": {
+                            "status": "insufficient_history" if insufficient_history else "invalid_input",
+                            "available_bars": len(research_candles),
+                            "minimum_research_bars": 120,
+                        },
+                    }
                 if isinstance(research, dict):
                     research = {
                         **research,
