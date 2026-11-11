@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from threading import RLock
 from typing import Any
@@ -85,6 +85,9 @@ class CapabilityEvidence:
                 raise ExecutionRegistryError("Capability verification timestamp must be ISO-8601") from exc
             if parsed.tzinfo is None:
                 raise ExecutionRegistryError("Capability verification timestamp must include a timezone")
+            object.__setattr__(self, "verified_at", parsed.astimezone(timezone.utc).isoformat())
+        if self.detail is not None and not isinstance(self.detail, str):
+            raise ExecutionRegistryError("Capability evidence detail must be text")
 
 
 @dataclass(frozen=True)
@@ -116,9 +119,26 @@ class ExecutionCapabilities:
             if not isinstance(getattr(self, field_name), CapabilityEvidence):
                 raise ExecutionRegistryError(f"{field_name} requires explicit capability evidence")
 
-    def supports(self, capability_name: str) -> bool:
+    def supports(
+        self,
+        capability_name: str,
+        *,
+        now: datetime | None = None,
+        max_age: timedelta = timedelta(hours=24),
+    ) -> bool:
         evidence = getattr(self, capability_name, None)
-        return isinstance(evidence, CapabilityEvidence) and evidence.state is CapabilityState.SUPPORTED
+        if not isinstance(evidence, CapabilityEvidence) or evidence.state is not CapabilityState.SUPPORTED:
+            return False
+        if evidence.verified_at is None:
+            return False
+        if not isinstance(max_age, timedelta) or max_age.total_seconds() <= 0:
+            raise ExecutionRegistryError("Capability evidence maximum age must be positive")
+        verified_at = datetime.fromisoformat(evidence.verified_at)
+        reference_time = now or datetime.now(timezone.utc)
+        if reference_time.tzinfo is None:
+            raise ExecutionRegistryError("Capability evaluation time must include a timezone")
+        age = reference_time.astimezone(timezone.utc) - verified_at
+        return timedelta(0) <= age <= max_age
 
     def describe(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -214,6 +234,8 @@ class ExecutionAdapterRegistry:
             "cancellation",
             "order_reconciliation",
         ),
+        now: datetime | None = None,
+        evidence_max_age: timedelta = timedelta(hours=24),
     ) -> bool:
         registration = self.get(scope)
         if registration is None:
@@ -221,7 +243,10 @@ class ExecutionAdapterRegistry:
         capabilities = registration.capabilities
         if asset_class not in capabilities.asset_classes or order_type not in capabilities.order_types:
             return False
-        return all(capabilities.supports(name) for name in required_capabilities)
+        return all(
+            capabilities.supports(name, now=now, max_age=evidence_max_age)
+            for name in required_capabilities
+        )
 
     def __len__(self) -> int:
         with self._lock:
