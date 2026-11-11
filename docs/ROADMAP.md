@@ -284,30 +284,22 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - Limitación deliberada: el registro de ejecución de la aplicación sigue vacío; Binance Demo especializado y Alpaca read-only no se registran como adaptadores genéricos. Por tanto, ningún instrumento queda habilitado por este cambio. LIVE continúa deshabilitado.
 - Siguiente: definir registro de adaptadores con scope de cuenta/entorno/venue y capabilities de ejecución independientes de market data; adaptar Binance Demo y PAPER mediante wrappers explícitos solo tras revisar sus contratos, sin fingir capacidades de balances/posiciones que no existan.
 
-## Execution adapter registry v2 — PR #133 (en curso)
+## Execution adapter registry v2 — integrado (PR #133)
 
-- Rama: `feat/scoped-execution-registry-v2`; PR: https://github.com/Harilai/ai-trading-system/pull/133.
-- Se añade `ExecutionAdapterRegistry` separado del `ExecutionRouter` legado, con scope completo `provider_id / venue_id / account_id / environment / market_type`.
-- Entornos explícitos y no heredables: MOCK, BACKTEST, PAPER, DEMO, TESTNET y LIVE.
-- Capacidades independientes con estados supported/unsupported/unknown/not_configured y evidencia con procedencia y timestamp. La elegibilidad de nuevas entradas requiere siempre idempotencia, fills parciales, cancelación, conciliación, balances y posiciones; evidencia ausente/futura/caducada (24 h por defecto) bloquea.
-- Añadido endpoint autenticado GET `/api/execution/registrations`; el inventario nunca serializa el objeto adaptador. El registro se mantiene vacío por defecto.
-- La API de elegibilidad no infiere una cuenta desde el catálogo ni mezcla capacidades de market data con ejecución: mantiene `execution_adapter_configured=false` hasta que se integre una identidad completa y verificada.
-- Binance Spot Demo permanece en su flujo dedicado; Alpaca continúa read-only; PAPER sigue siendo `PaperPortfolio`. Esta PR no crea wrappers ni cambia envío de órdenes.
-- CI del head anterior `348768e8943a373282b3966c4d49e3d3d11c5880`: Python y Docker/Compose/hardening pasaron. El head actual y su CI se deben consultar en PR #133 antes de aprobar/mergear.
-- Fallos previos de CI documentados y corregidos: primero faltaba hacer obligatorios balances/positions; después un test determinista usaba una ventana temporal incorrecta. No se ignoraron.
-- Siguiente: terminar revisión/CI de #133; después implementar wrappers explícitos para Binance Spot Demo y PAPER (sin falsificar interfaces), scope de cuenta verificado, preflight freshness/reconciliation gates y conexión del resultado al RiskManager. Preservar reducción de riesgo/emergencia. LIVE queda deshabilitado.
+- PR #133 fusionada en `main`; merge commit `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`.
+- El registry mantiene scope explícito provider/venue/account/environment/market_type, entornos aislados, capacidades con procedencia y fail-closed para evidencia desconocida, ausente, futura o caducada.
+- Endpoint autenticado GET `/api/execution/registrations`; inventario vacío por defecto. No se registran adaptadores automáticamente.
 
-## Scoped account adapters — PR dependiente #134 (en curso)
+## Scoped account adapters — PR #134 (en curso, base main)
 
-- Rama: `feat/scoped-account-adapters`; base temporal: `feat/scoped-execution-registry-v2` (PR #133). No integrar #134 en `main` hasta que #133 esté aprobada y fusionada.
-- Añadidos wrappers de snapshots para Binance Spot Demo y el ledger interno PAPER.
-- Binance: scope DEMO/Spot y balance snapshot verificados contra la respuesta; las tenencias Spot no se etiquetan falsamente como posiciones. La identidad de cuenta suministrada es un alias de configuración, no un ID remoto verificado (`account_identity_verified=false`). La capacidad positions queda UNKNOWN y bloquea readiness.
-- PAPER: scope explícito `internal:paper-portfolio / internal-ledger / PAPER / spot`; adapta balances y posiciones del ledger interno. La identidad del ledger es un alias local declarado, no una cuenta de broker (`account_identity_verified=false`). El wrapper solo declara crypto Spot y órdenes market simuladas.
-- El motor PAPER sigue siendo atómico: partial fills y cancelación de órdenes de exchange quedan UNSUPPORTED; por ello el readiness genérico sigue bloqueado. No se simulan capacidades inexistentes.
-- Los wrappers no se registran automáticamente, no se conectan a API/endpoint y no envían órdenes. LIVE continúa deshabilitado.
-- Tests añadidos para scope obligatorio, separación DEMO/LIVE, timestamp con zona, balances/posiciones y gates fail-closed. Resultado CI pendiente en PR #134.
-- Próximo: definir posición Spot por activo/instrumento con valoración fresca; implementar semántica PAPER de fills/cancelación simulados o excluir explícitamente esos requisitos solo para entorno PAPER con un perfil de capacidades distinto; después enlazar snapshot y readiness al RiskManager/preflight.
-
+- Rama: `feat/scoped-account-adapters`; PR #134 apunta directamente a `main`.
+- Añade wrappers de snapshots para Binance Spot Demo y PaperPortfolio, con scope explícito, balances y posiciones.
+- Binance: las tenencias Spot no se etiquetan falsamente como posiciones; positions permanece UNKNOWN. El account_id es un alias de configuración, no identidad remota verificada.
+- PAPER: ledger interno crypto Spot; el motor sigue siendo atómico y no declara partial fills ni cancelación de exchange. Readiness continúa fail-closed.
+- Los wrappers no se registran automáticamente ni conectan rutas de envío. No se envían órdenes y LIVE sigue deshabilitado.
+- Revisión técnica, decisión de aprobación y merge rutinario: responsabilidad del Engineering Lead; no solicitar al propietario revisión o merge.
+- CI del head previo `a7e4b035a04bb3961697f9528865438e34db1511` pasó en run `43049679926`; los cambios posteriores requieren CI verde sobre el head actualizado.
+- Siguiente trabajo: completar revisión técnica de #134, preservar precisión decimal, completar tests adversos y después integrar snapshots/freshness/scope/reconciliation en preflight y RiskManager sin bloquear cierres, reducciones ni emergency stop.
 
 ## Gobernanza de PR y continuidad — vigente 2026-11-11
 
