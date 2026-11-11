@@ -63,6 +63,12 @@ class ProviderRegistry:
         for provider in providers:
             try:
                 caps = provider.capabilities()
+                if caps.provider_id != provider.provider_id:
+                    failures.append({
+                        "provider_id": provider.provider_id,
+                        "reason": "Provider identity does not match its capability declaration",
+                    })
+                    continue
                 if requested_classes and not requested_classes.intersection(caps.asset_classes):
                     continue
                 provider_instruments = provider.discover_markets(asset_classes)
