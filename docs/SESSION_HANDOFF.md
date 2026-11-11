@@ -361,10 +361,10 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 
 ## Continuidad — PR #158: contrato de comisiones por proveedor/instrumento
 
-- PR #158 `feat(research): support scoped provider taker fee schedules`, rama `feat/provider-instrument-fee-schedules`, abierta contra `main`; head actual `c758c1a548aa943a46980ac666aa7b5660dd14f3` al actualizar esta nota.
+- PR #158 `feat(research): support scoped provider taker fee schedules`, rama `feat/provider-instrument-fee-schedules`, integrada por squash en `main`; merge SHA `691155745c3cc7d0adfa8f2bb2f94edf2696c60b`. `demo` se sincronizó al mismo SHA y compare `main...demo` devolvió `identical`.
 - `backend/app/fee_schedule.py` valida identidad exacta de proveedor/instrumento/mercado, maker/taker, divisa quote, fuente, observación y periodo efectivo completo. Rechaza schedule observado después del primer candle, fuera de vigencia o con fee en divisa base/tercera.
 - `StrategyResearchAgent.research` admite schedule explícito y aplica taker a benchmark, candidatos, ventanas walk-forward y sensibilidad de costes. Si no se proporciona schedule, mantiene `settings.fee_rate` como `configured_assumption`.
 - Tests añadidos para alcance, monedas, rates inválidos, vigencia, look-ahead y aplicación/reporting en Strategy Research. Documento `docs/FEE_SCHEDULES.md` describe el contrato y límites.
-- CI del head actualizado: workflow `43087405770` (Python tests y Docker build/runtime hardening) estaba en progreso en la última consulta. No tests locales ejecutados.
+- CI del head exacto `38a64857d76c468ce3c8edc1fec395a2e6e0c330`: 825 tests Python passed, 1 warning; Docker build/runtime hardening passed (run `43087483676`). CI post-merge main run `43087629033` estaba en progreso en la última consulta. No tests locales ejecutados.
 - Importante: el contrato aún no se conecta a un fetcher público ni a una tabla histórica de tarifas; ningún dato de fee real se ha afirmado ni obtenido. El siguiente trabajo es integrar una fuente pública verificable con snapshots point-in-time y conservar la distinción entre tarifa pública y tier real de cuenta.
 - No se han usado credenciales, no se han enviado órdenes y LIVE sigue deshabilitado. Tras merge válido, sincronizar `demo` al SHA de `main` y verificar `identical`.
