@@ -63,7 +63,7 @@ def test_binance_demo_wrapper_scopes_balance_snapshot_and_does_not_infer_positio
 
 
 def test_binance_demo_wrapper_rejects_snapshot_scope_mismatch():
-    account = FakeBinanceDemo()
+    account = make_binance_demo_account()
     account.fetch_balances = lambda: {
         "provider_id": "ccxt:binance-demo",
         "environment": "live",
