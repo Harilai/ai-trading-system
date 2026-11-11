@@ -812,7 +812,7 @@ class AutonomousAgent:
                                     self.portfolio.execute,
                                     **existing_intent["request"],
                                 )
-                                except PortfolioError as exc:
+                            except PortfolioError as exc:
                                 await asyncio.to_thread(
                                     self.portfolio.reject_order_intent,
                                     task["id"],
