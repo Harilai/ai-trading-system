@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -166,3 +166,62 @@ def test_registration_timestamp_is_timezone_aware():
             object(),
             "2026-11-11T10:00:00",
         )
+
+
+
+def test_capability_evidence_without_verification_time_is_not_usable():
+    unchecked = evidence()
+    unchecked = CapabilityEvidence(CapabilityState.SUPPORTED, "manual")
+    assert capabilities(idempotent_client_order_id=unchecked).supports("idempotent_client_order_id") is False
+
+
+def test_stale_or_future_capability_evidence_fails_closed():
+    stale = CapabilityEvidence(
+        CapabilityState.SUPPORTED,
+        "manual",
+        "2026-11-09T10:00:00+00:00",
+    )
+    future = CapabilityEvidence(
+        CapabilityState.SUPPORTED,
+        "manual",
+        "2026-11-12T10:00:00+00:00",
+    )
+    registry = ExecutionAdapterRegistry()
+    registry.register(
+        scope(),
+        capabilities(
+            idempotent_client_order_id=stale,
+            partial_fills=future,
+        ),
+        object(),
+    )
+    now = datetime(2026, 11, 11, 10, 0, tzinfo=timezone.utc)
+    assert not registry.supports_instrument(
+        scope(), asset_class="crypto", order_type="limit", now=now,
+    )
+
+
+def test_capability_evidence_freshness_can_be_evaluated_deterministically():
+    registry = ExecutionAdapterRegistry()
+    registry.register(scope(), capabilities(), object())
+    now = datetime(2026, 11, 11, 10, 0, tzinfo=timezone.utc)
+    assert registry.supports_instrument(
+        scope(), asset_class="crypto", order_type="limit", now=now,
+    )
+    assert not registry.supports_instrument(
+        scope(),
+        asset_class="crypto",
+        order_type="limit",
+        now=now,
+        evidence_max_age=timedelta(minutes=30),
+    )
+
+
+def test_registry_inventory_never_serializes_adapter_or_secrets():
+    registry = ExecutionAdapterRegistry()
+    adapter = type("Adapter", (), {"api_secret": "must-not-leak"})()
+    registry.register(scope(), capabilities(), adapter)
+    inventory = registry.list_registrations()
+    rendered = repr(inventory)
+    assert "must-not-leak" not in rendered
+    assert "adapter" not in inventory[0]
