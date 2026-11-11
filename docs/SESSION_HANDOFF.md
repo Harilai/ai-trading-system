@@ -2,11 +2,10 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-> **Último cambio integrado:** PR #125 (ADR de semántica financiera Alpaca documentado en main) y PR #126 (sincronización a demo). Rama de trabajo actual: `feat/alpaca-financial-metrics-ledger`.
-> **`main`:** `05870aa8c3f10b75a8d1bf46dd4856df1a3575ae`
-> **`demo`:** `6445726293db4fd408bfa046b1b4d746bbeabc3e`
-> **Árboles:** divergencia histórica de commits; los ocho archivos del adaptador Alpaca y su documentación tienen blobs idénticos en `main` y `demo`.
-> **PR abiertas:** verificar GitHub antes de continuar; implementación financiera Alpaca en desarrollo, aún sin PR.
+> **Último cambio integrado:** PR #127 (ledger financiero tipado Alpaca Paper), merge SHA `495370934313ae56e457b5c7f00bed60a435b02e`. Rama de trabajo actual: `feat/coordinated-cash-account-snapshots`.
+> **`main` y `demo`:** ambos apuntan exactamente a `495370934313ae56e457b5c7f00bed60a435b02e` (verificado por ref y compare idéntico).
+> **Historial previo de demo:** preservado en `archive/demo-before-main-sync-2026-11-11`; no se integró en main porque main es la fuente de verdad.
+> **PR abiertas:** comprobar GitHub antes de continuar. Snapshot coordinado Alpaca cash en desarrollo.
 > **Operación:** paper trading y Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
 ## Integraciones recientes verificadas
@@ -88,3 +87,20 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 3. No cerrar PR por limpieza ni fusionar ramas divergentes sin comparar árboles y clasificar funcionalidades.
 4. Actualizar roadmap y handoff al completar fases.
 5. Distinguir implementado, probado por CI, integrado y validado operativamente.
+
+
+## Política obligatoria de ramas
+
+- `main` es la fuente de verdad; `demo` debe ser idéntica a `main` por SHA.
+- No desarrollar directamente en `demo` ni fusionar su historial hacia `main` por defecto.
+- Tras cada merge válido a `main`, mover/sincronizar `demo` al mismo SHA y verificar `compare main...demo = identical`.
+- La antigua punta divergente de `demo` está preservada en `archive/demo-before-main-sync-2026-11-11`.
+
+## Snapshot coordinado Alpaca cash — en desarrollo
+
+- Rama: `feat/coordinated-cash-account-snapshots`.
+- Nuevo store `backend/app/accounts/coordinated_cash_snapshot_store.py`: vincula ledger financiero Alpaca y ledger de posiciones cash en una transacción SQLite.
+- `AccountFinancialMetricsStore` expone inserción transaccional y lectura por snapshot ID.
+- Endpoint autenticado: `POST /api/accounts/alpaca/financial-metrics/snapshots/coordinated`.
+- Tests añadidos para captura completa, scope, skew, rollback, idempotencia y append-only.
+- Pendiente CI y revisión técnica; no afirmar integración ni validación operativa.

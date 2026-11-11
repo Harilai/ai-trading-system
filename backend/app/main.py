@@ -33,6 +33,7 @@ from .accounts.alpaca_paper_readonly import AlpacaPaperReadOnlyAccount, AlpacaPa
 from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
 from .accounts.position_snapshot_store import PositionSnapshotError, PositionSnapshotStore
 from .accounts.coordinated_snapshot_store import CoordinatedAccountSnapshotStore, CoordinatedSnapshotError
+from .accounts.coordinated_cash_snapshot_store import CoordinatedCashSnapshotStore, CoordinatedCashSnapshotError
 from .accounts.financial_metrics_store import AccountFinancialMetricsStore, FinancialMetricsError
 from .accounts.contracts import (
     AccountProviderError, AccountProviderNotFound, AccountProviderRegistry, AmbiguousAccountProvider,
@@ -66,6 +67,9 @@ position_snapshot_store = PositionSnapshotStore(settings.database_path)
 financial_metrics_store = AccountFinancialMetricsStore(settings.database_path)
 coordinated_account_snapshot_store = CoordinatedAccountSnapshotStore(
     settings.database_path, account_snapshot_store, position_snapshot_store,
+)
+coordinated_cash_snapshot_store = CoordinatedCashSnapshotStore(
+    settings.database_path, financial_metrics_store, position_snapshot_store,
 )
 demo_order_store = BinanceDemoOrderStore(settings.database_path)
 
@@ -290,6 +294,40 @@ def create_alpaca_financial_metrics_snapshot(
         raise HTTPException(422, str(exc)) from exc
     except sqlite3.Error as exc:
         raise HTTPException(503, "Unable to persist Alpaca financial metrics snapshot") from exc
+
+
+@app.post("/api/accounts/alpaca/financial-metrics/snapshots/coordinated", status_code=201)
+def create_alpaca_coordinated_cash_snapshot(
+    request_id: str = Query(..., min_length=1, max_length=128),
+    max_skew_seconds: int = Query(5, ge=0, le=30),
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    if alpaca_paper_account_provider is None:
+        raise HTTPException(503, "Alpaca Paper read-only account connector is not configured")
+    try:
+        existing = coordinated_cash_snapshot_store.get_by_request_id(request_id)
+        if existing is not None:
+            if (
+                existing["provider_id"] != "alpaca:paper"
+                or existing["account_alias"] != settings.alpaca_paper_account_alias
+                or existing["financial_metrics"]["account_id"] != settings.alpaca_paper_expected_account_id
+            ):
+                raise CoordinatedCashSnapshotError(
+                    "Capture request_id belongs to a different configured Alpaca account"
+                )
+            return existing
+        financial_metrics = alpaca_paper_account_provider.fetch_financial_metrics_snapshot()
+        positions = alpaca_paper_account_provider.fetch_positions_snapshot(market_type="cash")
+        return coordinated_cash_snapshot_store.record_snapshot(
+            request_id, financial_metrics, positions, max_skew_seconds=max_skew_seconds,
+        )
+    except AlpacaPaperAccountError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except (FinancialMetricsError, PositionSnapshotError, CoordinatedCashSnapshotError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to persist coordinated Alpaca cash snapshot") from exc
 
 
 @app.get("/api/accounts/alpaca/financial-metrics/snapshots")
