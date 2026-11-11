@@ -2,11 +2,11 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-> **Último cambio integrado:** PR #116 (ADR Alpaca read-only) en `main` y PR #117 sincronización documental a `demo`. En curso: adaptador Alpaca Paper read-only de posiciones.
+> **Último cambio integrado:** PR #118 (adaptador Alpaca Paper read-only de posiciones) en `main`; PR #120 sincronizada a `demo`.
 > **`main`:** `df648f5ec482938a59c0e5a16c269be1a16d7642`
-> **`demo`:** `710cb978bb4e5c62bd3e0559b5921b67f628f689`
-> **Árboles:** `demo` incorpora la sincronización de #117; comparar tras el merge de implementación.
-> **PR abiertas:** ninguna antes de abrir el PR del adaptador Alpaca.
+> **`demo`:** `23fa997a878da7fe7ba7735b2baa80f035f7a8d7`
+> **Árboles:** divergencia histórica de commits; los ocho archivos del adaptador Alpaca y su documentación tienen blobs idénticos en `main` y `demo`.
+> **PR abiertas:** ninguna en la última consulta posterior a #120.
 > **Operación:** paper trading y Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
 ## Integraciones recientes verificadas
@@ -17,6 +17,8 @@
 - PR #114: sincronización de implementación a `demo`.
 - PR #115: sincronización de documentación a `demo`.
 - PR #116: evaluación/ADR Alpaca read-only fusionada en `main`; PR #117: sincronización de esos documentos a `demo`, fusionada con SHA `710cb978bb4e5c62bd3e0559b5921b67f628f689`. Ambos checks de #117 (Python tests y Docker runtime) pasaron.
+- PR #118: adaptador Alpaca Paper read-only fusionado en `main` (SHA `d42b9fada02d60d7073bbc76171bd69c31a9e8a3`); CI exacta: 609 tests Python passed y Docker build/runtime hardening passed.
+- PR #120: sincronización del adaptador a `demo` (SHA `23fa997a878da7fe7ba7735b2baa80f035f7a8d7`); CI Python y Docker pasó. PR #119 se cerró como intento directo `main`→`demo` marcado dirty; #120 preservó commits exclusivos de demo y sincronizó solo ocho archivos.
 - CI de PR #113: 581 tests passed, 1 warning; Docker/Compose/non-root correctos en el head exacto `800f8fd63d87fb8f1c6e2ed5c5bc12adb926b0b0`. CI de sincronización #114 y #115 también pasó en sus respectivos heads.
 - No hay PR abiertas en la última consulta del 2026-11-11. No se ejecutaron pruebas locales en este entorno.
 - Las funcionalidades #78–#80 (contratos de órdenes/fills, ledger y completitud/reconciliación read-only), #99 (ledger de posiciones) y #100 (diagnósticos experimentales y salidas seguras) están integradas en `main` y `demo`.
@@ -58,13 +60,13 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - IA/Chief siempre detrás del Risk Manager.
 - Mantener idempotencia, exactitud decimal, append-only, aislamiento por cuenta/entorno/mercado y conciliación fail-closed.
 
-## Alpaca Paper read-only — implementación en PR
+## Alpaca Paper read-only — integrado en main y demo
 
-- Rama de trabajo: `feat/alpaca-paper-readonly-positions`.
+- Adaptador `backend/app/accounts/alpaca_paper_readonly.py` integrado mediante PR #118 y sincronizado mediante PR #120.
 - Adaptador `backend/app/accounts/alpaca_paper_readonly.py`: host fijo `https://paper-api.alpaca.markets`, solo GET /v2/account y GET /v2/positions, verificación estricta del ID de cuenta esperado, decimal strings y fail-closed ante errores HTTP/JSON/identidad.
 - Solo registra posiciones `cash` de `us_equity` como `equity`; no infiere ETF, balances, permisos reales ni cash desde buying power/equity.
 - Opt-in apagado por defecto. Requiere `ALPACA_PAPER_ENABLED=true`, key/secret y `ALPACA_PAPER_EXPECTED_ACCOUNT_ID`. No introducir credenciales en Git.
-- Tests añadidos con MockTransport para posiciones, lista vacía, identidad, duplicados, clases/decimales inválidos y HTTP 401/403/429/5xx. CI pendiente de ejecución en PR; no hay validación operativa contra Alpaca.
+- Tests MockTransport cubren posiciones, lista vacía, identidad, duplicados, clases/decimales inválidos, host fijo y HTTP 401/403/429/5xx. CI: 609 tests passed y Docker hardening passed. No hay validación operativa contra Alpaca.
 - No conecta snapshots a cartera, Chief, Risk Manager ni ejecución. El snapshot coordinado sigue limitado a `spot`; balances/cash y extensión a `cash` quedan como fase separada.
 
 ## Continuidad
