@@ -633,6 +633,7 @@ def test_walk_forward_liquidation_cannot_borrow_quotes_from_later_windows():
     quotes = [
         {
             "timestamp_ms": candles[1]["timestamp"],
+            "retrieved_at_ms": candles[1]["timestamp"],
             "bid": 99.0,
             "ask": 101.0,
             "timestamp_source": "exchange",
@@ -640,6 +641,7 @@ def test_walk_forward_liquidation_cannot_borrow_quotes_from_later_windows():
         },
         {
             "timestamp_ms": candles[5]["timestamp"],
+            "retrieved_at_ms": candles[5]["timestamp"],
             "bid": 99.0,
             "ask": 101.0,
             "timestamp_source": "exchange",
