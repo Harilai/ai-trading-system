@@ -626,3 +626,38 @@ def test_research_without_observed_spread_blocks_strategy_promotion():
         "insufficient_spread_coverage" in candidate["validation_failure_categories"]["cost"]
         for candidate in result["candidates"]
     )
+
+
+def test_walk_forward_liquidation_cannot_borrow_quotes_from_later_windows():
+    candles = candles_from_closes([100.0] * 6)
+    quotes = [
+        {
+            "timestamp_ms": candles[1]["timestamp"],
+            "bid": 99.0,
+            "ask": 101.0,
+            "timestamp_source": "exchange",
+            "source": "test",
+        },
+        {
+            "timestamp_ms": candles[5]["timestamp"],
+            "bid": 99.0,
+            "ask": 101.0,
+            "timestamp_source": "exchange",
+            "source": "test",
+        },
+    ]
+    result = StrategyResearchAgent(fee_rate=0.0, slippage_rate=0.0)._backtest(
+        candles,
+        lambda closes, index, in_position: True,
+        0,
+        0,
+        3,
+        quote_snapshots=quotes,
+        max_quote_age_ms=10_000_000,
+        candle_interval_ms=3_600_000,
+    )
+
+    assert result["spread_execution_count"] == 2
+    assert result["spread_observed_execution_count"] == 1
+    assert result["spread_missing_execution_count"] == 1
+    assert result["spread_coverage_complete"] is False
