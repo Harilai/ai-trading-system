@@ -82,6 +82,7 @@ class ExecutionRouter:
         client_order_id: str,
         *,
         risk_decision: Any,
+        instrument_eligibility: dict,
     ):
         if not self.live_enabled:
             raise ValueError("Live execution is disabled")
@@ -89,6 +90,16 @@ class ExecutionRouter:
             raise ValueError("A positive Risk Manager approval is required before execution")
         if not client_order_id:
             raise ValueError("A stable client_order_id is mandatory")
+        if not isinstance(instrument_eligibility, dict):
+            raise ValueError("Instrument eligibility evidence is mandatory")
+        if instrument_eligibility.get("status") != "supported":
+            raise ValueError("Instrument is not eligible for execution")
+        if instrument_eligibility.get("provider_id") != provider_id:
+            raise ValueError("Instrument eligibility provider identity mismatch")
+        if instrument_eligibility.get("instrument_id") != instrument.instrument_id:
+            raise ValueError("Instrument eligibility identity mismatch")
+        if instrument_eligibility.get("execution_adapter_configured") is not True:
+            raise ValueError("Execution adapter is not explicitly configured")
         validation = self.validate(provider_id, instrument, order)
         if not validation.get("accepted"):
             raise ValueError(validation.get("reason", "Provider rejected order validation"))
