@@ -302,6 +302,8 @@ class HistoricalQuoteStore:
         now_ms = int(now_dt.timestamp() * 1000) if retrieved_at_ms is None else retrieved_at_ms
         if isinstance(now_ms, bool) or not isinstance(now_ms, int) or now_ms <= 0:
             raise HistoricalDataError("Quote retrieved_at_ms must be a positive integer")
+        if timestamp_ms > now_ms + 30_000:
+            raise HistoricalDataError("Quote event timestamp is too far in the future")
         now_dt = datetime.fromtimestamp(now_ms / 1000, tz=timezone.utc)
         now = now_dt.isoformat()
         key = (provider_id, instrument_id, timestamp_ms)
