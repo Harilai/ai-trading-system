@@ -545,6 +545,7 @@ class AutonomousAgent:
         *,
         equity_exit_monitor=None,
         demo_reconciler=None,
+        account_readiness=None,
         poll_interval_seconds: float = 5.0,
     ):
         if poll_interval_seconds <= 0:
@@ -558,6 +559,7 @@ class AutonomousAgent:
         self.equity_exit_monitor = equity_exit_monitor
         self._last_equity_exit_check = 0.0
         self.demo_reconciler = demo_reconciler
+        self.account_readiness = account_readiness
         self.lease_seconds = 120
         self._task: asyncio.Task | None = None
         self._stopping = asyncio.Event()
@@ -784,29 +786,51 @@ class AutonomousAgent:
                             ),
                         }
                     else:
-                        try:
-                            resumed_order = await asyncio.to_thread(
-                                self.portfolio.execute,
-                                **existing_intent["request"],
-                            )
-                        except PortfolioError as exc:
-                            await asyncio.to_thread(
-                                self.portfolio.reject_order_intent,
-                                task["id"],
-                                str(exc),
-                            )
+                        request_side = str(existing_intent.get("request", {}).get("side", "")).lower()
+                        resumed_readiness = None
+                        if request_side == "buy":
+                            if self.account_readiness is None:
+                                resumed_readiness = {"status": "blocked", "blockers": ["account_preflight_not_configured"]}
+                            else:
+                                resumed_readiness = await asyncio.to_thread(
+                                    self.account_readiness.evaluate,
+                                    side="buy",
+                                    exclude_client_order_id=task["id"],
+                                )
+                        if request_side == "buy" and resumed_readiness.get("status") != "ready":
+                            reason = "Account preflight blocked resumption of the previously approved PAPER entry"
+                            await asyncio.to_thread(self.portfolio.expire_order_intent, task["id"], reason)
                             result = {
-                                "execution": "rejected",
-                                "order_intent": await asyncio.to_thread(
-                                    self.portfolio.get_order_intent, task["id"],
-                                ),
+                                "execution": "expired",
+                                "reason": reason,
+                                "account_preflight": resumed_readiness,
+                                "order_intent": await asyncio.to_thread(self.portfolio.get_order_intent, task["id"]),
                             }
                         else:
-                            result = {
-                                "execution": "paper_order_resumed",
-                                "order": resumed_order,
-                                "idempotent_replay": True,
-                            }
+                            try:
+                                resumed_order = await asyncio.to_thread(
+                                    self.portfolio.execute,
+                                    **existing_intent["request"],
+                                )
+                                except PortfolioError as exc:
+                                await asyncio.to_thread(
+                                    self.portfolio.reject_order_intent,
+                                    task["id"],
+                                    str(exc),
+                                )
+                                result = {
+                                    "execution": "rejected",
+                                    "order_intent": await asyncio.to_thread(
+                                        self.portfolio.get_order_intent, task["id"],
+                                    ),
+                                }
+                            else:
+                                result = {
+                                    "execution": "paper_order_resumed",
+                                    "order": resumed_order,
+                                    "idempotent_replay": True,
+                                    "account_preflight": resumed_readiness,
+                                }
                     self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
                     return result
                 if existing_intent["status"] == "expired":
@@ -923,7 +947,20 @@ class AutonomousAgent:
                     self.portfolio.snapshot,
                     valuation_prices,
                 )
-            decision = self.chief.decide(scan, portfolio)
+            account_readiness = None
+            if self.account_readiness is not None:
+                account_readiness = await asyncio.to_thread(
+                    self.account_readiness.evaluate,
+                    side="buy",
+                )
+            if account_readiness is None:
+                decision = self.chief.decide(scan, portfolio)
+            else:
+                decision = self.chief.decide(
+                    scan,
+                    portfolio,
+                    account_readiness=account_readiness,
+                )
             order = None
             execution = "no_order"
             if (
@@ -988,6 +1025,33 @@ class AutonomousAgent:
                     execution_request,
                     decision.model_dump(),
                 )
+                final_readiness = None
+                if proposal.side == "buy":
+                    if self.account_readiness is None:
+                        final_readiness = {"status": "blocked", "blockers": ["account_preflight_not_configured"]}
+                    else:
+                        final_readiness = await asyncio.to_thread(
+                            self.account_readiness.evaluate,
+                            side="buy",
+                            exclude_client_order_id=task["id"],
+                        )
+                    if final_readiness.get("status") != "ready":
+                        reason = "Account preflight failed immediately before PAPER execution"
+                        await asyncio.to_thread(
+                            self.portfolio.reject_order_intent,
+                            task["id"],
+                            reason,
+                        )
+                        result = {
+                            "execution": "rejected",
+                            "reason": reason,
+                            "account_preflight": final_readiness,
+                            "order_intent": await asyncio.to_thread(
+                                self.portfolio.get_order_intent, task["id"],
+                            ),
+                        }
+                        self.store.remember("chief_decision", {"task_id": task["id"], **result}, validated=True)
+                        return result
                 try:
                     order = await asyncio.to_thread(
                         self.portfolio.execute,
