@@ -138,22 +138,83 @@ class ChiefAgent:
             identity = self._instrument_identity(provider_id, market.get("instrument_id"), symbol)
             scan_by_identity[identity] = item
 
-        # Manage existing positions before considering new entries.
+        diagnostics = {
+            "markets_analysed": len(scan.get("analyses", [])),
+            "open_positions": len(positions),
+            "validated_candidates": 0,
+            "experimental_candidates": 0,
+            "validated_entry_signals": 0,
+            "experimental_entry_signals": 0,
+            "candidates_without_entry_signal": 0,
+            "excluded_non_eur_symbols": 0,
+            "excluded_open_positions": 0,
+            "excluded_missing_price": 0,
+            "sniper_no_proposal": 0,
+            "risk_rejections": 0,
+            "validation_failure_counts": {"promotion": {}, "experimental": {}},
+        }
+        for analysed_item in scan.get("analyses", []):
+            research_candidates = analysed_item.get("strategy_research", {}).get("candidates", [])
+            for research_candidate in research_candidates:
+                validated = bool(research_candidate.get("eligible"))
+                experimental_candidate = bool(research_candidate.get("experimental_eligible"))
+                entry_signal = bool(research_candidate.get("current_entry_signal"))
+                for gate, field in (
+                    ("promotion", "validation_failures"),
+                    ("experimental", "experimental_validation_failures"),
+                ):
+                    for failure in research_candidate.get(field) or []:
+                        counts = diagnostics["validation_failure_counts"][gate]
+                        failure_code = str(failure)
+                        counts[failure_code] = counts.get(failure_code, 0) + 1
+                if validated:
+                    diagnostics["validated_candidates"] += 1
+                    if entry_signal:
+                        diagnostics["validated_entry_signals"] += 1
+                if experimental_candidate:
+                    diagnostics["experimental_candidates"] += 1
+                    if entry_signal:
+                        diagnostics["experimental_entry_signals"] += 1
+                if (validated or experimental_candidate) and not entry_signal:
+                    diagnostics["candidates_without_entry_signal"] += 1
+
+        # Manage existing positions before considering new entries. Missing or
+        # malformed strategy state must never be interpreted as an exit signal.
+        diagnostics.update({
+            "positions_missing_market_data": 0,
+            "positions_without_exit_signal": 0,
+            "exit_risk_rejections": 0,
+        })
         for identity, position in portfolio_positions.items():
             symbol = position["symbol"].upper()
             item = scan_by_identity.get(identity)
             if item is None:
+                diagnostics["positions_missing_market_data"] += 1
                 continue
             market = item.get("market", {})
-            sell_price = float(market.get("bid") or market.get("last") or 0)
-            if sell_price <= 0:
+            try:
+                sell_price = float(market.get("bid") or market.get("last") or 0)
+            except (TypeError, ValueError, OverflowError):
+                sell_price = 0.0
+            if not math.isfinite(sell_price) or sell_price <= 0:
+                diagnostics["positions_missing_market_data"] += 1
                 continue
             stop_loss = position.get("stop_loss")
             take_profit = position.get("take_profit")
+            try:
+                stop_value = float(stop_loss) if stop_loss is not None else None
+                target_value = float(take_profit) if take_profit is not None else None
+            except (TypeError, ValueError, OverflowError):
+                stop_value = target_value = None
+            if stop_value is not None and (not math.isfinite(stop_value) or stop_value <= 0):
+                stop_value = None
+            if target_value is not None and (not math.isfinite(target_value) or target_value <= 0):
+                target_value = None
+
             exit_reason = None
-            if stop_loss is not None and sell_price <= float(stop_loss):
+            if stop_value is not None and sell_price <= stop_value:
                 exit_reason = "persisted stop-loss triggered"
-            elif take_profit is not None and sell_price >= float(take_profit):
+            elif target_value is not None and sell_price >= target_value:
                 exit_reason = "persisted take-profit triggered"
             else:
                 candidate = self._candidate_for(
@@ -161,13 +222,16 @@ class ChiefAgent:
                     position.get("strategy_id"),
                     allow_experimental=self.allow_experimental_strategies,
                 )
-                if candidate is not None and not candidate.get("current_hold_signal", False):
+                # Only an explicit boolean False is a confirmed exit. None,
+                # missing fields and malformed values fail closed (hold).
+                if candidate is not None and candidate.get("current_hold_signal") is False:
                     exit_reason = (
                         "experimental strategy exit signal"
                         if str(position.get("strategy_id") or "").startswith("experimental:")
                         else "validated strategy exit signal"
                     )
             if exit_reason is None:
+                diagnostics["positions_without_exit_signal"] += 1
                 continue
 
             proposal = TradeProposal(
@@ -181,6 +245,15 @@ class ChiefAgent:
                 source_agent="chief",
             )
             risk = self.risk_manager.evaluate(proposal, context)
+            exit_evidence = {
+                "market": market,
+                "exit_reason": exit_reason,
+                "observed_sell_price": sell_price,
+                "position_quantity": positions[identity],
+                "stop_loss": stop_value,
+                "take_profit": target_value,
+                "diagnostics": diagnostics,
+            }
             if risk.accepted:
                 return ChiefDecision(
                     action="sell",
@@ -189,17 +262,18 @@ class ChiefAgent:
                     instrument_id=proposal.instrument_id,
                     strategy_id=position.get("strategy_id"),
                     rationale=f"Position exit: {exit_reason}; Risk Manager approved",
-                    evidence={"market": market, "stop_loss": stop_loss, "take_profit": take_profit},
+                    evidence=exit_evidence,
                     proposal=proposal,
                     risk=risk,
                 )
+            diagnostics["exit_risk_rejections"] += 1
             return ChiefDecision(
                 symbol=symbol,
                 provider_id=proposal.provider_id,
                 instrument_id=proposal.instrument_id,
                 strategy_id=position.get("strategy_id"),
                 rationale="Position exit proposal rejected by Risk Manager",
-                evidence={"market": market, "exit_reason": exit_reason},
+                evidence={**exit_evidence, "risk_rejection_reason": risk.reason},
                 proposal=proposal,
                 risk=risk,
             )
@@ -251,11 +325,16 @@ class ChiefAgent:
             symbol = str(market.get("symbol", "")).upper()
             provider_id = str(market.get("provider_id") or "ccxt:kraken")
             identity = self._instrument_identity(provider_id, market.get("instrument_id"), symbol)
-            if (
-                not symbol.endswith("/EUR")
-                or identity in positions
-                or not isinstance(score, (int, float))
-            ):
+            if not symbol.endswith("/EUR"):
+                diagnostics["excluded_non_eur_symbols"] += 1
+                continue
+            if identity in positions:
+                diagnostics["excluded_open_positions"] += 1
+                continue
+            if not isinstance(score, (int, float)):
+                continue
+            if not (market.get("ask") or market.get("last")):
+                diagnostics["excluded_missing_price"] += 1
                 continue
             opportunities.append((float(score), item, candidate, strategy_id, symbol, experimental))
 
@@ -272,6 +351,7 @@ class ChiefAgent:
                 allow_experimental=experimental,
             )
             if proposal is None:
+                diagnostics["sniper_no_proposal"] += 1
                 continue
             risk = self.risk_manager.evaluate(proposal, context)
             if risk.accepted:
@@ -300,18 +380,19 @@ class ChiefAgent:
                     proposal=proposal,
                     risk=risk,
                 )
+            diagnostics["risk_rejections"] += 1
             return ChiefDecision(
                 symbol=symbol,
                 provider_id=proposal.provider_id,
                 instrument_id=proposal.instrument_id,
                 strategy_id=strategy_id,
                 rationale="Entry proposal rejected by Risk Manager",
-                evidence={"score": score},
+                evidence={"score": score, "diagnostics": diagnostics, "risk_rejection_reason": risk.reason},
                 proposal=proposal,
                 risk=risk,
             )
 
         return ChiefDecision(
             rationale="No eligible strategy produced a valid entry or exit signal; hold cash and monitor",
-            evidence={"markets_analysed": len(scan.get("analyses", [])), "eligible_opportunities": len(opportunities)},
+            evidence={**diagnostics, "eligible_opportunities": len(opportunities)},
         )

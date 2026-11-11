@@ -327,7 +327,40 @@
       function renderStrategyHistory(data){
         const node=$("research-results");node.replaceChildren();const items=data.items||[];$("research-count").textContent=items.length+" registros";
         if(!items.length){empty(node,"No hay historial de investigación");return;}
-        for(const item of items.slice(0,10)){const result=item.result||{};node.appendChild(dataItem(item.strategy_id||"Estrategia",item.instrument_id+" · "+date(item.created_at),item.eligible?"Elegible":"No elegible",item.eligible?"state-good":"state-warn"));const failures=(item.validation_failures||[]).slice(0,2);if(failures.length)node.appendChild(dataItem("Validación",failures.join(" · "),result.walk_forward?.windows?"Walk-forward":"Revisar"));}
+        for(const item of items.slice(0,10)){
+          const result=item.result||{};
+          const experimentalStatus=item.experimental_status||(
+            Object.prototype.hasOwnProperty.call(result,"experimental_eligible")?"recorded":"legacy"
+          );
+          const experimentalLabel=experimentalStatus==="legacy"
+            ?"Estado experimental no registrado (registro antiguo)"
+            :(item.experimental_eligible===true?"Experimental apta para paper":(
+              item.experimental_eligible===false?"No apta experimental":"Sin evaluación experimental"
+            ));
+          const validationLabel=item.eligible?"Validada":(item.experimental_eligible===true
+            ?"No validada para promoción":"No validada");
+          node.appendChild(dataItem(
+            item.strategy_id||"Estrategia",
+            item.instrument_id+" · "+date(item.created_at),
+            validationLabel,
+            item.eligible?"state-good":"state-warn"
+          ));
+          node.appendChild(dataItem("Evaluación experimental",experimentalLabel,
+            item.experimental_eligible===true?"Paper experimental":(
+              experimentalStatus==="legacy"?"Legacy":"Solo investigación"
+            ),item.experimental_eligible===true?"state-warn":""));
+          const failures=(item.validation_failures||[]).slice(0,3);
+          if(failures.length)node.appendChild(dataItem("Validación promoción",failures.join(" · "),"No promocionada","state-warn"));
+          const experimentalFailures=(result.experimental_validation_failures||[]).slice(0,3);
+          if(experimentalFailures.length)node.appendChild(dataItem("Validación experimental",experimentalFailures.join(" · "),"No apta para paper","state-warn"));
+          if(result.current_entry_signal===true||result.current_entry_signal===false)
+            node.appendChild(dataItem("Señal de entrada actual","Señal técnica en la última evaluación",result.current_entry_signal?"Sí":"No"));
+          if(result.current_hold_signal===true||result.current_hold_signal===false)
+            node.appendChild(dataItem("Señal de mantenimiento","Estado de salida/continuidad de la estrategia",result.current_hold_signal?"Mantener":"Evaluar salida"));
+          if(result.experimental_score!==null&&result.experimental_score!==undefined&&Number.isFinite(Number(result.experimental_score)))
+            node.appendChild(dataItem("Puntuación experimental","Métrica interna; no representa rentabilidad garantizada",Number(result.experimental_score).toFixed(4)));
+          node.appendChild(dataItem("Interpretación","La aptitud experimental solo autoriza pruebas paper controladas; no demuestra rentabilidad ni promoción","Sin ejecución real"));
+        }
       }
       function drawChart(candles,currency="EUR"){
         const svg=$("market-chart");svg.replaceChildren();const ns="http://www.w3.org/2000/svg";const width=900,height=240,pad=28;
