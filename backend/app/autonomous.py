@@ -441,6 +441,7 @@ class AutonomousStore:
                 "experimental_candidate_count": research.get("experimental_candidate_count"),
                 "experimental_status_registered": "experimental_eligible" in candidate,
                 "market_regime": research.get("market_regime"),
+                "data_quality": research.get("data_quality"),
             }
             rows.append((
                 task_id, provider_id, instrument_id, symbol, str(timeframe or "unknown"),
