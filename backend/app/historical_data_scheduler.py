@@ -154,6 +154,7 @@ def run_sync_cycle(
     )
     outcomes = []
     for target in targets:
+        instrument = None
         provider = providers.get(target.provider_id)
         if provider is None:
             outcomes.append({
@@ -199,6 +200,13 @@ def run_sync_cycle(
                 cursor = int(latest[-1]["timestamp_ms"]) + interval_ms
             else:
                 cursor = int(state["initial_since_ms"])
+            if cursor >= now_ms:
+                outcomes.append({
+                    "provider_id": target.provider_id, "symbol": target.symbol,
+                    "timeframe": target.timeframe, "status": "waiting_for_data",
+                    "pages": 0, "received": 0,
+                })
+                continue
             state_store.record_start(
                 target.provider_id, instrument.instrument_id, target.timeframe,
             )
@@ -224,7 +232,7 @@ def run_sync_cycle(
             # Persist a bounded diagnostic, not provider request/credential details.
             safe_error = f"{type(exc).__name__}: historical sync target failed"
             try:
-                if "instrument" in locals() and instrument is not None:
+                if instrument is not None:
                     state_store.record_error(
                         target.provider_id, instrument.instrument_id,
                         target.timeframe, safe_error,
