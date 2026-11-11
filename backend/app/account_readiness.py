@@ -171,11 +171,10 @@ class PaperAccountReadiness:
 
         try:
             reconciliation = self.portfolio.reconcile_order_intents()
-            intents = self.portfolio.list_order_intents(1000)
+            intents = self.portfolio.list_unresolved_order_intents()
             unresolved = [
                 item for item in intents
                 if item.get("client_order_id") != exclude_client_order_id
-                and item.get("status") not in self.TERMINAL_INTENT_STATES
             ]
             reconciliation_required = int(reconciliation.get("reconciliation_required", 0))
             if reconciliation_required > 0:
