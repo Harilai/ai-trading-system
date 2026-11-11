@@ -8,6 +8,8 @@ from .agents.charts import ChartsAgent
 from .agents.contracts import MarketAnalysis
 from .strategy_research import StrategyResearchAgent
 
+from .market_data import MarketDataError
+
 _TIMEFRAME_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 
 
@@ -18,7 +20,6 @@ def _timeframe_seconds(value: str) -> int | None:
     return int(match.group(1)) * _TIMEFRAME_SECONDS[match.group(2)]
 
 
-from .market_data import MarketDataError
 
 
 class ScoutAgent:
