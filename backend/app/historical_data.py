@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import sqlite3
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -28,7 +27,7 @@ def _decimal(value, field: str, *, positive: bool = False, non_negative: bool = 
         raise HistoricalDataError(f"Candle {field} must be positive")
     if non_negative and number < 0:
         raise HistoricalDataError(f"Candle {field} cannot be negative")
-    return format(number, "f")
+    return format(number.normalize(), "f")
 
 
 def normalize_candle(row: Iterable, *, timestamp_unit: str = "ms") -> dict:
@@ -40,10 +39,13 @@ def normalize_candle(row: Iterable, *, timestamp_unit: str = "ms") -> dict:
             raise HistoricalDataError("OHLCV row must contain six fields")
         values = values[:6]
     try:
-        timestamp = int(values[0])
-    except (TypeError, ValueError, OverflowError) as exc:
+        raw_timestamp = Decimal(str(values[0]))
+    except (InvalidOperation, TypeError, ValueError) as exc:
         raise HistoricalDataError("Candle timestamp must be an integer") from exc
-    if isinstance(values[0], bool) or timestamp <= 0:
+    if isinstance(values[0], bool) or not raw_timestamp.is_finite() or raw_timestamp != raw_timestamp.to_integral_value():
+        raise HistoricalDataError("Candle timestamp must be an integer")
+    timestamp = int(raw_timestamp)
+    if timestamp <= 0:
         raise HistoricalDataError("Candle timestamp must be positive")
     if timestamp_unit == "seconds":
         timestamp *= 1000
@@ -175,6 +177,7 @@ class HistoricalCandleStore:
                 "SELECT * FROM historical_candles WHERE " + " AND ".join(clauses)
                 + " ORDER BY timestamp_ms ASC LIMIT ?", params,
             ).fetchall()
+        rows = list(reversed(rows))
         return [
             {**{key: row[key] for key in ("provider_id","instrument_id","symbol","timeframe",
               "timestamp_ms","open","high","low","close","volume","source","retrieved_at")},
