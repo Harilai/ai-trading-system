@@ -357,3 +357,14 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 - Fees y slippage continúan como supuestos configurados; no equivalen a las tarifas reales de una cuenta. No hay backfill histórico de bid/ask: la cobertura se acumula desde la activación del escaneo.
 - CI head PR `6b400d4da500ffd74ce9106e0fcf8b34a7dda1e0`: 811 tests Python passed, 1 warning; Docker hardening passed. Post-merge main run `43084918192`: ambos jobs success, 811 tests passed, 1 warning.
 - No se ejecutaron tests locales ni validación operativa contra un exchange real. No se usaron credenciales privadas ni se ejecutaron órdenes. LIVE permanece deshabilitado.
+
+
+## Continuidad — PR #158: contrato de comisiones por proveedor/instrumento
+
+- PR #158 `feat(research): support scoped provider taker fee schedules`, rama `feat/provider-instrument-fee-schedules`, abierta contra `main`; head actual `c758c1a548aa943a46980ac666aa7b5660dd14f3` al actualizar esta nota.
+- `backend/app/fee_schedule.py` valida identidad exacta de proveedor/instrumento/mercado, maker/taker, divisa quote, fuente, observación y periodo efectivo completo. Rechaza schedule observado después del primer candle, fuera de vigencia o con fee en divisa base/tercera.
+- `StrategyResearchAgent.research` admite schedule explícito y aplica taker a benchmark, candidatos, ventanas walk-forward y sensibilidad de costes. Si no se proporciona schedule, mantiene `settings.fee_rate` como `configured_assumption`.
+- Tests añadidos para alcance, monedas, rates inválidos, vigencia, look-ahead y aplicación/reporting en Strategy Research. Documento `docs/FEE_SCHEDULES.md` describe el contrato y límites.
+- CI del head actualizado: workflow `43087405770` (Python tests y Docker build/runtime hardening) estaba en progreso en la última consulta. No tests locales ejecutados.
+- Importante: el contrato aún no se conecta a un fetcher público ni a una tabla histórica de tarifas; ningún dato de fee real se ha afirmado ni obtenido. El siguiente trabajo es integrar una fuente pública verificable con snapshots point-in-time y conservar la distinción entre tarifa pública y tier real de cuenta.
+- No se han usado credenciales, no se han enviado órdenes y LIVE sigue deshabilitado. Tras merge válido, sincronizar `demo` al SHA de `main` y verificar `identical`.

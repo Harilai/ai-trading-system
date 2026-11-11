@@ -463,3 +463,14 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - Fees y slippage continúan como supuestos configurados; no equivalen a las tarifas/tier reales de una cuenta. Los quotes históricos no se pueden reconstruir desde OHLCV: la cobertura se acumula desde la activación del escaneo.
 - CI del head PR `6b400d4da500ffd74ce9106e0fcf8b34a7dda1e0`: 811 tests Python passed, 1 warning; Docker build/runtime hardening passed (run `43084727897`). CI post-merge `main` run `43084918192`: ambos jobs success, 811 tests passed, 1 warning.
 - No se ejecutaron tests locales ni validación operativa contra un exchange real. No se usaron credenciales privadas ni se ejecutaron órdenes. LIVE permanece deshabilitado.
+
+
+## En curso — comisiones por proveedor/instrumento (PR #158)
+
+- Rama `feat/provider-instrument-fee-schedules`; PR #158 abierta y pendiente de CI/revisión.
+- Nuevo contrato fail-closed para schedules ligados a `provider_id`, `instrument_id` y `market_type`, con maker/taker, divisa de comisión, procedencia, instante de observación y periodo efectivo.
+- Strategy Research aplica exclusivamente la tarifa taker para sus fills marketables y solo si el schedule observado antes del primer candle cubre todo el periodo de investigación.
+- La comisión configurada global sigue siendo un supuesto explícito cuando no se suministra evidencia verificada. No hay todavía captura automática ni persistencia histórica de tarifas de proveedor/cuenta.
+- Solo se aceptan fees denominadas en quote currency; fees en base/tercer token requieren conversión FX/asset con timestamp y procedencia y quedan rechazadas por ahora.
+- No se modifica ejecución, riesgo ni LIVE. No se consultan cuentas privadas ni tiers de usuario.
+- Siguiente paso tras integrar el contrato: conectar fuentes públicas verificables y un histórico point-in-time de schedules por proveedor/instrumento/market type; luego modelar liquidez/impacto con profundidad observable y construir holdouts independientes/control de selección múltiple.
