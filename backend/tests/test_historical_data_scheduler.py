@@ -167,3 +167,33 @@ def test_parse_sync_targets_preserves_case_sensitive_exchange_timeframes():
         HistoricalSyncTarget("ccxt:kraken", "BTC/EUR", "1M"),
         HistoricalSyncTarget("ccxt:kraken", "BTC/EUR", "1m"),
     ]
+
+
+def test_sync_cycle_rejects_calendar_month_timeframe_for_fixed_interval_cursor(tmp_path):
+    path = str(tmp_path / "trading.sqlite")
+    store = HistoricalCandleStore(path)
+    state = HistoricalSyncStateStore(path)
+    target = HistoricalSyncTarget("ccxt:kraken", "BTC/EUR", "1M")
+
+    class Exchange:
+        @staticmethod
+        def parse_timeframe(timeframe):
+            return 30 * 86400
+
+        def fetch_ohlcv(self, *args, **kwargs):
+            raise AssertionError("Unsupported monthly timeframe must not fetch")
+
+    provider = SimpleNamespace(
+        exchange=Exchange(),
+        discover_markets=lambda: [SimpleNamespace(
+            symbol="BTC/EUR", active=True,
+            instrument_id="ccxt:kraken:spot:BTC/EUR",
+        )],
+    )
+    result = run_sync_cycle(
+        [target], {"ccxt:kraken": provider}, store, state,
+        now_ms=86_500_000, lookback_days=1,
+    )
+    assert result[0]["status"] == "error"
+    assert "historical sync target failed" in result[0]["error"]
+    assert state.list_targets() == []
