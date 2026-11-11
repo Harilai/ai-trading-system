@@ -2,7 +2,7 @@
 
 > Continuity between ChatGPT sessions: read [`docs/SESSION_HANDOFF.md`](SESSION_HANDOFF.md) for project state and [`docs/AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) for the mandatory multi-agent development method.
 
-Actualizado: 2026-11-11 (PR #150 y #152 integradas; scheduler de histórico y diagnósticos de Strategy Research). Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
+Actualizado: 2026-11-11 (PR #155 integrada; contrato de capacidades OHLCV y límites históricos por proveedor). Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
 ## Completado — promoción de snapshots y reconciliación de ramas (#99–#106)
 
@@ -427,3 +427,26 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - No se modifican señales, parámetros, promotion gates, costes, riesgo ni ejecución.
 - Dashboard actualizado para mostrar gaps, intervalos ausentes estimados, fuente de cadencia y modelo de calendario. Pendiente: CI del head final y comprobar demo=main después de integrar.
 - LIVE deshabilitado.
+
+
+## Completado — contrato de capacidades OHLCV y límites por proveedor (PR #155)
+
+- PR #155 integrada por squash en `main`; merge SHA `23dcac3b65c46a59d3e24edf487cefe88ffc88fd`. La PR partió de `main` actualizado y no requirió reconciliación de conflictos.
+- `ProviderCapabilities` incorpora soporte de OHLCV histórico, timeframes declarados, modo de paginación, límite por petición y profundidad histórica máxima.
+- `CcxtSpotProvider` expone las capacidades reales declaradas por CCXT. Kraken Spot declara un máximo de 720 puntos OHLCV por intervalo y por petición; otros exchanges no heredan ese límite.
+- El scheduler rechaza capacidades ausentes, nulas, de otra identidad o malformadas; valida timeframes y paginación `since` antes de solicitar datos. Los límites opcionales se validan estrictamente.
+- Cuando el lookback excede el máximo declarado, el cursor inicial se limita al rango recuperable. Se persisten el rango solicitado/efectivo, límite aplicado y estado del límite, con migración compatible de `historical_sync_state`.
+- `docs/HISTORICAL_DATA_SYNC.md` documenta capacidades, límites por venue y la ausencia de agregación histórica desde Trades.
+- Review interno independiente: APPROVE sobre SHA `4c4d30b781012c477f9f2c14fb35455bea00df8f`; sin hallazgos críticos/altos pendientes.
+- CI del head exacto: 778 tests Python passed, 1 warning; Docker build/runtime hardening passed (run `43080178575`). No se ejecutaron tests locales.
+- PR #155 mergeada; no quedan PR abiertas. `demo` se avanzó por fast-forward al mismo SHA que `main`; compare verificado como identical.
+- No se consultaron credenciales privadas ni se ejecutaron órdenes. LIVE permanece deshabilitado.
+
+### Siguiente prioridad
+
+1. Modelar costes de ejecución observables: fees del instrumento/proveedor, spread bid-ask y slippage; identificar claramente cuándo solo existe una estimación.
+2. Evitar look-ahead: al backtest solo se aplican cotizaciones/spreads disponibles en el timestamp de decisión.
+3. Medir sensibilidad de resultados a spread, fees y slippage; mantener los promotion gates actuales.
+4. Añadir holdouts temporales independientes y control de selección múltiple antes de ampliar el catálogo de estrategias.
+5. No atribuir límites/cadencias crypto 24/7 a acciones, ETF o FX; exigir contratos de venue/sesión antes de incorporar esos mercados a investigación.
+
