@@ -265,7 +265,7 @@ class HistoricalQuoteStore:
                             try:
                                 retrieved = datetime.fromisoformat(legacy["retrieved_at"])
                                 if retrieved.tzinfo is None:
-                                    retrieved = retrieved.replace(tzinfo=timezone.utc)
+                                    raise ValueError("Legacy quote receipt timestamp has no timezone")
                                 retrieved_ms = int(retrieved.timestamp() * 1000)
                             except (TypeError, ValueError, OverflowError):
                                 retrieved_ms = 0
@@ -293,7 +293,7 @@ class HistoricalQuoteStore:
                         try:
                             retrieved = datetime.fromisoformat(legacy["retrieved_at"])
                             if retrieved.tzinfo is None:
-                                retrieved = retrieved.replace(tzinfo=timezone.utc)
+                                raise ValueError("Legacy quote receipt timestamp has no timezone")
                             retrieved_ms = int(retrieved.timestamp() * 1000)
                         except (TypeError, ValueError, OverflowError):
                             retrieved_ms = 0
