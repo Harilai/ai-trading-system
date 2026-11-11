@@ -1,43 +1,60 @@
 # Session handoff — AI Trading System
 
-> **Última revisión del repositorio:** 2026-11-11 Europe/Madrid
-> **Rama base:** `main`
-> **Último commit integrado en `main`:** `099d1b9f77f81f32df79692e47c570f3f273f379` — PR #104.
-> **Rama `demo`:** `1b7ea7749696d3c39f162720cba2bff2408bea18` — sincronizada con el árbol de `main` mediante PR #106; los 109 archivos versionados son idénticos.
-> **Modo de ejecución:** paper trading; Binance Spot Demo aislado; live trading no implementado ni habilitado.
+> **Última revisión:** 2026-11-11 Europe/Madrid
+> **Repositorio:** `Harilai/ai-trading-system`
+> **Último cambio de código integrado:** PR #109 en `main`; sincronización de ramas PR #110.
+> **`main`:** `cbbd1510476a1ddb165aa70b3d027c0816ce9598`
+> **`demo`:** `7cc1f0e73f54e09e0f911ab5314db1d65bd1ce3b`
+> **Árboles:** idénticos, 109 archivos y 109 blob SHAs coincidentes.
+> **Operación:** paper trading y Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
-## Estado actual — 11 de noviembre de 2026
+## Trabajo cerrado en esta sesión
 
-- PR #77 fusionada: monitor paper de stop-loss/take-profit para acciones/ETF USD de Twelve Data; CI exacto: 524 tests y Docker hardening correctos.
-- PR #78 fusionada: contratos normalizados de órdenes y fills.
-- PR #79 fusionada: ledger SQLite append-only de órdenes/fills, idempotencia y aislamiento por cuenta, entorno y mercado.
-- PR #80 fusionada: historial de fills con completitud explícita y reconciliación read-only; no envía, cancela ni reintenta órdenes.
-- PR #96 fusionada: lectura de posiciones con scope `market_type`, soporte de conectores position-only y `coverage_status=unknown` para el contrato legacy.
-- PR #99 fusionada: ledger append-only de snapshots externos de posiciones, decimales exactos, hash, orden temporal y cobertura complete/partial. Una captura parcial no marca ausencias como cierres.
-- PR #100 fusionada: trazabilidad experimental, diagnósticos Chief y salidas por estrategia solo ante señal booleana `False` explícita; Risk Manager sigue obligatorio.
-- PR #101 sincronizó `demo` con `main`. PR #74 se cerró como implementación sustituida; su requisito de snapshot coordinado balances+posiciones sigue en roadmap y no se descarta.
-- PR #103 fusionada: preflight Binance Demo de solo lectura, tres GET autenticados y validación explícita de identidad Demo, permisos y catálogo; CI exacto: 568 tests passed, 1 warning, Docker hardening passed.
-- No se ha ejecutado el smoke test contra una cuenta Binance Demo real en esta sesión. No se han usado credenciales, fondos reales ni operaciones de exchange.
+- PR #109 fusionada en `main`: diagnóstico seguro de asset keys inválidas en balances Binance Demo. El error muestra tipo y representación ASCII escapada/acotada de la clave, sin importes, credenciales ni payload completo.
+- PR #110 fusionada en `demo`: sincroniza el fix de #109. Se compararon los árboles recursivos completos antes de abrirla: 109 archivos en cada rama, sin rutas exclusivas y solo dos blobs distintos (`backend/app/accounts/binance_demo.py`, `backend/tests/test_binance_demo.py`). Tras merge, los árboles vuelven a ser idénticos.
+- CI de PR #110 pasó en el head exacto `cbbd1510476a1ddb165aa70b3d027c0816ce9598`: `Python tests` y `Docker build and runtime hardening` correctos, incluida validación Compose, build de imagen y ejecución non-root.
+- No hay PR abiertas tras integrar #110.
+- Las funcionalidades #78–#80 (contratos de órdenes/fills, ledger y completitud/reconciliación read-only), #99 (ledger de posiciones) y #100 (diagnósticos experimentales y salidas seguras) están integradas en `main` y `demo`.
+- No se ha ejecutado un preflight posterior a #109 contra el contenedor Binance Demo local. El problema original de asset key sigue pendiente de confirmar con evidencia del contenedor del propietario.
 
-## Siguiente acción inmediata
+## Estado operativo Binance Demo
 
-Ejecutar el preflight en el servidor después de que el propietario configure allí credenciales **Binance Spot Demo** y un owner token. No enviar claves ni tokens por chat ni GitHub. Solo si el preflight pasa, seguir el runbook con una orden limit pequeña no marketable, comprobar idempotencia, persistencia tras restart, conciliación, cancelación y ledger de fills/comisiones. No afirmar que el smoke test real está completado hasta disponer de evidencia real de cada paso. Los partial fills dependen del mercado y pueden quedar como validación no observada si no ocurren.
+- El preflight automatizado de solo lectura está implementado (#103); realiza tres GET autenticados y verifica identidad Demo, capacidades y catálogo.
+- El fix #109 mejora el diagnóstico del error de balance.
+- Sigue pendiente ejecutar el preflight en el entorno local del propietario. No pedir ni recibir API keys ni tokens por chat.
+- No ejecutar el drill de órdenes hasta que el preflight pase. El smoke test de órdenes Demo requiere autorización explícita del propietario y debe usar exclusivamente el host Demo; no se debe cambiar a producción.
+- Ningún test de CI sustituye la validación operativa contra la cuenta Demo real.
 
-Después del smoke test: implementar el primer adaptador real read-only de posiciones para un mercado concreto, únicamente si el proveedor ofrece cobertura verificable, timestamp de origen, identidad de cuenta/entorno/mercado y permisos mínimos. Mantener separado el snapshot ledger de posiciones del paper portfolio. Diseñar el snapshot coordinado balances+posiciones sin duplicar persistencia.
+## Siguiente fase técnica
 
-## Seguridad y límites operativos
+La siguiente tarea arquitectónica es el snapshot coordinado de balances y posiciones, descrito en `docs/COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md`.
 
-- No introducir secretos en el repositorio, issues, logs, capturas ni conversaciones. Las claves deben permanecer en el servidor, con permisos mínimos.
-- Binance Spot Demo debe usar únicamente credenciales Demo y `demo-api.binance.com`; nunca cambiar el host a producción.
-- El conector Demo permite exclusivamente limit orders en el entorno virtual y no expone transferencias, retiradas ni firma.
-- Los adaptadores de cuentas production existentes son read-only por implementación, pero el software no verifica independientemente los scopes reales de las API keys.
-- No hay live trading habilitado ni debe activarse como parte de esta fase.
-- No se ha levantado ni reiniciado una demo local en esta sesión.
+Los stores append-only de balances y posiciones existen por separado, pero todavía no comparten un identificador de captura ni una transacción atómica. El diseño exige:
+- identidad común proveedor/cuenta/entorno/mercado y `capture_id`;
+- cobertura explícita de balances y posiciones;
+- timestamps de origen/retrieval con procedencia y skew máximo;
+- normalización decimal y validación completa antes de persistir;
+- referencias a los dos ledgers existentes, sin duplicar datos;
+- persistencia atómica y rollback total si falla cualquiera de las escrituras;
+- ningún efecto en la cartera paper ni en decisiones de trading.
 
-## Cómo retomar
+Antes de habilitar una captura real debe existir un proveedor que exponga ambas lecturas con cobertura verificable. Los conectores Binance Spot read-only y CCXT Spot actuales no declaran capacidad de posiciones; Binance Spot Demo es un conector de órdenes y no debe tratarse como proveedor de posiciones. No inferir posiciones desde balances ni fills. Si no hay proveedor apto, implementar el contrato y storage genéricos detrás de capability gates, sin afirmar validación operativa.
 
-1. Leer `docs/ROADMAP.md`, `docs/BINANCE_DEMO_SMOKE_TEST_RUNBOOK.md` y `docs/ACCOUNT_PROVIDER_CONTRACTS.md`.
-2. Confirmar los heads de `main` y `demo` y el estado de CI antes de editar.
-3. No cerrar PRs por limpieza: evaluar dependencias, requisitos únicos y solapamientos antes de cualquier decisión.
-4. Ejecutar cambios en ramas acotadas, pruebas, revisión independiente y CI exacto antes de squash merge.
-5. Mantener el sistema paper/demo-only hasta que exista una fase live separada, aprobada y revisada.
+## Arquitectura y seguridad
+
+- Mantener separados MOCK, BACKTEST, PAPER, DEMO/TESTNET y LIVE.
+- LIVE deshabilitado por defecto; no activar ni operar con fondos reales.
+- Binance Demo nunca debe hacer fallback a producción.
+- No introducir secretos en Git, logs, documentación, frontend ni conversaciones.
+- No inferir posiciones desde balances.
+- Una captura parcial/desconocida no permite concluir que una posición o activo haya desaparecido.
+- IA/Chief siempre detrás del Risk Manager.
+- Mantener idempotencia, exactitud decimal, append-only, aislamiento por cuenta/entorno/mercado y conciliación fail-closed.
+
+## Continuidad
+
+1. Verificar heads, PR abiertas, CI y árboles de `main`/`demo` antes de cada bloque.
+2. Revisar el diff y dependencias de PR; integrar automáticamente solo cuando mergeability, pruebas y CI del SHA exacto estén correctos.
+3. No cerrar PR por limpieza ni fusionar ramas divergentes sin comparar árboles y clasificar funcionalidades.
+4. Actualizar roadmap y handoff al completar fases.
+5. Distinguir implementado, probado por CI, integrado y validado operativamente.
