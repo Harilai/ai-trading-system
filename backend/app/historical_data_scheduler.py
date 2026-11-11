@@ -208,10 +208,26 @@ def run_sync_cycle(
                 if not capabilities.supports_historical_ohlcv:
                     raise ValueError("Provider does not declare historical OHLCV support")
                 supported_timeframes = capabilities.supported_ohlcv_timeframes
-                if supported_timeframes and target.timeframe not in supported_timeframes:
+                if not isinstance(supported_timeframes, (tuple, list)) or not supported_timeframes:
+                    raise ValueError("Provider does not declare supported OHLCV timeframes")
+                if target.timeframe not in supported_timeframes:
                     raise ValueError("Timeframe is not supported by the selected provider")
+                if getattr(capabilities, "ohlcv_pagination_mode", "unsupported") != "since":
+                    raise ValueError("Provider pagination mode is not supported by this collector")
                 max_request_limit = capabilities.max_ohlcv_request_limit
                 max_history_bars = capabilities.max_historical_ohlcv_bars
+                if max_request_limit is not None and (
+                    isinstance(max_request_limit, bool)
+                    or not isinstance(max_request_limit, int)
+                    or max_request_limit < 1
+                ):
+                    raise ValueError("Provider max OHLCV request limit is invalid")
+                if max_history_bars is not None and (
+                    isinstance(max_history_bars, bool)
+                    or not isinstance(max_history_bars, int)
+                    or max_history_bars < 1
+                ):
+                    raise ValueError("Provider max historical bars capability is invalid")
             else:
                 # Test doubles and legacy adapters without a capability contract
                 # remain usable, but their historical retention limit is unknown.
@@ -237,8 +253,6 @@ def run_sync_cycle(
             requested_since_ms = max(1, (requested_since_ms // interval_ms) * interval_ms)
             initial_since_ms = requested_since_ms
             if max_history_bars is not None:
-                if isinstance(max_history_bars, bool) or max_history_bars < 1:
-                    raise ValueError("Provider max historical bars capability is invalid")
                 cap_since_ms = max(1, now_ms - max_history_bars * interval_ms)
                 # Round forward to a candle boundary so the effective range
                 # cannot exceed the provider's documented maximum candle count.
@@ -254,8 +268,6 @@ def run_sync_cycle(
             )
             effective_page_limit = page_limit
             if max_request_limit is not None:
-                if isinstance(max_request_limit, bool) or max_request_limit < 1:
-                    raise ValueError("Provider max OHLCV request limit is invalid")
                 effective_page_limit = min(effective_page_limit, max_request_limit)
             collector = PaginatedCandleCollector(
                 store, page_limit=effective_page_limit, max_pages=max_pages_per_target,
