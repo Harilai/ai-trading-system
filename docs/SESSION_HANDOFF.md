@@ -85,8 +85,9 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 ## Continuidad
 
 1. Verificar heads, PR abiertas, CI y árboles de `main`/`demo` antes de cada bloque.
-2. Tras cada merge, eliminar la rama de trabajo si no es permanente y no contiene trabajo pendiente. La conexión GitHub actual no expone una acción de borrar ramas; requiere habilitar auto-delete de ramas en el repositorio o conceder una integración con permiso `delete ref`.
-2. Revisar el diff y dependencias de PR; integrar automáticamente solo cuando mergeability, pruebas y CI del SHA exacto estén correctos.
+2. Tras cada merge, eliminar la rama de trabajo si no es permanente y no contiene trabajo pendiente, cuando la conexión disponga del permiso correspondiente.
+3. El Engineering Lead revisa el diff completo, ejecuta/verifica tests y CI, decide la aprobación técnica y realiza el merge rutinario. El propietario no debe revisar, aprobar ni fusionar PR ordinarias.
+4. Si GitHub exige una aprobación de otra cuenta, no autoaprobar ni saltarse la protección; registrar el bloqueo de plataforma. No pedir al propietario que revise la PR.
 3. No cerrar PR por limpieza ni fusionar ramas divergentes sin comparar árboles y clasificar funcionalidades.
 4. Actualizar roadmap y handoff al completar fases.
 5. Distinguir implementado, probado por CI, integrado y validado operativamente.
@@ -215,3 +216,16 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - No se registran adaptadores automáticamente ni se conectan endpoints de ejecución. No se han enviado órdenes. LIVE permanece deshabilitado.
 - Validación de PR #134 pendiente de CI exacto; no afirmar tests superados hasta que GitHub Actions termine.
 - Siguiente fase: mapping de posiciones Spot + valoración/timestamp; diseño de perfil de capabilities PAPER sin falsear parcial fills; integración de snapshot freshness, account scope y reconciliation en preflight/RiskManager, preservando cierres/reducciones y emergency stop.
+
+
+## Delegación vigente de PR y estado actual — 2026-11-11
+
+**Esta sección prevalece sobre cualquier nota histórica anterior de este handoff.**
+
+- El propietario ha delegado completamente en el Engineering Lead la revisión técnica, decisión de aprobación, publicación y merge de PR rutinarias. No pedirle que revise, apruebe ni fusione.
+- Para cada PR, el Lead debe revisar el diff completo, diseñar/ejecutar pruebas apropiadas, inspeccionar seguridad y efectos financieros, comprobar CI del SHA exacto y fusionar cuando todos los gates pasen.
+- No enviar una review GitHub APPROVE desde la cuenta autora ni saltarse protecciones. Solo si GitHub exige una aprobación externa de otra cuenta se registrará ese bloqueo de plataforma; no se traslada la tarea de revisión al propietario.
+- PR #133 está **fusionada** en `main`: merge commit `ffe940be7b7d399b8ad4409b09adf9e26c8cb872`.
+- PR #134 está abierta, con base `main` (ya no depende de una rama intermedia), head `a7e4b035a04bb3961697f9528865438e34db1511`, mergeable=true. CI run `43049679926` terminó success en ese head. No hay reviews GitHub registradas; la revisión técnica interna sigue siendo responsabilidad del Engineering Lead.
+- En la última consulta, `main` apunta a `ffe940be7b7d399b8ad4409b09adf9e26c8cb872` y `demo` a `4ea6f3525c7b6a2826b8025d5916714179ecbde6`: **no son idénticas**. Sincronizar `demo` tras completar la promoción de los cambios documentales/PR, y verificar igualdad exacta de SHA.
+- No se han enviado órdenes ni realizado acciones financieras. LIVE sigue deshabilitado.
