@@ -232,6 +232,7 @@ def test_sync_cycle_applies_kraken_720_candle_history_cap_and_request_limit(tmp_
     provider = SimpleNamespace(
         exchange=Exchange(),
         capabilities=lambda: SimpleNamespace(
+            provider_id="ccxt:kraken",
             supports_historical_ohlcv=True,
             ohlcv_pagination_mode="since",
             supported_ohlcv_timeframes=("1m", "1h"),
