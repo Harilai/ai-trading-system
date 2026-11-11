@@ -18,13 +18,14 @@ El diseño está documentado en [`COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md`](COORD
 
 
 
-## Evaluación de proveedor de posiciones — siguiente integración
+## Adaptador Alpaca Paper read-only — implementación en curso
 
-- Evaluación inicial de Alpaca Trading API: su endpoint oficial `GET /v2/positions` devuelve las posiciones abiertas de la cuenta y campos normalizables (asset ID, símbolo, clase, cantidad, lado, precio medio, valor de mercado y P/L no realizado). La documentación también confirma que una posición cerrada deja de aparecer.
-- Candidato para una primera integración de posiciones de acciones/ETF en cuenta Paper, con adaptador estrictamente GET/read-only y host Paper fijo por defecto. No se ha implementado ni conectado todavía.
-- Antes de declararlo apto para snapshot coordinado hay que implementar y probar también la lectura de cuenta/balances con semántica contable correcta, validar el entorno y la identidad de cuenta, timestamps/frescura, cobertura y comportamiento ante respuestas vacías, errores, paginación futura y posiciones no soportadas.
-- No representar buying power como efectivo ni derivar posiciones desde balances. No habilitar trading, cancelación, transferencias, retiradas ni credenciales con permisos de escritura. La clave debe crearse con mínimo privilegio y su alcance real no se presume verificado por el adaptador.
-- La implementación actual del snapshot coordinado solo admite `spot`; extenderla a `cash`/equity requiere una decisión de esquema y pruebas específicas, no un bypass del guard.
+- Implementado en la rama `feat/alpaca-paper-readonly-positions`: proveedor aislado de posiciones abiertas con host Paper fijo, GET a `/v2/account` y `/v2/positions`, verificación obligatoria del account ID esperado y normalización decimal estricta.
+- El conector solo declara `positions=true`, `market_types=[cash]`, `balances=false` y todas las capacidades de escritura en false. No se integra con cartera paper, Chief, Risk Manager, snapshot coordinado ni ejecución.
+- Solo acepta `us_equity`, normalizado como `equity`; no adivina si un activo es ETF. Usa `asset_id` como identidad primaria y retrieval timestamp local. Una lista vacía es completa únicamente tras validar cuenta y endpoint.
+- Activación opt-in: `ALPACA_PAPER_ENABLED=false`; requiere key, secret y `ALPACA_PAPER_EXPECTED_ACCOUNT_ID`. Sin ID esperado no se registra.
+- CI y revisión del PR pendientes. No se ha validado contra una cuenta Alpaca real ni se han usado credenciales.
+- Siguiente trabajo separado: diseñar lectura de cuenta/balance con semántica contable explícita; no mapear buying power/equity a cash. Solo después considerar extender el snapshot coordinado de `spot` a `cash`/equity mediante migración y pruebas.
 
 ## Objetivo de producto
 

@@ -29,6 +29,7 @@ from .fx import invert_fx_observation, validate_fx_observation
 from .backup_scheduler import read_backup_status
 from .accounts.binance_spot import AccountConnectorError, BinanceSpotReadOnlyAccount
 from .accounts.ccxt_readonly import CcxtReadOnlyAccount, CcxtReadOnlyAccountError
+from .accounts.alpaca_paper_readonly import AlpacaPaperReadOnlyAccount, AlpacaPaperAccountError
 from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
 from .accounts.position_snapshot_store import PositionSnapshotError, PositionSnapshotStore
 from .accounts.coordinated_snapshot_store import CoordinatedAccountSnapshotStore, CoordinatedSnapshotError
@@ -99,6 +100,26 @@ elif _ccxt_key or _ccxt_secret:
     ccxt_readonly_configuration_status = "incomplete_configuration"
 del _ccxt_key, _ccxt_secret
 
+_alpaca_key = settings.alpaca_paper_api_key.get_secret_value().strip()
+_alpaca_secret = settings.alpaca_paper_api_secret.get_secret_value().strip()
+alpaca_paper_configuration_status = "disabled"
+alpaca_paper_account_provider = None
+if settings.alpaca_paper_enabled:
+    if _alpaca_key and _alpaca_secret and settings.alpaca_paper_expected_account_id.strip():
+        try:
+            alpaca_paper_account_provider = AlpacaPaperReadOnlyAccount(
+                _alpaca_key,
+                _alpaca_secret,
+                account_alias=settings.alpaca_paper_account_alias,
+                expected_account_id=settings.alpaca_paper_expected_account_id or None,
+            )
+            alpaca_paper_configuration_status = "configured"
+        except AlpacaPaperAccountError:
+            alpaca_paper_configuration_status = "invalid_configuration"
+    else:
+        alpaca_paper_configuration_status = "incomplete_configuration"
+del _alpaca_key, _alpaca_secret
+
 _demo_key = settings.binance_spot_demo_api_key.get_secret_value().strip()
 _demo_secret = settings.binance_spot_demo_api_secret.get_secret_value().strip()
 binance_demo_configuration_status = "disabled"
@@ -138,6 +159,12 @@ if ccxt_readonly_account_provider is not None:
         ccxt_readonly_configuration_status = "invalid_configuration"
 if binance_demo_account_provider is not None:
     account_provider_registry.register(binance_demo_account_provider)
+if alpaca_paper_account_provider is not None:
+    try:
+        account_provider_registry.register(alpaca_paper_account_provider)
+    except AccountProviderError:
+        alpaca_paper_account_provider = None
+        alpaca_paper_configuration_status = "invalid_configuration"
 
 class OrderRequest(BaseModel):
     symbol: str = Field(min_length=3)
@@ -185,12 +212,15 @@ def accounts(x_agent_token: str | None = Header(default=None)):
         configured.append(ccxt_readonly_account_provider.describe())
     if binance_demo_account_provider is not None:
         configured.append(binance_demo_account_provider.describe())
+    if alpaca_paper_account_provider is not None:
+        configured.append(alpaca_paper_account_provider.describe())
     return {
         "configuration_status": binance_account_configuration_status,
         "accounts": configured,
         "normalized_accounts": account_provider_registry.list_accounts(),
         "demo_configuration_status": binance_demo_configuration_status,
         "ccxt_readonly_configuration_status": ccxt_readonly_configuration_status,
+        "alpaca_paper_configuration_status": alpaca_paper_configuration_status,
     }
 
 
