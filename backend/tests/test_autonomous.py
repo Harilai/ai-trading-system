@@ -139,7 +139,7 @@ def test_decision_cycle_executes_only_risk_approved_paper_order_once(tmp_path):
             }
 
     class FakeChief:
-        def decide(self, scan, portfolio):
+        def decide(self, scan, portfolio, *, account_readiness=None):
             proposal = TradeProposal(
                 symbol="BTC/EUR",
                 side="buy",
