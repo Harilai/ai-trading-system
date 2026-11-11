@@ -385,3 +385,10 @@ def test_research_marks_short_walk_forward_windows_as_sample_inadequacy():
         in candidate["validation_failure_categories"]["sample"]
         for candidate in result["candidates"]
     )
+
+
+def test_research_validates_short_samples_before_reporting_insufficient_history():
+    rows = candles_from_closes([100.0] * 60)
+    rows[10]["close"] = float("nan")
+    with pytest.raises(ValueError, match="finite"):
+        StrategyResearchAgent().research(rows)
