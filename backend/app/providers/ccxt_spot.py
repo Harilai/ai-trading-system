@@ -29,6 +29,12 @@ class CcxtSpotProvider:
         return self._markets
 
     def capabilities(self) -> ProviderCapabilities:
+        supports_ohlcv = bool(self.exchange.has.get("fetchOHLCV"))
+        timeframes = getattr(self.exchange, "timeframes", None) or {}
+        supported_timeframes = tuple(sorted(timeframes.keys())) if isinstance(timeframes, dict) else ()
+        # Kraken's public OHLC endpoint is capped at the latest 720 data points
+        # per interval. Older history requires Trades-to-OHLCV aggregation.
+        max_ohlcv_points = 720 if self.exchange_id.lower() == "kraken" else None
         return ProviderCapabilities(
             provider_id=self.provider_id,
             venue_type=VenueType.CEX,
@@ -39,6 +45,11 @@ class CcxtSpotProvider:
             requires_authentication_for_trading=True,
             connectivity_status="not_checked",
             rate_limit_ms=int(getattr(self.exchange, "rateLimit", 0) or 0),
+            supports_historical_ohlcv=supports_ohlcv,
+            supported_ohlcv_timeframes=supported_timeframes,
+            ohlcv_pagination_mode="since" if supports_ohlcv else "unsupported",
+            max_ohlcv_request_limit=max_ohlcv_points,
+            max_historical_ohlcv_bars=max_ohlcv_points,
             authenticated_account=False,
             balances=False,
             positions=False,
