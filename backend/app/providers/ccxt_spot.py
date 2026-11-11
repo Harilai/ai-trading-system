@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import math
 
 import ccxt
 
@@ -266,6 +267,16 @@ class CcxtSpotProvider:
 
     @staticmethod
     def is_stale(ticker: dict, max_age_seconds: int) -> bool:
-        age = datetime.now(timezone.utc).timestamp() * 1000 - ticker["timestamp"]
-        return age > max_age_seconds * 1000
+        try:
+            timestamp = float(ticker["timestamp"])
+            max_age = float(max_age_seconds)
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return True
+        if (
+            not math.isfinite(timestamp) or timestamp <= 0
+            or not math.isfinite(max_age) or max_age <= 0
+        ):
+            return True
+        age_ms = datetime.now(timezone.utc).timestamp() * 1000 - timestamp
+        return age_ms < 0 or age_ms > max_age * 1000
 
