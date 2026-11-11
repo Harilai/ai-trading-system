@@ -2,10 +2,10 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
- > **Último cambio integrado:** PR #146, merge SHA `db83df4f0de25c9c24bdf96263cbab1a96567e89`.
-> **main y demo:** mismo SHA `db83df4f0de25c9c24bdf96263cbab1a96567e89`; compare verificado como identical.
+  > **Último cambio integrado:** PR #148, merge SHA `094df642ee1366f63c80c48f1a99bbbfe21d9161`.
+> **main y demo:** mismo SHA `094df642ee1366f63c80c48f1a99bbbfe21d9161`; compare verificado como identical.
 > **PR abiertas:** ninguna en la última auditoría.
-> **CI:** PR #142–#146 superaron Python tests y Docker build/runtime hardening. CI post-merge de PR #146 pendiente de comprobación final.
+> **CI:** PR #142–#148 superaron Python tests y Docker build/runtime hardening. CI post-merge de PR #148 run pendiente de comprobación final.
 > **Validación local:** no se pudo clonar el repositorio desde el shell por falta de resolución de GitHub; no afirmar tests locales. La validación ejecutada fue GitHub Actions.
 > **Operación:** investigación y PAPER; LIVE sigue deshabilitado. No ejecutar operaciones reales ni usar credenciales productivas.
 
@@ -250,14 +250,22 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe permanecer idéntica a `main`.
 
 
-## Bloque integrado — histórico persistente/paginado (PR #146)
+## Bloque integrado — histórico persistente/paginado (PR #146, correcciones #148)
 
-- PR #146 integrada por squash en `main`, merge SHA `db83df4f0de25c9c24bdf96263cbab1a96567e89`; `demo` sincronizada y compare verificado como identical.
+- PR #146 integrada por squash en `main`, merge SHA `db83df4f0de25c9c24bdf96263cbab1a96567e89`. PR #148 integrada con merge SHA `094df642ee1366f63c80c48f1a99bbbfe21d9161`; `demo` sincronizada al SHA final y compare verificado como identical.
 - Nuevo módulo `backend/app/historical_data.py`: store SQLite provider/instrument/timeframe scoped; valores OHLCV guardados como decimales de texto; lecturas por rango; cobertura; idempotencia.
 - Las velas provisionales se pueden refrescar. Las finalizadas son inmutables: discrepancias rechazan la operación y hacen rollback; un replay antiguo no degrada una vela finalizada.
 - Colector paginado con `since`, `limit`, orden temporal estricto, límite de páginas y cursor `next_since_ms` para reanudar.
 - Endpoints autenticados `POST /api/market-data/history/sync` y `GET /api/market-data/history`. La sincronización requiere instrumento activo del catálogo del proveedor y reutiliza rate limiting CCXT. Otros proveedores no se habilitan sin soporte paginado declarado.
-- CI del head exacto `47dcb8f6a8b1f47cc4a21875363b48b7b3fff1f2`: 741 tests Python passed, 1 warning; Docker build/runtime hardening passed. La CI post-merge se verifica por separado.
+- CI PR #146: 741 tests Python passed, 1 warning; Docker build/runtime hardening passed. PR #148: 744 tests Python passed, 1 warning; Docker build/runtime hardening passed. CI post-merge #148 pendiente de comprobación.
 - No se ejecutaron tests locales ni validación operativa contra proveedores reales. No hay scheduler de backfill automático ni retención configurada todavía.
 - Siguiente prioridad: añadir un scheduler incremental seguro, definir política de retención y diagnosticar cobertura/gaps por timeframe/proveedor antes de ampliar la investigación a múltiples timeframes. LIVE permanece deshabilitado.
 
+
+
+## Corrección de consultas de histórico — PR #148
+
+- `HistoricalCandleStore.get(..., limit=N)` devuelve ahora las N velas más recientes, en orden cronológico ascendente. Antes devolvía las primeras N históricas y podía ocultar los datos recientes tras un backfill grande.
+- Canonicalización decimal para que `10`, `10.0` y `10.000` sean idempotentes sin redondear valores.
+- Rechazo explícito de timestamps fraccionarios, evitando truncamientos silenciosos.
+- PR #148 merge SHA `094df642ee1366f63c80c48f1a99bbbfe21d9161`; CI del head: 744 passed, 1 warning; Docker build/runtime hardening passed.
