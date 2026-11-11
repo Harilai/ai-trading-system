@@ -135,6 +135,10 @@ class AlpacaPaperReadOnlyAccount:
             raise AlpacaPaperAccountError("Alpaca Paper account identity does not match configuration")
         return account_id
 
+    def fetch_positions(self) -> list[dict]:
+        """Compatibility reader for the generic positions endpoint; still verifies account identity."""
+        return self.fetch_positions_snapshot(market_type="cash")["positions"]
+
     def fetch_positions_snapshot(self, *, market_type: str) -> dict:
         if market_type != "cash":
             raise AlpacaPaperAccountError("Alpaca Paper positions support cash market_type only")
