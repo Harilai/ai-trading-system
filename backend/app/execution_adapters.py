@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 
 from .accounts.binance_demo import BinanceSpotDemoExecution
@@ -17,6 +18,16 @@ from .portfolio import PaperPortfolio
 
 class ScopedAccountAdapterError(ValueError):
     pass
+
+
+def _finite_decimal(value: Any, field: str) -> Decimal:
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError) as exc:
+        raise ScopedAccountAdapterError(f"PAPER {field} is invalid") from exc
+    if not parsed.is_finite():
+        raise ScopedAccountAdapterError(f"PAPER {field} must be finite")
+    return parsed
 
 
 @dataclass(frozen=True)
@@ -218,27 +229,57 @@ class PaperPortfolioScopedAdapter:
         raw = self.portfolio.snapshot()
         if not isinstance(raw, dict):
             raise ScopedAccountAdapterError("PaperPortfolio returned an invalid snapshot")
-        balances = tuple(
-            ScopedBalance(
-                asset=str(item["currency"]).upper(),
-                free=str(item["balance"]),
-                used="0",
-                total=str(item["balance"]),
+        raw_balances = raw.get("cash_balances")
+        raw_positions = raw.get("positions")
+        if not isinstance(raw_balances, list) or not isinstance(raw_positions, list):
+            raise ScopedAccountAdapterError("PAPER snapshot collections are invalid")
+
+        normalized_balances = []
+        for item in raw_balances:
+            if not isinstance(item, dict) or not item.get("currency"):
+                raise ScopedAccountAdapterError("PAPER cash balance record is malformed")
+            amount = _finite_decimal(item.get("balance"), "cash balance")
+            normalized_balances.append(
+                ScopedBalance(
+                    asset=str(item["currency"]).upper(),
+                    free=str(amount),
+                    used="0",
+                    total=str(amount),
+                )
             )
-            for item in raw.get("cash_balances", [])
-        )
-        positions = tuple(
-            ScopedPosition(
-                provider_id=str(item["provider_id"]),
-                instrument_id=str(item["instrument_id"]),
-                symbol=str(item["symbol"]),
-                quantity=str(item["quantity"]),
-                average_price=str(item["average_price"]) if item.get("average_price") is not None else None,
-                quote_currency=str(item.get("quote_currency") or "EUR").upper(),
+        balances = tuple(normalized_balances)
+
+        normalized_positions = []
+        for item in raw_positions:
+            if not isinstance(item, dict):
+                raise ScopedAccountAdapterError("PAPER position record is malformed")
+            quantity = _finite_decimal(item.get("quantity"), "position quantity")
+            if quantity < 0:
+                raise ScopedAccountAdapterError("PAPER spot position quantity cannot be negative")
+            if quantity == 0:
+                continue
+            provider_id = item.get("provider_id")
+            instrument_id = item.get("instrument_id")
+            symbol = item.get("symbol")
+            quote_currency = item.get("quote_currency") or "EUR"
+            if not all(isinstance(value, str) and value.strip() for value in (provider_id, instrument_id, symbol, quote_currency)):
+                raise ScopedAccountAdapterError("PAPER position identity is incomplete")
+            average_price = item.get("average_price")
+            if average_price is not None:
+                average_price = _finite_decimal(average_price, "average price")
+                if average_price <= 0:
+                    raise ScopedAccountAdapterError("PAPER average price must be positive")
+            normalized_positions.append(
+                ScopedPosition(
+                    provider_id=provider_id,
+                    instrument_id=instrument_id,
+                    symbol=symbol,
+                    quantity=str(quantity),
+                    average_price=str(average_price) if average_price is not None else None,
+                    quote_currency=quote_currency.upper(),
+                )
             )
-            for item in raw.get("positions", [])
-            if float(item.get("quantity") or 0) > 0
-        )
+        positions = tuple(normalized_positions)
         return ScopedAccountSnapshot(
             scope=self.scope,
             fetched_at=datetime.now(timezone.utc).isoformat(),
