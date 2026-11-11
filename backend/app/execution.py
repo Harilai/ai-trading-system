@@ -31,6 +31,19 @@ class ExecutionRouter:
         self.providers = providers or {}
         self.live_enabled = live_enabled
 
+    def get_provider(self, provider_id: str) -> ExecutionProvider | None:
+        """Return an explicitly registered execution adapter, never a market-data provider."""
+        return self.providers.get(provider_id)
+
+    def capabilities_for(self, provider_id: str):
+        provider = self.get_provider(provider_id)
+        if provider is None:
+            return None
+        capabilities = provider.capabilities()
+        if capabilities.provider_id != provider_id:
+            raise ValueError("Execution provider capability identity mismatch")
+        return capabilities
+
     def register(self, provider: ExecutionProvider) -> None:
         if provider.provider_id in self.providers:
             raise ValueError(f"Execution provider already registered: {provider.provider_id}")
