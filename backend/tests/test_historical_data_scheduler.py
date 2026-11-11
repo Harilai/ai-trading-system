@@ -15,6 +15,17 @@ def candle(ts, close=10):
     return [ts, close, close + 2, close - 1, close + 1, 100]
 
 
+def history_capabilities(provider_id="ccxt:kraken", timeframes=("1m", "1M")):
+    return SimpleNamespace(
+        provider_id=provider_id,
+        supports_historical_ohlcv=True,
+        supported_ohlcv_timeframes=timeframes,
+        ohlcv_pagination_mode="since",
+        max_ohlcv_request_limit=None,
+        max_historical_ohlcv_bars=None,
+    )
+
+
 def test_parse_sync_targets_requires_explicit_ccxt_allowlist():
     assert parse_sync_targets(
         "ccxt:kraken,BTC/EUR,1h;ccxt:binance,ETH/EUR,4h"
@@ -77,6 +88,7 @@ def test_sync_cycle_resumes_backfill_from_persisted_cursor(tmp_path):
 
     provider = SimpleNamespace(
         exchange=Exchange(),
+        capabilities=lambda: history_capabilities(),
         discover_markets=lambda: [SimpleNamespace(
             symbol="BTC/EUR", active=True,
             instrument_id="ccxt:kraken:spot:BTC/EUR",
@@ -133,6 +145,7 @@ def test_sync_cycle_refreshes_latest_provisional_candle(tmp_path):
 
     provider = SimpleNamespace(
         exchange=Exchange(),
+        capabilities=lambda: history_capabilities(),
         discover_markets=lambda: [SimpleNamespace(
             symbol="BTC/EUR", active=True, instrument_id=instrument_id,
         )],
@@ -185,6 +198,7 @@ def test_sync_cycle_rejects_calendar_month_timeframe_for_fixed_interval_cursor(t
 
     provider = SimpleNamespace(
         exchange=Exchange(),
+        capabilities=lambda: history_capabilities(),
         discover_markets=lambda: [SimpleNamespace(
             symbol="BTC/EUR", active=True,
             instrument_id="ccxt:kraken:spot:BTC/EUR",
@@ -401,3 +415,41 @@ def test_sync_cycle_fails_closed_on_incomplete_or_invalid_capabilities(
     )
     assert result[0]["status"] == "error"
     assert state.list_targets() == []
+
+
+@pytest.mark.parametrize("capability_mode", ["missing_method", "returns_none", "wrong_identity"])
+def test_sync_cycle_fails_closed_when_provider_capability_contract_is_missing(
+    tmp_path, capability_mode,
+):
+    path = str(tmp_path / "trading.sqlite")
+    store = HistoricalCandleStore(path)
+    state = HistoricalSyncStateStore(path)
+    target = HistoricalSyncTarget("ccxt:kraken", "BTC/EUR", "1m")
+
+    class Exchange:
+        @staticmethod
+        def parse_timeframe(timeframe):
+            return 60
+
+        def fetch_ohlcv(self, *args, **kwargs):
+            raise AssertionError("Missing provider capabilities must block OHLCV requests")
+
+    provider = SimpleNamespace(
+        exchange=Exchange(),
+        discover_markets=lambda: [SimpleNamespace(
+            symbol="BTC/EUR", active=True,
+            instrument_id="ccxt:kraken:spot:BTC/EUR",
+        )],
+    )
+    if capability_mode == "returns_none":
+        provider.capabilities = lambda: None
+    elif capability_mode == "wrong_identity":
+        provider.capabilities = lambda: history_capabilities("ccxt:other")
+    result = run_sync_cycle(
+        [target], {"ccxt:kraken": provider}, store, state,
+        now_ms=86_500_000, lookback_days=1,
+    )
+    assert result[0]["status"] == "error"
+    assert "historical sync target failed" in result[0]["error"]
+    assert state.list_targets() == []
+
