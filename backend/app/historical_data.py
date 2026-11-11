@@ -234,41 +234,84 @@ class HistoricalQuoteStore:
         self.lock = RLock()
         Path(database_path).parent.mkdir(parents=True, exist_ok=True)
         with self.connect() as db:
-            db.execute(
-                "CREATE TABLE IF NOT EXISTS historical_quotes ("
-                "provider_id TEXT NOT NULL, instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, "
-                "timestamp_ms INTEGER NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL, "
-                "timestamp_source TEXT NOT NULL, source TEXT NOT NULL, retrieved_at TEXT NOT NULL, "
-                "retrieved_at_ms INTEGER NOT NULL, "
-                "PRIMARY KEY(provider_id,instrument_id,timestamp_ms))"
-            )
-            existing_columns = {
-                row["name"] for row in db.execute("PRAGMA table_info(historical_quotes)")
-            }
-            if "retrieved_at_ms" not in existing_columns:
-                db.execute("ALTER TABLE historical_quotes ADD COLUMN retrieved_at_ms INTEGER")
-                legacy_rows = db.execute(
-                    "SELECT provider_id,instrument_id,timestamp_ms,retrieved_at "
-                    "FROM historical_quotes WHERE retrieved_at_ms IS NULL"
-                ).fetchall()
-                for legacy in legacy_rows:
-                    try:
-                        retrieved = datetime.fromisoformat(legacy["retrieved_at"])
-                        if retrieved.tzinfo is None:
-                            raise ValueError("Legacy quote retrieval timestamp has no timezone")
-                        retrieved_ms = int(retrieved.timestamp() * 1000)
-                    except (TypeError, ValueError, OverflowError):
-                        # Unknown receipt time must never be backdated to the
-                        # exchange event time; research will reject this row.
-                        retrieved_ms = 0
+            table_exists = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='historical_quotes'"
+            ).fetchone() is not None
+            if table_exists:
+                existing_columns = {
+                    row["name"] for row in db.execute("PRAGMA table_info(historical_quotes)")
+                }
+                if "id" not in existing_columns:
+                    # Rebuild the original one-row-per-exchange-timestamp schema so
+                    # repeated observations of an unchanged exchange timestamp can
+                    # retain distinct local receipt times.
+                    db.execute("DROP INDEX IF EXISTS idx_historical_quotes_range")
+                    db.execute("ALTER TABLE historical_quotes RENAME TO historical_quotes_legacy")
                     db.execute(
-                        "UPDATE historical_quotes SET retrieved_at_ms=? "
-                        "WHERE provider_id=? AND instrument_id=? AND timestamp_ms=?",
-                        (retrieved_ms, legacy["provider_id"], legacy["instrument_id"], legacy["timestamp_ms"]),
+                        "CREATE TABLE historical_quotes ("
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                        "provider_id TEXT NOT NULL, instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, "
+                        "timestamp_ms INTEGER NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL, "
+                        "timestamp_source TEXT NOT NULL, source TEXT NOT NULL, retrieved_at TEXT NOT NULL, "
+                        "retrieved_at_ms INTEGER NOT NULL, "
+                        "UNIQUE(provider_id,instrument_id,timestamp_ms,retrieved_at_ms))"
                     )
+                    legacy_columns = {
+                        row["name"] for row in db.execute("PRAGMA table_info(historical_quotes_legacy)")
+                    }
+                    for legacy in db.execute("SELECT * FROM historical_quotes_legacy").fetchall():
+                        retrieved_ms = legacy["retrieved_at_ms"] if "retrieved_at_ms" in legacy_columns else None
+                        if retrieved_ms is None:
+                            try:
+                                retrieved = datetime.fromisoformat(legacy["retrieved_at"])
+                                if retrieved.tzinfo is None:
+                                    retrieved = retrieved.replace(tzinfo=timezone.utc)
+                                retrieved_ms = int(retrieved.timestamp() * 1000)
+                            except (TypeError, ValueError, OverflowError):
+                                retrieved_ms = int(legacy["timestamp_ms"])
+                        db.execute(
+                            "INSERT OR IGNORE INTO historical_quotes "
+                            "(provider_id,instrument_id,symbol,timestamp_ms,bid,ask,timestamp_source,source,retrieved_at,retrieved_at_ms) "
+                            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                            (
+                                legacy["provider_id"], legacy["instrument_id"], legacy["symbol"],
+                                legacy["timestamp_ms"], legacy["bid"], legacy["ask"],
+                                legacy["timestamp_source"], legacy["source"], legacy["retrieved_at"],
+                                int(retrieved_ms),
+                            ),
+                        )
+                    db.execute("DROP TABLE historical_quotes_legacy")
+                elif "retrieved_at_ms" not in existing_columns:
+                    db.execute("ALTER TABLE historical_quotes ADD COLUMN retrieved_at_ms INTEGER")
+                    legacy_rows = db.execute(
+                        "SELECT id,timestamp_ms,retrieved_at FROM historical_quotes "
+                        "WHERE retrieved_at_ms IS NULL"
+                    ).fetchall()
+                    for legacy in legacy_rows:
+                        try:
+                            retrieved = datetime.fromisoformat(legacy["retrieved_at"])
+                            if retrieved.tzinfo is None:
+                                retrieved = retrieved.replace(tzinfo=timezone.utc)
+                            retrieved_ms = int(retrieved.timestamp() * 1000)
+                        except (TypeError, ValueError, OverflowError):
+                            retrieved_ms = int(legacy["timestamp_ms"])
+                        db.execute(
+                            "UPDATE historical_quotes SET retrieved_at_ms=? WHERE id=?",
+                            (retrieved_ms, legacy["id"]),
+                        )
+            else:
+                db.execute(
+                    "CREATE TABLE historical_quotes ("
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                    "provider_id TEXT NOT NULL, instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, "
+                    "timestamp_ms INTEGER NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL, "
+                    "timestamp_source TEXT NOT NULL, source TEXT NOT NULL, retrieved_at TEXT NOT NULL, "
+                    "retrieved_at_ms INTEGER NOT NULL, "
+                    "UNIQUE(provider_id,instrument_id,timestamp_ms,retrieved_at_ms))"
+                )
             db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_historical_quotes_range "
-                "ON historical_quotes(provider_id,instrument_id,timestamp_ms)"
+                "ON historical_quotes(provider_id,instrument_id,retrieved_at_ms,timestamp_ms)"
             )
 
     def connect(self):
