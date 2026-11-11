@@ -163,7 +163,7 @@ def test_risk_manager_requires_fresh_account_readiness_when_configured_for_new_e
     manager = RiskManager()
     missing = manager.evaluate(proposal(), risk_context(), require_account_readiness=True)
     ready = manager.evaluate(
-        proposal(),
+        proposal().model_copy(update={"provider_id": "twelve_data"}),
         risk_context(),
         account_readiness=paper_account_readiness(),
         require_account_readiness=True,
@@ -207,7 +207,7 @@ def test_risk_manager_keeps_risk_reducing_sell_independent_of_entry_preflight():
 
     sell = TradeProposal(
         **{
-            **proposal().model_dump(),
+            **proposal().model_copy(update={"provider_id": "twelve_data"}).model_dump(),
             "side": "sell",
             "stop_loss": None,
             "take_profit": None,
