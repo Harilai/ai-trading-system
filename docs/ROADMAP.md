@@ -25,7 +25,7 @@ El diseño está documentado en [`COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md`](COORD
 - Solo acepta `us_equity`, normalizado como `equity`; no adivina si un activo es ETF. Usa `asset_id` como identidad primaria y retrieval timestamp local. Una lista vacía es completa únicamente tras validar cuenta y endpoint.
 - Activación opt-in: `ALPACA_PAPER_ENABLED=false`; requiere key, secret y `ALPACA_PAPER_EXPECTED_ACCOUNT_ID`. Sin ID esperado no se registra.
 - CI del head exacto de PR #118: 609 tests Python passed; Docker build/runtime hardening passed. CI de sincronización #120 también pasó. No se ha validado contra una cuenta Alpaca real ni se han usado credenciales.
-- PR de documentación en curso: ADR `docs/ALPACA_ACCOUNT_FINANCIAL_SEMANTICS_ADR.md` define el modelo tipado para cash, equity, buying power, margen, valoración, transferencias pendientes y fees. La lectura de `/v2/account` no se declara como `AccountBalance`; no se activa `balances=true` ni se extiende aún el snapshot coordinado.
+- PR #123 fusionada en `main` (merge SHA `05870aa8c3f10b75a8d1bf46dd4856df1a3575ae`) y PR #124 sincronizada a `demo` (merge SHA `6445726293db4fd408bfa046b1b4d746bbeabc3e`). ADR `docs/ALPACA_ACCOUNT_FINANCIAL_SEMANTICS_ADR.md` define el modelo tipado para cash, equity, buying power, margen, valoración, transferencias pendientes y fees. La lectura de `/v2/account` no se declara como `AccountBalance`; no se activa `balances=true` ni se extiende aún el snapshot coordinado. CI de #123 y #124: Python tests y Docker build/runtime hardening pasaron.
 
 ## Objetivo de producto
 
