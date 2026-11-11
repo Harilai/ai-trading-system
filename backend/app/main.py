@@ -1679,6 +1679,7 @@ chief = ChiefAgent(
     allow_experimental_strategies=(
         settings.paper_demo_mode and settings.paper_experimental_strategies_enabled
     ),
+    require_account_readiness=True,
 )
 equity_research_agent = (
     EquityEtfResearchAgent(
@@ -1701,6 +1702,7 @@ agent_worker = AutonomousAgent(
     equity_research=equity_research_agent,
     equity_exit_monitor=equity_exit_monitor,
     demo_reconciler=demo_order_reconciler,
+    account_readiness=paper_account_readiness,
 )
 
 @asynccontextmanager
