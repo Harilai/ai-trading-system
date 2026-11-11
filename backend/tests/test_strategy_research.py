@@ -503,7 +503,7 @@ def test_backtest_never_uses_a_quote_timestamped_after_execution():
     assert result["spread_coverage_complete"] is False
 
 
-def test_research_requires_complete_observed_spread_for_promotion():
+def test_research_reports_complete_spread_coverage_without_changing_promotion_gates():
     rows = candles_from_closes([
         100 + index * 0.03 + 2 * math.sin(index / 6)
         for index in range(300)
@@ -533,11 +533,11 @@ def test_research_requires_complete_observed_spread_for_promotion():
     )
 
     assert result["spread_coverage"]["status"] == "available"
-    assert result["promotion_gates"]["must_have_complete_observed_spread_coverage"] is True
+    assert "must_have_complete_observed_spread_coverage" not in result["promotion_gates"]
     assert all(
         candidate["out_of_sample"]["spread_coverage_complete"]
         and candidate["walk_forward_spread_coverage_complete"]
-        and candidate["spread_coverage_complete_for_promotion"]
+        and candidate["spread_coverage_complete_across_oos_and_walk_forward"]
         and "insufficient_spread_coverage" not in candidate["validation_failures"]
         for candidate in result["candidates"]
     )
@@ -545,6 +545,28 @@ def test_research_requires_complete_observed_spread_for_promotion():
         candidate["cost_sensitivity"]["1.5"]["out_of_sample"]["spread_coverage_complete"]
         for candidate in result["candidates"]
     )
+
+
+def test_research_reports_missing_spread_as_diagnostic_without_changing_existing_gates():
+    rows = candles_from_closes([
+        100 + index * 0.03 + 2 * math.sin(index / 6)
+        for index in range(300)
+    ])
+    result = StrategyResearchAgent(minimum_oos_trades=1).research(
+        rows, expected_interval_seconds=3600,
+    )
+
+    assert result["spread_coverage"]["status"] == "unavailable"
+    assert "must_have_complete_observed_spread_coverage" not in result["promotion_gates"]
+    for candidate in result["candidates"]:
+        assert candidate["out_of_sample"]["spread_coverage_complete"] is False
+        assert candidate["spread_coverage_complete_across_oos_and_walk_forward"] is False
+        assert "insufficient_spread_coverage" not in candidate["validation_failures"]
+        assert candidate["eligible"] is (not candidate["validation_failures"])
+        assert (
+            candidate["cost_model"]["spread_unavailable_policy"]
+            == "reported_as_incomplete_cost_coverage"
+        )
 
 
 def test_research_rejects_non_chronological_or_invalid_quote_snapshots():
