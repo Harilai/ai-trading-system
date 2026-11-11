@@ -175,7 +175,7 @@ class HistoricalCandleStore:
         with self.connect() as db:
             rows = db.execute(
                 "SELECT * FROM historical_candles WHERE " + " AND ".join(clauses)
-                + " ORDER BY timestamp_ms ASC LIMIT ?", params,
+                + " ORDER BY timestamp_ms DESC LIMIT ?", params,
             ).fetchall()
         rows = list(reversed(rows))
         return [
