@@ -269,8 +269,13 @@ class HistoricalQuoteStore:
                                 retrieved_ms = int(retrieved.timestamp() * 1000)
                             except (TypeError, ValueError, OverflowError):
                                 retrieved_ms = 0
-                            if retrieved_ms < int(legacy["timestamp_ms"]):
+                        else:
+                            try:
+                                retrieved_ms = int(retrieved_ms)
+                            except (TypeError, ValueError, OverflowError):
                                 retrieved_ms = 0
+                        if retrieved_ms < int(legacy["timestamp_ms"]):
+                            retrieved_ms = 0
                         db.execute(
                             "INSERT OR IGNORE INTO historical_quotes "
                             "(provider_id,instrument_id,symbol,timestamp_ms,bid,ask,timestamp_source,source,retrieved_at,retrieved_at_ms) "
