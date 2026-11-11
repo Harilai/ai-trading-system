@@ -1668,3 +1668,83 @@ def test_generic_account_snapshot_route_rejects_trading_enabled_accounts(monkeyp
     response = client.post("/api/accounts/test:demo/snapshots", headers=headers)
     assert response.status_code == 409
     assert "read-only" in response.json()["detail"]
+
+
+def test_generic_account_positions_route_requires_market_scope_and_returns_unknown_coverage(monkeypatch):
+    from app.accounts.contracts import AccountProviderRegistry
+
+    headers = configure_order_auth(monkeypatch)
+
+    class MultiMarketPositionProvider:
+        def describe(self):
+            return {
+                "provider_id": "test:multi-market",
+                "account_alias": "portfolio",
+                "venue_type": "broker",
+                "market_types": ["spot", "cash"],
+                "environment": "production",
+                "configured": True,
+                "balances": False,
+                "positions": True,
+                "order_management": False,
+                "order_submission": False,
+                "order_cancellation": False,
+                "reconciliation": False,
+                "read_only_connector": True,
+                "transfers": False,
+                "withdrawals": False,
+                "wallet_signing": False,
+                "account_key_permissions_verified": False,
+            }
+
+        def fetch_positions(self):
+            return [
+                {
+                    "instrument_id": "venue:spot:BTC", "symbol": "BTC",
+                    "asset_class": "crypto", "market_type": "spot",
+                    "quantity": "0.25", "side": "long", "quote_currency": "USD",
+                },
+                {
+                    "instrument_id": "venue:cash_equity:AAPL", "symbol": "AAPL",
+                    "asset_class": "equity", "market_type": "cash",
+                    "quantity": "2", "side": "long", "quote_currency": "USD",
+                },
+            ]
+
+    registry = AccountProviderRegistry()
+    registry.register(MultiMarketPositionProvider())
+    monkeypatch.setattr("app.main.account_provider_registry", registry)
+
+    unauthorized = client.get("/api/accounts/test:multi-market/positions?market_type=spot")
+    assert unauthorized.status_code == 401
+
+    ambiguous = client.get(
+        "/api/accounts/test:multi-market/positions",
+        headers=headers,
+    )
+    assert ambiguous.status_code == 422
+
+    balances = client.get(
+        "/api/accounts/test:multi-market/balances",
+        headers=headers,
+    )
+    assert balances.status_code == 409
+
+    spot = client.get(
+        "/api/accounts/test:multi-market/positions?market_type=spot",
+        headers=headers,
+    )
+    assert spot.status_code == 200
+    assert spot.json()["market_type"] == "spot"
+    assert spot.json()["coverage_status"] == "unknown"
+    assert spot.json()["timestamp_source"] == "retrieved_at"
+    assert spot.json()["retrieved_at"] == spot.json()["fetched_at"]
+    assert [item["symbol"] for item in spot.json()["positions"]] == ["BTC"]
+
+    cash = client.get(
+        "/api/accounts/test:multi-market/positions?market_type=cash",
+        headers=headers,
+    )
+    assert cash.status_code == 200
+    assert cash.json()["market_type"] == "cash"
+    assert [item["symbol"] for item in cash.json()["positions"]] == ["AAPL"]

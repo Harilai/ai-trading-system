@@ -25,6 +25,10 @@ class UnsupportedAccountCapability(AccountProviderError):
     pass
 
 
+class InvalidAccountRequest(AccountProviderError):
+    pass
+
+
 def _decimal_text(value: Any, *, field: str, allow_zero: bool = True) -> str | None:
     if value is None:
         return None
@@ -268,6 +272,7 @@ class AccountPositionSnapshot:
     environment: str
     fetched_at: str
     positions: tuple[AccountPosition, ...]
+    coverage_status: str = "unknown"
 
     def to_dict(self) -> dict:
         return {
@@ -276,6 +281,9 @@ class AccountPositionSnapshot:
             "market_type": self.market_type,
             "environment": self.environment,
             "fetched_at": self.fetched_at,
+            "retrieved_at": self.fetched_at,
+            "timestamp_source": "retrieved_at",
+            "coverage_status": self.coverage_status,
             "positions": [asdict(item) for item in self.positions],
             "position_count": len(self.positions),
         }
@@ -609,14 +617,18 @@ class AccountProviderRegistry:
         self._locks: dict[tuple[str, str], RLock] = {}
         self._lock = RLock()
 
-    def register(self, provider: AccountBalanceProvider) -> AccountCapabilities:
-        if not callable(getattr(provider, "describe", None)) or not callable(
-            getattr(provider, "fetch_balances", None)
-        ):
-            raise AccountProviderError("Account provider must expose describe and fetch_balances")
+    def register(self, provider: Any) -> AccountCapabilities:
+        if not callable(getattr(provider, "describe", None)):
+            raise AccountProviderError("Account provider must expose describe")
         capabilities = AccountCapabilities.from_description(provider.describe())
-        if not capabilities.balances:
-            raise UnsupportedAccountCapability("Provider does not declare balance support")
+        has_balance_reader = callable(getattr(provider, "fetch_balances", None))
+        has_position_reader = callable(getattr(provider, "fetch_positions", None))
+        if capabilities.balances and not has_balance_reader:
+            raise AccountProviderError("Provider declares balances but has no balance reader")
+        if capabilities.positions and not has_position_reader:
+            raise AccountProviderError("Provider declares positions but has no position reader")
+        if not capabilities.balances and not capabilities.positions:
+            raise UnsupportedAccountCapability("Provider must declare balance or position support")
         key = (capabilities.provider_id, capabilities.account_alias)
         with self._lock:
             if key in self._providers:
@@ -649,9 +661,14 @@ class AccountProviderRegistry:
 
     def fetch_balances(self, provider_id: str, account_alias: str | None = None) -> dict:
         provider, capabilities, lock = self._resolve(provider_id, account_alias)
+        if not capabilities.balances:
+            raise UnsupportedAccountCapability("Account provider does not declare balance support")
+        fetcher = getattr(provider, "fetch_balances", None)
+        if not callable(fetcher):
+            raise UnsupportedAccountCapability("Account provider declares balances but has no balance reader")
         try:
             with lock:
-                raw = provider.fetch_balances()
+                raw = fetcher()
         except AccountProviderError:
             raise
         except Exception as exc:
@@ -726,10 +743,22 @@ class AccountProviderRegistry:
                 snapshot[optional] = bool(raw[optional])
         return snapshot
 
-    def fetch_positions(self, provider_id: str, account_alias: str | None = None) -> dict:
+    def fetch_positions(
+        self, provider_id: str, account_alias: str | None = None, *, market_type: str | None = None,
+    ) -> dict:
         provider, capabilities, lock = self._resolve(provider_id, account_alias)
         if not capabilities.positions:
             raise UnsupportedAccountCapability("Account provider does not declare position support")
+        if market_type is None:
+            if len(capabilities.market_types) != 1:
+                raise InvalidAccountRequest("market_type is required for a multi-market account")
+            selected_market = capabilities.market_types[0]
+        else:
+            selected_market = str(market_type).strip().lower()
+            if not selected_market:
+                raise InvalidAccountRequest("market_type cannot be blank")
+            if selected_market not in capabilities.market_types:
+                raise UnsupportedAccountCapability("Requested market_type is not declared by the account")
         fetcher = getattr(provider, "fetch_positions", None)
         if not callable(fetcher):
             raise UnsupportedAccountCapability("Account provider declares positions but has no position reader")
@@ -752,14 +781,16 @@ class AccountProviderRegistry:
             if identity in seen:
                 raise AccountProviderError("Account provider returned duplicate positions")
             seen.add(identity)
-            positions.append(position)
+            if position.market_type == selected_market:
+                positions.append(position)
         return AccountPositionSnapshot(
             provider_id=capabilities.provider_id,
             account_alias=capabilities.account_alias,
-            market_type=capabilities.market_types[0] if len(capabilities.market_types) == 1 else "mixed",
+            market_type=selected_market,
             environment=capabilities.environment,
             fetched_at=datetime.now(timezone.utc).isoformat(),
             positions=tuple(sorted(positions, key=lambda item: (item.instrument_id, item.side))),
+            coverage_status="unknown",
         ).to_dict()
 
     def record_read_only_snapshot(
