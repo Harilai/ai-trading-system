@@ -265,7 +265,7 @@ class StrategyResearchAgent:
             quote = quote_snapshots[index]
             event_timestamp = quote["timestamp_ms"]
             retrieved_at = quote["retrieved_at_ms"]
-            age_ms = execution_timestamp_ms - event_timestamp
+            age_ms = execution_timestamp_ms - retrieved_at
             if (
                 event_timestamp <= execution_timestamp_ms
                 and isinstance(retrieved_at, int)
