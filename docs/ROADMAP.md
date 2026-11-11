@@ -2,7 +2,7 @@
 
 > Continuity between ChatGPT sessions: read [`docs/SESSION_HANDOFF.md`](SESSION_HANDOFF.md) for project state and [`docs/AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) for the mandatory multi-agent development method.
 
-Actualizado: 2026-11-11 (última sincronización PR #131). Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
+Actualizado: 2026-11-11 (PR #132 integrada; sincronización demo pendiente tras documentación). Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
 ## Completado — promoción de snapshots y reconciliación de ramas (#99–#106)
 
@@ -270,3 +270,16 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - La API no registra ni presume adaptadores de ejecución: el resultado supported solo es posible cuando se acredita el adaptador y todos los controles. El endpoint actual pasa execution_adapter_configured=false.
 - Integrado mediante squash en `9c0bca72e13ecd2edb8b2ff0649a42b0458c6940`. CI exacta PR #131: 655 tests Python passed (1 warning), Docker build/runtime hardening passed. CI post-merge pendiente.
 - No envía órdenes, no cambia RiskManager y no habilita PAPER/DEMO/LIVE.
+
+
+## Integración — execution eligibility gate (PR #132)
+
+- PR #132 integrada por squash en `main`, merge SHA `15e80e59dc05348581cee8acb29f7fee76df6341`.
+- `ExecutionRouter` expone lookup explícito de adaptadores registrados y valida que declaren el asset class y market type del instrumento. El registro de ejecución está separado del registro de market data y permanece vacío por defecto.
+- El endpoint de elegibilidad consulta exclusivamente ese registro. Discovery/market data no pueden marcar un instrumento como operable.
+- La evidencia de elegibilidad incorpora el `instrument_id` canónico.
+- `ExecutionRouter.submit()` exige evidencia `supported`, con provider e instrumento coincidentes y adaptador configurado. `RiskManager.evaluate()` admite un gate fail-closed cuando recibe esa evidencia.
+- Tests adversos cubren ausencia de adaptador, mismatch de identidad/capacidades, status no soportado y falta de configuración explícita.
+- CI sobre head exacto `a204cdd410c64364ab3a45744a4bbdee2462187b`: Python **661 passed, 1 warning**; Docker build/runtime hardening y Compose correctos.
+- Limitación deliberada: el registro de ejecución de la aplicación sigue vacío; Binance Demo especializado y Alpaca read-only no se registran como adaptadores genéricos. Por tanto, ningún instrumento queda habilitado por este cambio. LIVE continúa deshabilitado.
+- Siguiente: definir registro de adaptadores con scope de cuenta/entorno/venue y capabilities de ejecución independientes de market data; adaptar Binance Demo y PAPER mediante wrappers explícitos solo tras revisar sus contratos, sin fingir capacidades de balances/posiciones que no existan.
