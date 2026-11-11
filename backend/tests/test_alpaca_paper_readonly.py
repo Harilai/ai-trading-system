@@ -140,10 +140,12 @@ def test_provider_is_registered_as_read_only_cash_positions_only():
     registry = AccountProviderRegistry()
 
     capabilities = registry.register(provider)
+    positions = registry.fetch_positions(provider.provider_id, provider.account_alias, market_type="cash")
     snapshot = registry.fetch_positions_snapshot(
         provider.provider_id, provider.account_alias, market_type="cash",
     )
 
+    assert positions == []
     assert capabilities.positions is True
     assert capabilities.balances is False
     assert capabilities.read_only is True
