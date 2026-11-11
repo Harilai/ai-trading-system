@@ -227,12 +227,12 @@ class PaginatedCandleCollector:
             pages += 1
             if not rows:
                 break
-            page = [normalize_candle(row) for row in rows]
-            if any(b["timestamp"] <= a["timestamp"] for a, b in zip(page, page[1:])):
+            provider_page = [normalize_candle(row) for row in rows]
+            if any(b["timestamp"] <= a["timestamp"] for a, b in zip(provider_page, provider_page[1:])):
                 raise HistoricalDataError("Provider returned duplicate or non-increasing candle timestamps")
-            page = [row for row in page if cursor <= row["timestamp"] < until_ms]
+            page = [row for row in provider_page if cursor <= row["timestamp"] < until_ms]
             if not page:
-                if any(row["timestamp"] >= until_ms for row in rows):
+                if any(row["timestamp"] >= until_ms for row in provider_page):
                     cursor = until_ms
                 break
             result = self.store.upsert(
