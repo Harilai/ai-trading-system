@@ -398,3 +398,104 @@ def test_ccxt_discovery_maps_decimal_places_without_inventing_tick_sizes():
     assert instrument.price_tick is None
     assert instrument.amount_step is None
 
+
+
+
+def test_registry_rejects_discovered_instruments_outside_declared_capabilities():
+    class MisdeclaredProvider(FakeProvider):
+        def discover_markets(self, asset_classes=None):
+            return [MarketInstrument(
+                provider_id=self.provider_id,
+                symbol="ACME",
+                asset_class=AssetClass.EQUITY,
+                market_type=MarketType.CASH_EQUITY,
+                base="ACME",
+                quote="USD",
+                active=True,
+            )]
+
+    registry = ProviderRegistry()
+    registry.register(MisdeclaredProvider("misdeclared"))
+    instruments, failures = registry.discover_markets()
+
+    assert instruments == []
+    assert failures == [{
+        "provider_id": "misdeclared",
+        "reason": "Discovered asset class is not declared by provider capabilities",
+    }]
+
+
+def test_registry_rejects_instrument_with_another_provider_identity():
+    class ForeignInstrumentProvider(FakeProvider):
+        def discover_markets(self, asset_classes=None):
+            return [MarketInstrument(
+                provider_id="other-provider",
+                symbol="BTC/EUR",
+                asset_class=AssetClass.CRYPTO,
+                market_type=MarketType.SPOT,
+                base="BTC",
+                quote="EUR",
+                active=True,
+            )]
+
+    registry = ProviderRegistry()
+    registry.register(ForeignInstrumentProvider("fake-one"))
+    instruments, failures = registry.discover_markets()
+
+    assert instruments == []
+    assert failures == [{
+        "provider_id": "fake-one",
+        "reason": "Discovered instrument provider identity does not match its adapter",
+    }]
+
+
+def test_registry_does_not_persist_provider_exception_text():
+    class LeakingFailureProvider(FakeProvider):
+        def discover_markets(self, asset_classes=None):
+            raise RuntimeError("api_key=super-secret authorization=Bearer private-token")
+
+    registry = ProviderRegistry()
+    registry.register(LeakingFailureProvider("unavailable"))
+    instruments, failures = registry.discover_markets()
+
+    assert instruments == []
+    assert failures == [{
+        "provider_id": "unavailable",
+        "reason": "Discovery failed (RuntimeError)",
+    }]
+    assert "super-secret" not in str(failures)
+    assert "private-token" not in str(failures)
+
+
+def test_registry_rejects_provider_returning_asset_outside_requested_filter():
+    class IgnoresFilterProvider(FakeProvider):
+        def discover_markets(self, asset_classes=None):
+            return [MarketInstrument(
+                provider_id=self.provider_id,
+                symbol="ACME",
+                asset_class=AssetClass.EQUITY,
+                market_type=MarketType.CASH_EQUITY,
+                base="ACME",
+                quote="USD",
+                active=True,
+            )]
+
+    registry = ProviderRegistry()
+    provider = IgnoresFilterProvider("filter-ignoring")
+    # Advertise both classes to prove that the returned record still has to
+    # respect the caller's narrower request.
+    provider.capabilities = lambda: ProviderCapabilities(
+        provider_id=provider.provider_id,
+        venue_type=VenueType.CEX,
+        asset_classes=(AssetClass.CRYPTO, AssetClass.EQUITY),
+        market_types=(MarketType.SPOT, MarketType.CASH_EQUITY),
+        public_market_data=True,
+    )
+    registry.register(provider)
+    instruments, failures = registry.discover_markets((AssetClass.CRYPTO,))
+
+    assert instruments == []
+    assert failures == [{
+        "provider_id": "filter-ignoring",
+        "reason": "Provider returned an asset class outside the requested filter",
+    }]

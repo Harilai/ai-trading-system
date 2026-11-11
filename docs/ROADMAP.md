@@ -245,3 +245,11 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - `demo` debe apuntar exactamente al mismo commit que `main`, no solo compartir archivos o tener un merge-base común.
 - Flujo obligatorio: rama de trabajo → PR revisada/CI verde → merge a `main` → sincronización exacta de `demo` desde `main` → verificación de igualdad de SHA.
 - El historial divergente previo de `demo` se conserva en `archive/demo-before-main-sync-2026-11-11`; no se incorpora a `main` salvo selección explícita de cambios necesarios.
+
+
+## Descubrimiento multiactivo — endurecimiento del contrato de proveedores (en revisión)
+
+- La registry valida cada instrumento descubierto contra la identidad del adaptador, las clases de activo y tipos de mercado declarados, y el filtro solicitado.
+- Registros malformados o incompatibles se rechazan individualmente sin descartar instrumentos válidos de otros proveedores.
+- Los errores de adaptadores se registran por tipo de excepción, no copiando texto arbitrario que podría contener credenciales o cabeceras.
+- Pendiente CI y revisión de la PR; no implica que todos los proveedores soporten todas las clases ni habilita ejecución.

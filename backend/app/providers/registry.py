@@ -59,14 +59,63 @@ class ProviderRegistry:
         failures: list[dict[str, str]] = []
         with self._lock:
             providers = list(self._providers.values())
+        requested_classes = set(asset_classes or ())
         for provider in providers:
-            caps = provider.capabilities()
-            if asset_classes and not set(asset_classes).intersection(caps.asset_classes):
-                continue
             try:
-                discovered.extend(provider.discover_markets(asset_classes))
+                caps = provider.capabilities()
+                if caps.provider_id != provider.provider_id:
+                    failures.append({
+                        "provider_id": provider.provider_id,
+                        "reason": "Provider identity does not match its capability declaration",
+                    })
+                    continue
+                if requested_classes and not requested_classes.intersection(caps.asset_classes):
+                    continue
+                provider_instruments = provider.discover_markets(asset_classes)
+                if not isinstance(provider_instruments, (list, tuple)):
+                    failures.append({
+                        "provider_id": provider.provider_id,
+                        "reason": "Discovery returned an invalid collection type",
+                    })
+                    continue
+                for instrument in provider_instruments:
+                    if not isinstance(instrument, MarketInstrument):
+                        failures.append({
+                            "provider_id": provider.provider_id,
+                            "reason": "Discovery returned a record that is not a MarketInstrument",
+                        })
+                        continue
+                    if instrument.provider_id != provider.provider_id:
+                        failures.append({
+                            "provider_id": provider.provider_id,
+                            "reason": "Discovered instrument provider identity does not match its adapter",
+                        })
+                        continue
+                    if instrument.asset_class not in caps.asset_classes:
+                        failures.append({
+                            "provider_id": provider.provider_id,
+                            "reason": "Discovered asset class is not declared by provider capabilities",
+                        })
+                        continue
+                    if instrument.market_type not in caps.market_types:
+                        failures.append({
+                            "provider_id": provider.provider_id,
+                            "reason": "Discovered market type is not declared by provider capabilities",
+                        })
+                        continue
+                    if requested_classes and instrument.asset_class not in requested_classes:
+                        failures.append({
+                            "provider_id": provider.provider_id,
+                            "reason": "Provider returned an asset class outside the requested filter",
+                        })
+                        continue
+                    discovered.append(instrument)
             except Exception as exc:
-                failures.append({"provider_id": provider.provider_id, "reason": str(exc)})
+                # Provider exception text may contain URLs, credentials or request headers.
+                failures.append({
+                    "provider_id": provider.provider_id,
+                    "reason": f"Discovery failed ({type(exc).__name__})",
+                })
         return discovered, failures
 
     def discover_spot_symbols(

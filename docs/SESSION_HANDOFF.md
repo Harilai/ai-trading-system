@@ -106,3 +106,10 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - CI de PR #128: Python tests y Docker build/runtime hardening completados con éxito sobre el head `ef753ceb6d4f60d5d3aea03e0bfbdd8d39bd0484`.
 - Merge squash: `7ab1e0056c3f1fd749d26cdfc52eca0ac6abad6a`. `main` y `demo` sincronizadas a ese SHA y compare verificado como identical.
 - Pendiente: validación operativa read-only con credenciales Paper del propietario; no se ha ejecutado ninguna captura real. LIVE sigue deshabilitado.
+
+
+## Continuidad — endurecimiento del descubrimiento de proveedores
+
+- Rama feat/provider-discovery-contract-validation: valida identidad, asset class y market type de cada instrumento descubierto contra las capacidades declaradas y los filtros solicitados.
+- Los registros incompatibles se descartan con fallos tipados; los errores de proveedor no propagan texto arbitrario potencialmente sensible.
+- Tests añadidos en backend/tests/test_providers.py; CI pendiente.
