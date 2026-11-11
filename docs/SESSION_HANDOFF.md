@@ -220,7 +220,7 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - Compras manuales PAPER crypto y Twelve Data equity/ETF pasan preflight, entregan evidencia al RiskManager y revalidan inmediatamente antes de ejecución. Las ventas mantienen controles independientes y no se bloquean por el gate de entrada.
 - Chief de producción exige readiness para nuevas compras autónomas. El worker revalida antes de ejecutar y al reanudar intents persistidos; ante fallo rechaza/caduca el intent y no ejecuta.
 - Añadido `PaperPortfolio.list_unresolved_order_intents()` para inventario completo sin límite de paginación.
-- La CI de PR #137 está verde (718 tests, 1 warning; Docker hardening success). CI post-merge de main pendiente de comprobación final.
+- La CI de PR #137 está verde (718 tests, 1 warning; Docker hardening success). CI post-merge de main run `43054150372`: Python tests y Docker build/runtime hardening success.
 - No se ejecutaron tests locales. No se utilizaron credenciales externas ni se enviaron órdenes. LIVE sigue deshabilitado.
 - `main` y `demo` se sincronizaron tras el merge a `e3158a8999a7571dce79aa40809beddbbff792f5`; volver a comprobar tras la PR documental de este handoff.
 - Próximo bloque: identidad verificable de cuenta Binance Spot Demo, mapeo balances→posiciones por instrumento con valoración/timestamps y cobertura, manteniendo UNKNOWN cuando no haya evidencia.
