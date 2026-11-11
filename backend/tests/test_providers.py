@@ -119,7 +119,33 @@ def test_initial_ccxt_adapter_is_public_data_only():
     assert capabilities.balances is False
     assert capabilities.supports_withdrawals is False
     assert capabilities.connectivity_status == "not_checked"
+    assert capabilities.supports_historical_ohlcv is True
+    assert "1m" in capabilities.supported_ohlcv_timeframes
+    assert capabilities.ohlcv_pagination_mode == "since"
+    assert capabilities.max_ohlcv_request_limit == 720
+    assert capabilities.max_historical_ohlcv_bars == 720
 
+
+
+def test_non_kraken_ccxt_history_limits_remain_provider_specific():
+    from app.providers.ccxt_spot import CcxtSpotProvider
+
+    class FakeExchange:
+        has = {"fetchOHLCV": True}
+        timeframes = {"1m": "1m", "1h": "1h"}
+        rateLimit = 250
+
+    provider = CcxtSpotProvider.__new__(CcxtSpotProvider)
+    provider.provider_id = "ccxt:binance"
+    provider.exchange_id = "binance"
+    provider.exchange = FakeExchange()
+
+    capabilities = provider.capabilities()
+    assert capabilities.supports_historical_ohlcv is True
+    assert capabilities.supported_ohlcv_timeframes == ("1h", "1m")
+    assert capabilities.ohlcv_pagination_mode == "since"
+    assert capabilities.max_ohlcv_request_limit is None
+    assert capabilities.max_historical_ohlcv_bars is None
 
 
 def test_ccxt_provider_discovery_skips_malformed_tickers():

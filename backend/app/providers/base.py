@@ -48,6 +48,11 @@ class ProviderCapabilities:
     requires_authentication_for_trading: bool = True
     connectivity_status: str = "not_checked"
     rate_limit_ms: int | None = None
+    supports_historical_ohlcv: bool = False
+    supported_ohlcv_timeframes: tuple[str, ...] = ()
+    ohlcv_pagination_mode: str = "unsupported"
+    max_ohlcv_request_limit: int | None = None
+    max_historical_ohlcv_bars: int | None = None
     geographic_restrictions: tuple[str, ...] = ()
     account_eligibility: tuple[str, ...] = ()
     authenticated_account: bool = False

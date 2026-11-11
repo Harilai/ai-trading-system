@@ -51,6 +51,25 @@ The worker shares the existing persistent SQLite volume but receives no `.env` f
 - A provider returning no new candles is recorded as `waiting_for_data`, not treated as a successful backfill completion.
 - Provider errors are recorded without exposing raw request details or credentials.
 
+## Provider pagination and history limits
+
+The scheduler requires an explicit provider capability contract before making OHLCV requests:
+
+- Historical OHLCV support must be declared.
+- The exact supported timeframe list must include the configured target.
+- Pagination must declare the currently supported `since` cursor mode.
+- Optional per-request and total-history limits are validated and applied before collection.
+- Missing, mismatched or malformed capabilities fail closed; the scheduler does not infer pagination semantics from the presence of a CCXT method.
+
+| Provider | Pagination | Maximum request | Maximum available history | Notes |
+|---|---|---:|---:|---|
+| Kraken Spot | `since` | 720 candles | 720 candles per interval | The public OHLC endpoint only exposes the latest 720 data points. Deeper history requires a separate Trades-to-OHLCV aggregation path, which is not implemented by this worker. |
+| Other CCXT exchanges | Enabled only when explicitly declared | Provider-declared or unknown | Provider-declared or unknown | Do not infer an unlimited history window from a missing limit. |
+
+When the requested lookback exceeds a declared provider history cap, the worker clamps the effective start timestamp and persists both requested and effective ranges, the applied limit and its status in `historical_sync_state`. This prevents repeated attempts to fetch data the provider cannot return and makes the reduced research coverage visible.
+
+Kraken's 720-point limit is documented by [Kraken Support's Advanced API FAQ](https://support.kraken.com/en/articles/advanced-api-faq) and its [Spot OHLC endpoint reference](https://docs.kraken.com/api/docs/rest-api/get-ohlc-data). Do not apply this limit to other venues.
+
 ## Retention and storage
 
 Raw OHLCV is retained **indefinitely** in this phase. Automatic candle pruning is deliberately disabled because Strategy Research and future audit/reproducibility workflows depend on historical samples. Storage diagnostics report bar count, provisional count, series count and SQLite database/WAL/SHM size. A future retention change must first introduce an archive/export and recovery policy; it must not silently delete research history.
