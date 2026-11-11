@@ -693,8 +693,8 @@ def test_walk_forward_liquidation_cannot_borrow_quotes_from_later_windows():
         0,
         3,
         quote_snapshots=quotes,
-        max_quote_age_ms=60_000,
-        candle_interval_ms=60_000,
+        max_quote_age_ms=3_600_000,
+        candle_interval_ms=3_600_000,
     )
 
     assert result["spread_execution_count"] == 2
