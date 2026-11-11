@@ -501,6 +501,8 @@ def test_strategy_research_history_persists_versioned_candidate_evidence(tmp_pat
         "promotion_gates": {"must_beat_buy_and_hold": True},
         "market_regime": {"status": "available", "structure": "trending_up", "volatility": "normal"},
         "data_quality": {"bars": 250, "history_span_days": 10.375, "out_of_sample_bars": 75, "gap_count": 0},
+        "sample_adequacy": {"status": "adequate_for_configured_walk_forward_gates", "available_bars": 250},
+        "failure_summary": {"sample": 1, "performance": 1, "risk": 0, "cost": 0, "other": 0},
         "candidates": [
             {
                 "strategy_id": "ema_12_26",
@@ -508,6 +510,8 @@ def test_strategy_research_history_persists_versioned_candidate_evidence(tmp_pat
                 "eligible": False,
                 "score": None,
                 "validation_failures": ["does_not_beat_buy_and_hold"],
+                "validation_failure_categories": {"performance": ["does_not_beat_buy_and_hold"]},
+                "experimental_validation_failure_categories": {},
                 "out_of_sample": {"net_return": -0.01, "trades": 4, "sharpe_per_bar": -0.12},
                 "walk_forward": {"positive_windows": 1},
                 "cost_sensitivity": {"2.0": {"beats_buy_and_hold": False}},
@@ -518,6 +522,8 @@ def test_strategy_research_history_persists_versioned_candidate_evidence(tmp_pat
                 "eligible": True,
                 "score": 0.12,
                 "validation_failures": [],
+                "validation_failure_categories": {},
+                "experimental_validation_failure_categories": {},
                 "out_of_sample": {"net_return": 0.08, "trades": 6},
                 "walk_forward": {"positive_windows": 3},
             },
@@ -541,6 +547,9 @@ def test_strategy_research_history_persists_versioned_candidate_evidence(tmp_pat
     assert rejected["result"]["cost_sensitivity"]["2.0"]["beats_buy_and_hold"] is False
     assert rejected["result"]["market_regime"]["structure"] == "trending_up"
     assert rejected["result"]["data_quality"]["bars"] == 250
+    assert rejected["result"]["validation_failure_categories"]["performance"] == ["does_not_beat_buy_and_hold"]
+    assert rejected["result"]["sample_adequacy"]["status"] == "adequate_for_configured_walk_forward_gates"
+    assert rejected["result"]["failure_summary"]["sample"] == 1
     assert rejected["result"]["out_of_sample"]["sharpe_per_bar"] == -0.12
     promoted = by_id["rsi_14_reversion"]
     assert promoted["eligible"] is True

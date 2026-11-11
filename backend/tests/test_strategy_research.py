@@ -348,3 +348,47 @@ def test_research_detects_missing_candle_intervals_without_reordering_data():
     assert quality["gap_count"] == 1
     assert quality["largest_gap_seconds"] == 7200
     assert quality["calendar_adjustment"] is False
+
+
+def test_research_reports_sample_adequacy_and_categorized_failure_reasons():
+    closes = [100 + index * 0.01 for index in range(250)]
+    result = StrategyResearchAgent().research(candles_from_closes(closes))
+
+    assert result["sample_adequacy"] == {
+        "status": "adequate_for_configured_walk_forward_gates",
+        "available_bars": 250,
+        "minimum_research_bars": 120,
+        "out_of_sample_bars": 75,
+        "walk_forward_evaluation_bars": [49, 49, 49],
+        "minimum_walk_forward_bars_per_window": 40,
+    }
+    for candidate in result["candidates"]:
+        categories = candidate["validation_failure_categories"]
+        for failure in candidate["validation_failures"]:
+            assert any(failure in failures for failures in categories.values())
+        assert candidate["eligible"] is (not candidate["validation_failures"])
+    for category in ("sample", "performance", "risk", "cost", "other"):
+        expected = sum(
+            bool(candidate["validation_failure_categories"].get(category))
+            for candidate in result["candidates"]
+        )
+        assert result["failure_summary"][category] == expected
+
+
+def test_research_marks_short_walk_forward_windows_as_sample_inadequacy():
+    result = StrategyResearchAgent().research(candles_from_closes([100 + i * 0.1 for i in range(120)]))
+    assert result["sample_adequacy"]["available_bars"] == 120
+    assert result["sample_adequacy"]["status"] == "insufficient_for_configured_walk_forward_gates"
+    assert result["sample_adequacy"]["walk_forward_evaluation_bars"] == [23, 23, 23]
+    assert all(
+        "insufficient_walk_forward_history"
+        in candidate["validation_failure_categories"]["sample"]
+        for candidate in result["candidates"]
+    )
+
+
+def test_research_validates_short_samples_before_reporting_insufficient_history():
+    rows = candles_from_closes([100.0] * 60)
+    rows[10]["close"] = float("nan")
+    with pytest.raises(ValueError, match="finite"):
+        StrategyResearchAgent().research(rows)

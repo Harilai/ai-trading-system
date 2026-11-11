@@ -432,8 +432,10 @@ class AutonomousStore:
                 "walk_forward": candidate.get("walk_forward"),
                 "cost_sensitivity": candidate.get("cost_sensitivity"),
                 "score": candidate.get("score"),
+                "validation_failure_categories": candidate.get("validation_failure_categories"),
                 "experimental_eligible": candidate.get("experimental_eligible"),
                 "experimental_validation_failures": candidate.get("experimental_validation_failures"),
+                "experimental_validation_failure_categories": candidate.get("experimental_validation_failure_categories"),
                 "experimental_score": candidate.get("experimental_score"),
                 "current_entry_signal": candidate.get("current_entry_signal"),
                 "current_hold_signal": candidate.get("current_hold_signal"),
@@ -442,6 +444,11 @@ class AutonomousStore:
                 "experimental_status_registered": "experimental_eligible" in candidate,
                 "market_regime": research.get("market_regime"),
                 "data_quality": research.get("data_quality"),
+                "sample_adequacy": research.get("sample_adequacy"),
+                "failure_summary": research.get("failure_summary"),
+                "history_source": research.get("history_source"),
+                "history_bars": research.get("history_bars"),
+                "persisted_finalized_bars_available": research.get("persisted_finalized_bars_available"),
             }
             rows.append((
                 task_id, provider_id, instrument_id, symbol, str(timeframe or "unknown"),
