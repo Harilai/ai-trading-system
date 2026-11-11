@@ -323,7 +323,7 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - Chief de producción requiere evidencia de readiness para compras autónomas. El worker comprueba antes de decidir, antes de ejecutar y al reanudar intents de compra persistidos; una revalidación fallida rechaza/caduca el intent sin ejecutar.
 - Se añadió `list_unresolved_order_intents()` para consultar todos los intents no terminales sin ocultar pendientes antiguos por paginación.
 - Pruebas adversas: scope/cuenta errónea, snapshot caducado, balance inválido, intents pendientes, reanudación, evidencia stale, entorno incorrecto, ventas de reducción, API auth y perfil PAPER conservador.
-- PR CI exacta: 718 passed, 1 warning; Docker hardening passed. La CI post-merge de `main` debe verificarse antes de considerar cerrado el bloque.
+- PR CI exacta: 718 passed, 1 warning; Docker hardening passed. CI post-merge de `main` run `43054150372`: Python tests y Docker build/runtime hardening success.
 - No se activó Binance Demo genérico, no se enviaron órdenes externas y LIVE continúa deshabilitado.
 
 ## Siguiente bloque — identidad y posiciones Binance Spot Demo
