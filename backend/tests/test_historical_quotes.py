@@ -85,3 +85,27 @@ def test_quote_store_validates_query_ranges_and_limits(tmp_path):
             "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR",
             since_ms=200, until_ms=100,
         )
+
+
+def test_quote_store_filters_by_receipt_time_independently_of_exchange_time(tmp_path):
+    store = HistoricalQuoteStore(str(tmp_path / "trading.sqlite"))
+    store.record(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+        1_700_000_000_000, "100", "101",
+        timestamp_source="exchange", retrieved_at_ms=1_700_000_060_000,
+    )
+
+    rows = store.get(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR",
+        received_since_ms=1_700_000_030_000,
+        received_until_ms=1_700_000_090_000,
+    )
+    assert len(rows) == 1
+    assert rows[0]["timestamp_ms"] == 1_700_000_000_000
+    assert rows[0]["retrieved_at_ms"] == 1_700_000_060_000
+
+    before_receipt = store.get(
+        "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR",
+        received_until_ms=1_700_000_030_000,
+    )
+    assert before_receipt == []
