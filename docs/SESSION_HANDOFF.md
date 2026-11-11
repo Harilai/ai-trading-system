@@ -2,10 +2,10 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-> **Último cambio integrado:** PR #144, merge SHA `24d2235fd7fba9a9158fe688c92e5df087cdf387`.
-> **main y demo:** mismo SHA `24d2235fd7fba9a9158fe688c92e5df087cdf387`; compare debe verificarse al inicio de la próxima sesión.
+ > **Último cambio integrado:** PR #146, merge SHA `db83df4f0de25c9c24bdf96263cbab1a96567e89`.
+> **main y demo:** mismo SHA `db83df4f0de25c9c24bdf96263cbab1a96567e89`; compare verificado como identical.
 > **PR abiertas:** ninguna en la última auditoría.
-> **CI:** PR #142, #143 y #144 superaron Python tests y Docker build/runtime hardening. CI post-merge de PR #144 run `43066860684` success.
+> **CI:** PR #142–#146 superaron Python tests y Docker build/runtime hardening. CI post-merge de PR #146 pendiente de comprobación final.
 > **Validación local:** no se pudo clonar el repositorio desde el shell por falta de resolución de GitHub; no afirmar tests locales. La validación ejecutada fue GitHub Actions.
 > **Operación:** investigación y PAPER; LIVE sigue deshabilitado. No ejecutar operaciones reales ni usar credenciales productivas.
 
@@ -250,14 +250,14 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe permanecer idéntica a `main`.
 
 
-## Bloque en desarrollo — histórico persistente/paginado (2026-11-11)
+## Bloque integrado — histórico persistente/paginado (PR #146)
 
-- Rama: `feat/persistent-paginated-market-history`.
-- Store SQLite independiente para velas OHLCV, con identidad provider/instrument/timeframe, rangos temporales, decimales exactos en texto, idempotencia y cobertura.
-- Velas abiertas/provisionales se pueden refrescar; una vela ya finalizada es inmutable y una discrepancia provoca conflicto/rollback, evitando reescrituras históricas silenciosas.
-- Colector paginado usa `since`, `limit`, cursor monotónico y máximo de páginas; devuelve `next_since_ms` si el rango queda incompleto. El adaptador CCXT ya tiene rate limiting activado y la ingesta lo reutiliza.
-- Endpoints autenticados: `POST /api/market-data/history/sync` y `GET /api/market-data/history`. Solo sincroniza instrumentos activos descubiertos por el proveedor configurado.
-- Tests nuevos cubren persistencia/replay, aislamiento de identidad/timeframe, vela provisional/final, conflictos atómicos, datos inválidos, paginación, límite/reanudación, cursor no progresivo, cobertura y autenticación API.
-- Validación local pendiente; ejecutar CI en el head exacto del PR. No declarar el bloque validado hasta que pasen Python tests y Docker build/runtime hardening.
-- Pendiente después de este bloque: política explícita de retención, scheduler de backfill incremental, normalización de límites/timeframes por proveedor y soporte paginado para proveedores no CCXT. La frecuencia multi-timeframe se habilitará solo cuando cada adaptador declare sus límites.
-- No se ejecutaron operaciones ni se habilitó LIVE.
+- PR #146 integrada por squash en `main`, merge SHA `db83df4f0de25c9c24bdf96263cbab1a96567e89`; `demo` sincronizada y compare verificado como identical.
+- Nuevo módulo `backend/app/historical_data.py`: store SQLite provider/instrument/timeframe scoped; valores OHLCV guardados como decimales de texto; lecturas por rango; cobertura; idempotencia.
+- Las velas provisionales se pueden refrescar. Las finalizadas son inmutables: discrepancias rechazan la operación y hacen rollback; un replay antiguo no degrada una vela finalizada.
+- Colector paginado con `since`, `limit`, orden temporal estricto, límite de páginas y cursor `next_since_ms` para reanudar.
+- Endpoints autenticados `POST /api/market-data/history/sync` y `GET /api/market-data/history`. La sincronización requiere instrumento activo del catálogo del proveedor y reutiliza rate limiting CCXT. Otros proveedores no se habilitan sin soporte paginado declarado.
+- CI del head exacto `47dcb8f6a8b1f47cc4a21875363b48b7b3fff1f2`: 741 tests Python passed, 1 warning; Docker build/runtime hardening passed. La CI post-merge se verifica por separado.
+- No se ejecutaron tests locales ni validación operativa contra proveedores reales. No hay scheduler de backfill automático ni retención configurada todavía.
+- Siguiente prioridad: añadir un scheduler incremental seguro, definir política de retención y diagnosticar cobertura/gaps por timeframe/proveedor antes de ampliar la investigación a múltiples timeframes. LIVE permanece deshabilitado.
+
