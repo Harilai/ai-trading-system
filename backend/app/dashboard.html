@@ -378,8 +378,17 @@
           const oos=result.out_of_sample||{};
           if(Object.keys(oos).length){
             node.appendChild(dataItem("Resultado OOS","Rentabilidad neta "+metricPercent(oos.net_return)+" · drawdown máximo "+metricPercent(oos.max_drawdown),String(oos.trades??"—")+" operaciones · acierto "+metricPercent(oos.win_rate)+" · factor beneficio "+metricNumber(oos.profit_factor)));
-            node.appendChild(dataItem("Exposición y operaciones","Exposición "+metricPercent(oos.exposure_fraction)+" · duración media "+metricNumber(oos.average_trade_duration_bars,1)+" velas","Expectativa "+metricPercent(oos.average_trade_return)+" · payoff "+metricNumber(oos.payoff_ratio)));
+            node.appendChild(dataItem("Exposición y operaciones","Exposición "+metricPercent(oos.exposure_fraction)+" · duración media "+metricNumber(oos.average_trade_duration_bars,1),"Expectativa "+metricPercent(oos.average_trade_return)+" · payoff "+metricNumber(oos.payoff_ratio)));
             node.appendChild(dataItem("Riesgo por vela","Sharpe "+metricNumber(oos.sharpe_per_bar)+" · Sortino "+metricNumber(oos.sortino_per_bar),"Volatilidad "+metricPercent(oos.return_volatility_per_bar)+" · ratios no anualizados"));
+            if(oos.spread_execution_count!==undefined){
+              const spreadCoverage=oos.spread_coverage_complete===true;
+              node.appendChild(dataItem(
+                "Cobertura spread observado",
+                String(oos.spread_observed_execution_count??0)+"/"+String(oos.spread_execution_count??0)+" ejecuciones con bid/ask",
+                "Media "+metricPercent(oos.average_observed_spread_fraction)+" · sin dato "+String(oos.spread_missing_execution_count??0)+" · "+(spreadCoverage?"cobertura completa":"cobertura incompleta; promoción bloqueada"),
+                spreadCoverage?"state-good":"state-warn"
+              ));
+            }
           }
           const quality=result.data_quality||{};
           if(quality.bars!==undefined){
