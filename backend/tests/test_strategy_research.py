@@ -176,7 +176,10 @@ def test_cost_stress_gate_requires_positive_return_and_benchmark_outperformance(
     passes = {
         "1.5": {
             "available": True,
-            "out_of_sample": {"net_return": 0.01},
+            "out_of_sample": {
+                "net_return": 0.01,
+                "spread_coverage_complete": True,
+            },
             "beats_buy_and_hold": True,
         }
     }
@@ -185,7 +188,10 @@ def test_cost_stress_gate_requires_positive_return_and_benchmark_outperformance(
     negative_return = {
         "1.5": {
             "available": True,
-            "out_of_sample": {"net_return": -0.001},
+            "out_of_sample": {
+                "net_return": -0.001,
+                "spread_coverage_complete": True,
+            },
             "beats_buy_and_hold": True,
         }
     }
@@ -194,7 +200,10 @@ def test_cost_stress_gate_requires_positive_return_and_benchmark_outperformance(
     underperforms = {
         "1.5": {
             "available": True,
-            "out_of_sample": {"net_return": 0.01},
+            "out_of_sample": {
+                "net_return": 0.01,
+                "spread_coverage_complete": True,
+            },
             "beats_buy_and_hold": False,
         }
     }
@@ -417,3 +426,127 @@ def test_research_validates_short_samples_before_reporting_insufficient_history(
     rows[10]["close"] = float("nan")
     with pytest.raises(ValueError, match="finite"):
         StrategyResearchAgent().research(rows)
+
+
+def test_backtest_applies_observed_half_spread_on_entry_and_exit():
+    candles = candles_from_closes([100.0] * 5)
+    quotes = [
+        {
+            "timestamp_ms": candles[index]["timestamp"],
+            "bid": 99.0,
+            "ask": 101.0,
+            "timestamp_source": "exchange",
+            "source": "test",
+        }
+        for index in (1, 2)
+    ]
+    agent = StrategyResearchAgent(fee_rate=0.0, slippage_rate=0.0)
+    signal = lambda closes, index, in_position: index == 0 and not in_position
+    baseline = agent._backtest(candles, signal, 0, 0, len(candles))
+    spread_adjusted = agent._backtest(
+        candles, signal, 0, 0, len(candles),
+        quote_snapshots=quotes, max_quote_age_ms=0, spread_multiplier=1.0,
+        candle_interval_ms=3_600_000,
+    )
+
+    assert spread_adjusted["net_return"] < baseline["net_return"]
+    assert spread_adjusted["spread_coverage_complete"] is True
+    assert spread_adjusted["spread_execution_count"] == 2
+    assert spread_adjusted["spread_observed_execution_count"] == 2
+    assert spread_adjusted["spread_missing_execution_count"] == 0
+    assert spread_adjusted["average_observed_spread_fraction"] == pytest.approx(0.02)
+
+
+def test_backtest_never_uses_a_quote_timestamped_after_execution():
+    candles = candles_from_closes([100.0] * 5)
+    entry_time = candles[1]["timestamp"]
+    exit_time = candles[2]["timestamp"]
+    quotes = [
+        {
+            "timestamp_ms": entry_time + 1,
+            "bid": 99.0,
+            "ask": 101.0,
+            "timestamp_source": "exchange",
+            "source": "test",
+        },
+        {
+            "timestamp_ms": exit_time,
+            "bid": 99.0,
+            "ask": 101.0,
+            "timestamp_source": "exchange",
+            "source": "test",
+        },
+    ]
+    result = StrategyResearchAgent(fee_rate=0.0, slippage_rate=0.0)._backtest(
+        candles,
+        lambda closes, index, in_position: index == 0 and not in_position,
+        0,
+        0,
+        len(candles),
+        quote_snapshots=quotes,
+        max_quote_age_ms=60_000,
+        candle_interval_ms=3_600_000,
+    )
+
+    assert result["spread_execution_count"] == 2
+    assert result["spread_observed_execution_count"] == 1
+    assert result["spread_missing_execution_count"] == 1
+    assert result["spread_coverage_complete"] is False
+
+
+def test_research_requires_complete_observed_spread_for_promotion():
+    rows = candles_from_closes([
+        100 + index * 0.03 + 2 * math.sin(index / 6)
+        for index in range(300)
+    ])
+    quotes = [
+        {
+            "timestamp_ms": row["timestamp"],
+            "bid": row["close"] * 0.999,
+            "ask": row["close"] * 1.001,
+            "timestamp_source": "exchange",
+            "source": "test",
+        }
+        for row in rows
+    ]
+    quotes.append({
+        "timestamp_ms": rows[-1]["timestamp"] + 3_600_000,
+        "bid": rows[-1]["close"] * 0.999,
+        "ask": rows[-1]["close"] * 1.001,
+        "timestamp_source": "exchange",
+        "source": "test",
+    })
+    result = StrategyResearchAgent(minimum_oos_trades=1).research(
+        rows, expected_interval_seconds=3600,
+        quote_snapshots=quotes, max_quote_age_seconds=3600,
+    )
+
+    assert result["spread_coverage"]["status"] == "available"
+    assert result["promotion_gates"]["must_have_complete_observed_spread_coverage"] is True
+    assert all(
+        candidate["out_of_sample"]["spread_coverage_complete"]
+        and "insufficient_spread_coverage" not in candidate["validation_failures"]
+        for candidate in result["candidates"]
+    )
+    assert all(
+        candidate["cost_sensitivity"]["1.5"]["out_of_sample"]["spread_coverage_complete"]
+        for candidate in result["candidates"]
+    )
+
+
+def test_research_rejects_non_chronological_or_invalid_quote_snapshots():
+    rows = candles_from_closes([100.0 + index * 0.01 for index in range(120)])
+    quote = {
+        "timestamp_ms": rows[0]["timestamp"],
+        "bid": 99.0,
+        "ask": 101.0,
+        "timestamp_source": "exchange",
+        "source": "test",
+    }
+    with pytest.raises(ValueError, match="strictly increasing"):
+        StrategyResearchAgent().research(
+            rows, quote_snapshots=[quote, quote],
+        )
+    invalid = {**quote, "ask": 98.0}
+    with pytest.raises(ValueError, match="invalid"):
+        StrategyResearchAgent().research(rows, quote_snapshots=[invalid])
