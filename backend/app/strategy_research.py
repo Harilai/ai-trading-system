@@ -540,7 +540,10 @@ class StrategyResearchAgent:
                 raise ValueError("Quote bid/ask values are invalid")
             timestamp_source = quote.get("timestamp_source")
             source = quote.get("source")
-            if timestamp_source not in {"exchange", "retrieved_at"}:
+            if (
+                not isinstance(timestamp_source, str)
+                or timestamp_source not in {"exchange", "retrieved_at"}
+            ):
                 raise ValueError("Quote timestamp source is unsupported")
             if not isinstance(source, str) or not source.strip():
                 raise ValueError("Quote source is required")
