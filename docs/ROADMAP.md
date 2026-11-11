@@ -2,7 +2,7 @@
 
 > Continuity between ChatGPT sessions: read [`docs/SESSION_HANDOFF.md`](SESSION_HANDOFF.md) for project state and [`docs/AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) for the mandatory multi-agent development method.
 
-Actualizado: 2026-11-11. Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
+Actualizado: 2026-11-11 (última sincronización PR #131). Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
 ## Completado — promoción de snapshots y reconciliación de ramas (#99–#106)
 
@@ -27,16 +27,13 @@ El diseño está documentado en [`COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md`](COORD
 - CI del head exacto de PR #118: 609 tests Python passed; Docker build/runtime hardening passed. CI de sincronización #120 también pasó. No se ha validado contra una cuenta Alpaca real ni se han usado credenciales.
 - PR #123 fusionada en `main` (merge SHA `05870aa8c3f10b75a8d1bf46dd4856df1a3575ae`) y PR #124 sincronizada a `demo` (merge SHA `6445726293db4fd408bfa046b1b4d746bbeabc3e`). ADR `docs/ALPACA_ACCOUNT_FINANCIAL_SEMANTICS_ADR.md` define el modelo tipado para cash, equity, buying power, margen, valoración, transferencias pendientes y fees. La lectura de `/v2/account` no se declara como `AccountBalance`; no se activa `balances=true` ni se extiende aún el snapshot coordinado. CI de #123 y #124: Python tests y Docker build/runtime hardening pasaron.
 
-## Ledger financiero Alpaca Paper — implementación en curso
+## Ledger financiero Alpaca Paper y snapshot coordinado — integrados (PR #127 / #128)
 
-Rama `feat/alpaca-financial-metrics-ledger` (pendiente de CI y revisión):
-- Lector de `GET /v2/account` de una sola llamada, con host Paper fijo, verificación del account ID esperado, currency y estado ACTIVE.
-- Contrato financiero tipado separado de `AccountBalance(free/used/total)`; cash, equity y buying_power nunca se intercambian.
-- Ledger SQLite append-only con request_id idempotente, hash de contenido, identidad de cuenta, environment Paper, currency, flags, timestamp y schema version.
-- Endpoints autenticados de captura e historial. Sin órdenes, cambios en cartera, Risk Manager, Chief, transferencias o retiradas.
-- Métricas opcionales ausentes se guardan como null; core completeness requiere cash, equity y buying_power. La CI aún debe validar la implementación.
-
-Siguiente: CI y revisión de esta fase; después extender el snapshot coordinado a mercado cash mediante transacción atómica que enlace el ledger financiero con el ledger de posiciones, manteniendo aislamiento y semántica contable.
+- PR #127 integra el ledger SQLite append-only de métricas financieras Alpaca Paper, con captura autenticada, request_id idempotente, hash de contenido, identidad de cuenta, entorno Paper y contrato tipado separado de `AccountBalance(free/used/total)`.
+- PR #128 integra el snapshot coordinado cash que enlaza ledger financiero y ledger de posiciones en una transacción atómica, con referencias, cobertura, timestamps/skew, idempotencia y rollback.
+- Ambos adaptadores siguen siendo read-only. No envían órdenes, no modifican PaperPortfolio, Risk Manager o Chief y no permiten transferencias ni retiradas.
+- CI de PR #127 y #128 pasó en sus respectivos heads. No se ha validado todavía contra una cuenta Alpaca Paper real.
+- El siguiente paso no es rehacer estos ledgers: es conectar sus evidencias a una capa de reconciliación/portfolio read-only solo después de verificar semántica, cobertura y procedencia.
 
 ## Objetivo de producto
 
