@@ -211,6 +211,16 @@ class AccountFinancialMetricsStore:
                 (snapshot_id,),
             ).fetchone()
             return self._result(row)
+    def get_snapshot_by_id(self, snapshot_id: str) -> dict | None:
+        if not isinstance(snapshot_id, str) or not snapshot_id.strip():
+            return None
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM account_financial_metric_snapshots WHERE snapshot_id=?",
+                (snapshot_id.strip(),),
+            ).fetchone()
+        return self._result(row) if row else None
+
     def get_by_request_id(self, request_id: str, *, provider_id: str, account_alias: str) -> dict | None:
         if not isinstance(request_id, str) or not _IDENTIFIER.fullmatch(request_id):
             raise FinancialMetricsError("Financial metrics request_id is invalid")
