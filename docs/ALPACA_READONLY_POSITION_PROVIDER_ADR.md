@@ -1,6 +1,6 @@
 # ADR — proveedor read-only de posiciones: evaluación inicial de Alpaca
 
-- Estado: candidato para implementación, no aprobado operativamente.
+- Estado: adaptador de posiciones implementado en PR en revisión; no aprobado operativamente ni conectado a cartera/trading.
 - Fecha: 2026-11-11.
 - Alcance: lectura de posiciones abiertas para acciones/ETF estadounidenses, inicialmente en Paper.
 
@@ -12,7 +12,17 @@ Referencia: [Alpaca — All Open Positions](https://docs.alpaca.markets/us/refer
 
 ## Decisión
 
-Alpaca es un candidato razonable para un adaptador de posiciones read-only de acciones/ETF, pero todavía no satisface el contrato coordinado del proyecto. No se debe registrar como proveedor compatible hasta implementar y probar la lectura de posiciones y la lectura de cuenta/balances con identidad, entorno, timestamp y cobertura explícitos.
+Se implementa un adaptador aislado de posiciones para Alpaca Paper. No ofrece balances ni satisface el contrato coordinado; por tanto, no habilita snapshots coordinados, cartera paper, Chief, Risk Manager ni ejecución. El provider se registra únicamente cuando está habilitado explícitamente y se han configurado credenciales junto con el ID esperado de la cuenta Paper.
+
+## Implementación propuesta
+
+- `backend/app/accounts/alpaca_paper_readonly.py` fija el host `https://paper-api.alpaca.markets` y solo ejecuta GET a `/v2/account` y `/v2/positions`.
+- Cada lectura verifica el `id` devuelto por la cuenta contra `ALPACA_PAPER_EXPECTED_ACCOUNT_ID`. Sin coincidencia exacta no se consulta ni acepta el listado de posiciones.
+- Solo se acepta `us_equity`; se normaliza como `equity`. El endpoint no aporta evidencia suficiente para distinguir ETF de acciones, por lo que no se infiere esa subclase.
+- `asset_id` es la identidad primaria; cantidades/precios/valores/P&L se validan como decimal strings. El timestamp es local de retrieval y la cobertura completa solo se declara tras respuestas válidas de ambos GET.
+- `ALPACA_PAPER_ENABLED=false` por defecto. Sin ID esperado de cuenta, key o secret, el provider no se registra.
+- El contrato declara posiciones `cash` únicamente; balances, órdenes, cancelaciones, transfers, withdrawals y wallet signing permanecen deshabilitados.
+
 
 ## Requisitos de implementación
 
