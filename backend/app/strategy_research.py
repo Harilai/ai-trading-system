@@ -773,10 +773,14 @@ class StrategyResearchAgent:
                 validation_failures.append("walk_forward_drawdown_exceeded")
             if benchmark_excess_return <= 0:
                 validation_failures.append("does_not_beat_buy_and_hold")
-            if (
-                not out_sample["spread_coverage_complete"]
-                or any(not window["spread_coverage_complete"] for window in walk_forward_windows)
-            ):
+            walk_forward_spread_coverage_complete = all(
+                window["spread_coverage_complete"] for window in walk_forward_windows
+            )
+            spread_coverage_complete_for_promotion = (
+                out_sample["spread_coverage_complete"]
+                and walk_forward_spread_coverage_complete
+            )
+            if not spread_coverage_complete_for_promotion:
                 validation_failures.append("insufficient_spread_coverage")
             if not self._passes_cost_stress(cost_sensitivity, "1.5"):
                 validation_failures.append("fails_1_5x_cost_stress")
@@ -823,6 +827,8 @@ class StrategyResearchAgent:
                     "walk_forward": walk_forward,
                     "cost_sensitivity": cost_sensitivity,
                     "spread_coverage": spread_coverage,
+                    "spread_coverage_complete_for_promotion": spread_coverage_complete_for_promotion,
+                    "walk_forward_spread_coverage_complete": walk_forward_spread_coverage_complete,
                     "cost_model": {
                         "fee_rate_per_side": self.fee_rate,
                         "slippage_rate_per_side": self.slippage_rate,
