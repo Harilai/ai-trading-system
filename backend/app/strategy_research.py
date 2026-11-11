@@ -184,6 +184,7 @@ _VALIDATION_FAILURE_CATEGORIES = {
     "oos_drawdown_exceeded": "risk",
     "walk_forward_drawdown_exceeded": "risk",
     "fails_1_5x_cost_stress": "cost",
+    "insufficient_spread_coverage": "cost",
 }
 
 
