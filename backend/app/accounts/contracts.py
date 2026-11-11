@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, localcontext
 import re
 from threading import RLock
+import time
 from typing import Any, Protocol, runtime_checkable
 
 
@@ -21,6 +22,10 @@ class AmbiguousAccountProvider(AccountProviderError):
 
 
 class UnsupportedAccountCapability(AccountProviderError):
+    pass
+
+
+class InvalidAccountRequest(AccountProviderError):
     pass
 
 
@@ -267,6 +272,7 @@ class AccountPositionSnapshot:
     environment: str
     fetched_at: str
     positions: tuple[AccountPosition, ...]
+    coverage_status: str = "unknown"
 
     def to_dict(self) -> dict:
         return {
@@ -275,9 +281,224 @@ class AccountPositionSnapshot:
             "market_type": self.market_type,
             "environment": self.environment,
             "fetched_at": self.fetched_at,
+            "retrieved_at": self.fetched_at,
+            "timestamp_source": "retrieved_at",
+            "coverage_status": self.coverage_status,
             "positions": [asdict(item) for item in self.positions],
             "position_count": len(self.positions),
         }
+
+
+_ACCOUNT_ORDER_STATUSES = {
+    "intent_created", "submission_unknown", "pending", "open", "partially_filled",
+    "filled", "cancelled", "expired", "rejected", "unknown", "reconciliation_required",
+}
+_ACCOUNT_ORDER_TYPES = {"market", "limit", "stop", "stop_limit", "other"}
+
+
+def _required_identifier(raw: Any, *, field: str, max_length: int = 256) -> str:
+    if (not isinstance(raw, str) or not raw.strip() or len(raw.strip()) > max_length
+            or any(ord(char) < 32 for char in raw)):
+        raise AccountProviderError(f"Account {field} is invalid")
+    return raw.strip()
+
+
+def _observed_timestamp(raw: Any, *, field: str) -> str:
+    if not isinstance(raw, str) or not raw.strip():
+        raise AccountProviderError(f"Account {field} must be a timezone-aware timestamp")
+    try:
+        stamp = datetime.fromisoformat(raw.strip().replace("Z", "+00:00"))
+    except ValueError:
+        raise AccountProviderError(f"Account {field} must be a timezone-aware timestamp") from None
+    if stamp.tzinfo is None or stamp.utcoffset() is None:
+        raise AccountProviderError(f"Account {field} must be a timezone-aware timestamp")
+    normalized = stamp.astimezone(timezone.utc)
+    if normalized.timestamp() > time.time() + 300:
+        raise AccountProviderError(f"Account {field} timestamp is in the future")
+    return normalized.isoformat()
+
+
+@dataclass(frozen=True)
+class AccountOrder:
+    """Normalized order observation scoped to one provider account and environment."""
+
+    provider_id: str
+    account_alias: str
+    environment: str
+    market_type: str
+    instrument_id: str
+    symbol: str
+    side: str
+    order_type: str
+    status: str
+    requested_quantity: str
+    filled_quantity: str
+    quote_currency: str
+    observed_at: str
+    order_id: str | None = None
+    client_order_id: str | None = None
+    remaining_quantity: str | None = None
+    average_fill_price: str | None = None
+    exchange_status: str | None = None
+    exchange_timestamp_ms: int | None = None
+
+    @classmethod
+    def normalize(cls, raw: Any) -> "AccountOrder":
+        if isinstance(raw, AccountOrder):
+            raw = asdict(raw)
+        if not isinstance(raw, dict):
+            raise AccountProviderError("Account order record must be an object")
+        identity = {
+            field: _required_identifier(raw.get(field), field=f"order {field}")
+            for field in ("provider_id", "account_alias", "environment", "market_type", "instrument_id", "symbol")
+        }
+        identity["environment"] = identity["environment"].lower()
+        identity["market_type"] = identity["market_type"].lower()
+        if not re.fullmatch(r"[A-Za-z0-9._:/-]{1,128}", identity["instrument_id"]):
+            raise AccountProviderError("Account order instrument_id is invalid")
+        if not re.fullmatch(r"[A-Za-z0-9._:/-]{1,64}", identity["symbol"]):
+            raise AccountProviderError("Account order symbol is invalid")
+        side = _required_identifier(raw.get("side"), field="order side", max_length=16).lower()
+        order_type = _required_identifier(raw.get("order_type"), field="order type", max_length=32).lower().replace("-", "_")
+        status = _required_identifier(raw.get("status"), field="order status", max_length=40).lower().replace("-", "_")
+        if status == "canceled":
+            status = "cancelled"
+        if side not in {"buy", "sell"}:
+            raise AccountProviderError("Account order side is invalid")
+        if order_type not in _ACCOUNT_ORDER_TYPES:
+            raise AccountProviderError("Account order type is unsupported")
+        if status not in _ACCOUNT_ORDER_STATUSES:
+            raise AccountProviderError("Account order status is unsupported")
+        requested = _decimal_text(raw.get("requested_quantity"), field="order requested quantity", allow_zero=False)
+        filled = _decimal_text(raw.get("filled_quantity", "0"), field="order filled quantity")
+        remaining = _decimal_text(raw.get("remaining_quantity"), field="order remaining quantity")
+        if requested is None or filled is None:
+            raise AccountProviderError("Account order quantities are required")
+        requested_value, filled_value = Decimal(requested), Decimal(filled)
+        if filled_value > requested_value:
+            raise AccountProviderError("Account order filled quantity exceeds requested quantity")
+        if remaining is not None and Decimal(remaining) + filled_value != requested_value:
+            raise AccountProviderError("Account order remaining quantity conflicts with requested and filled quantities")
+        if status == "filled" and (filled_value != requested_value or (remaining is not None and Decimal(remaining) != 0)):
+            raise AccountProviderError("Filled account order quantities are inconsistent")
+        if status == "partially_filled" and not 0 < filled_value < requested_value:
+            raise AccountProviderError("Partially filled account order quantities are inconsistent")
+        if status == "open" and filled_value != 0:
+            raise AccountProviderError("Open account order cannot contain unreported fills")
+        quote = _required_identifier(raw.get("quote_currency"), field="order quote currency", max_length=16).upper()
+        if not re.fullmatch(r"[A-Z0-9._-]{2,16}", quote):
+            raise AccountProviderError("Account order quote currency is invalid")
+        order_id = raw.get("order_id")
+        client_order_id = raw.get("client_order_id")
+        if order_id is not None:
+            order_id = _required_identifier(order_id, field="exchange order ID")
+        if client_order_id is not None:
+            client_order_id = _required_identifier(client_order_id, field="client order ID")
+        if order_id is None and client_order_id is None:
+            raise AccountProviderError("Account order requires an exchange ID or client order ID")
+        average = _decimal_text(raw.get("average_fill_price"), field="order average fill price", allow_zero=False)
+        if average is not None and filled_value == 0:
+            raise AccountProviderError("Account order cannot have an average fill price without fills")
+        exchange_status = raw.get("exchange_status")
+        if exchange_status is not None:
+            exchange_status = _required_identifier(exchange_status, field="exchange status", max_length=128)
+        exchange_timestamp_ms = raw.get("exchange_timestamp_ms")
+        if exchange_timestamp_ms is not None:
+            if isinstance(exchange_timestamp_ms, bool) or not isinstance(exchange_timestamp_ms, int) or exchange_timestamp_ms <= 0:
+                raise AccountProviderError("Account order exchange timestamp is invalid")
+            if exchange_timestamp_ms > int(time.time() * 1000) + 300_000:
+                raise AccountProviderError("Account order exchange timestamp is in the future")
+        return cls(
+            **identity, side=side, order_type=order_type, status=status,
+            requested_quantity=requested, filled_quantity=filled, quote_currency=quote,
+            observed_at=_observed_timestamp(raw.get("observed_at"), field="order observed_at"),
+            order_id=order_id, client_order_id=client_order_id,
+            remaining_quantity=remaining, average_fill_price=average,
+            exchange_status=exchange_status, exchange_timestamp_ms=exchange_timestamp_ms,
+        )
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class AccountOrderFill:
+    """One immutable execution with its own trade ID and fee provenance."""
+
+    provider_id: str
+    account_alias: str
+    environment: str
+    market_type: str
+    instrument_id: str
+    symbol: str
+    side: str
+    trade_id: str
+    amount: str
+    price: str
+    quote_currency: str
+    timestamp_ms: int
+    order_id: str | None = None
+    client_order_id: str | None = None
+    cost: str | None = None
+    fee_amount: str | None = None
+    fee_currency: str | None = None
+
+    @classmethod
+    def normalize(cls, raw: Any) -> "AccountOrderFill":
+        if isinstance(raw, AccountOrderFill):
+            raw = asdict(raw)
+        if not isinstance(raw, dict):
+            raise AccountProviderError("Account order fill must be an object")
+        identity = {
+            field: _required_identifier(raw.get(field), field=f"fill {field}")
+            for field in ("provider_id", "account_alias", "environment", "market_type", "instrument_id", "symbol", "trade_id")
+        }
+        identity["environment"] = identity["environment"].lower()
+        identity["market_type"] = identity["market_type"].lower()
+        if not re.fullmatch(r"[A-Za-z0-9._:/-]{1,128}", identity["instrument_id"]):
+            raise AccountProviderError("Account fill instrument_id is invalid")
+        if not re.fullmatch(r"[A-Za-z0-9._:/-]{1,64}", identity["symbol"]):
+            raise AccountProviderError("Account fill symbol is invalid")
+        side = _required_identifier(raw.get("side"), field="fill side", max_length=16).lower()
+        if side not in {"buy", "sell"}:
+            raise AccountProviderError("Account fill side is invalid")
+        amount = _decimal_text(raw.get("amount"), field="fill amount", allow_zero=False)
+        price = _decimal_text(raw.get("price"), field="fill price", allow_zero=False)
+        cost = _decimal_text(raw.get("cost"), field="fill cost")
+        fee_amount = _decimal_text(raw.get("fee_amount"), field="fill fee amount")
+        if amount is None or price is None:
+            raise AccountProviderError("Account fill amount and price are required")
+        quote = _required_identifier(raw.get("quote_currency"), field="fill quote currency", max_length=16).upper()
+        if not re.fullmatch(r"[A-Z0-9._-]{2,16}", quote):
+            raise AccountProviderError("Account fill quote currency is invalid")
+        order_id = raw.get("order_id")
+        client_order_id = raw.get("client_order_id")
+        if order_id is not None:
+            order_id = _required_identifier(order_id, field="fill exchange order ID")
+        if client_order_id is not None:
+            client_order_id = _required_identifier(client_order_id, field="fill client order ID")
+        if order_id is None and client_order_id is None:
+            raise AccountProviderError("Account fill requires an exchange order ID or client order ID")
+        fee_currency = raw.get("fee_currency")
+        if fee_currency is not None:
+            fee_currency = _required_identifier(fee_currency, field="fill fee currency", max_length=16).upper()
+            if not re.fullmatch(r"[A-Z0-9._-]{2,16}", fee_currency):
+                raise AccountProviderError("Account fill fee currency is invalid")
+        if fee_amount is not None and Decimal(fee_amount) > 0 and fee_currency is None:
+            raise AccountProviderError("Positive account fill fee requires an explicit fee currency")
+        timestamp_ms = raw.get("timestamp_ms")
+        if isinstance(timestamp_ms, bool) or not isinstance(timestamp_ms, int) or timestamp_ms <= 0:
+            raise AccountProviderError("Account fill timestamp_ms is invalid")
+        if timestamp_ms > int(time.time() * 1000) + 300_000:
+            raise AccountProviderError("Account fill timestamp is in the future")
+        return cls(
+            **identity, side=side, amount=amount, price=price, cost=cost,
+            quote_currency=quote, timestamp_ms=timestamp_ms, order_id=order_id,
+            client_order_id=client_order_id, fee_amount=fee_amount, fee_currency=fee_currency,
+        )
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 @runtime_checkable
@@ -293,11 +514,98 @@ class PositionProvider(Protocol):
     def fetch_positions(self) -> list[AccountPosition]: ...
 
 
+@dataclass(frozen=True)
+class AccountFillHistory:
+    """Provider fill response with explicit scope, observation time and completeness."""
+
+    provider_id: str
+    account_alias: str
+    environment: str
+    market_type: str
+    instrument_id: str
+    observed_at: str
+    history_complete: bool
+    fills: tuple[AccountOrderFill, ...]
+    order_id: str | None = None
+    client_order_id: str | None = None
+
+    @classmethod
+    def normalize(cls, raw: Any) -> "AccountFillHistory":
+        if isinstance(raw, AccountFillHistory):
+            raw = raw.to_dict()
+        if not isinstance(raw, dict):
+            raise AccountProviderError("Account fill history must be an object")
+        identity = {
+            field: _required_identifier(raw.get(field), field=f"fill history {field}")
+            for field in ("provider_id", "account_alias", "environment", "market_type", "instrument_id")
+        }
+        identity["environment"] = identity["environment"].lower()
+        identity["market_type"] = identity["market_type"].lower()
+        if not re.fullmatch(r"[A-Za-z0-9._:/-]{1,128}", identity["instrument_id"]):
+            raise AccountProviderError("Account fill history instrument_id is invalid")
+        order_id = raw.get("order_id")
+        client_order_id = raw.get("client_order_id")
+        if order_id is not None:
+            order_id = _required_identifier(order_id, field="fill history exchange order ID")
+        if client_order_id is not None:
+            client_order_id = _required_identifier(client_order_id, field="fill history client order ID")
+        if order_id is None and client_order_id is None:
+            raise AccountProviderError("Account fill history requires an order ID")
+        observed_at = _observed_timestamp(raw.get("observed_at"), field="fill history observed_at")
+        history_complete = raw.get("history_complete")
+        if not isinstance(history_complete, bool):
+            raise AccountProviderError("Account fill history completeness must be an explicit boolean")
+        raw_fills = raw.get("fills")
+        if not isinstance(raw_fills, list):
+            raise AccountProviderError("Account fill history fills must be a list")
+        snapshot_ms = int(datetime.fromisoformat(observed_at).timestamp() * 1000)
+        fills = []
+        seen_trade_ids = set()
+        for raw_fill in raw_fills:
+            fill = AccountOrderFill.normalize(raw_fill)
+            if (fill.provider_id, fill.account_alias, fill.environment, fill.market_type, fill.instrument_id) != (
+                identity["provider_id"], identity["account_alias"], identity["environment"],
+                identity["market_type"], identity["instrument_id"],
+            ):
+                raise AccountProviderError("Account fill history scope conflicts with a fill")
+            if order_id is not None and fill.order_id is not None and fill.order_id != order_id:
+                raise AccountProviderError("Account fill history order ID conflicts with a fill")
+            if client_order_id is not None and fill.client_order_id is not None and fill.client_order_id != client_order_id:
+                raise AccountProviderError("Account fill history client order ID conflicts with a fill")
+            if fill.timestamp_ms > snapshot_ms + 300_000:
+                raise AccountProviderError("Account fill timestamp is later than the history observation")
+            if fill.trade_id in seen_trade_ids:
+                raise AccountProviderError("Account fill history contains duplicate trade IDs")
+            seen_trade_ids.add(fill.trade_id)
+            fills.append(fill)
+        return cls(
+            **identity,
+            observed_at=observed_at,
+            history_complete=history_complete,
+            fills=tuple(fills),
+            order_id=order_id,
+            client_order_id=client_order_id,
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "provider_id": self.provider_id,
+            "account_alias": self.account_alias,
+            "environment": self.environment,
+            "market_type": self.market_type,
+            "instrument_id": self.instrument_id,
+            "observed_at": self.observed_at,
+            "history_complete": self.history_complete,
+            "fills": [fill.to_dict() for fill in self.fills],
+            "order_id": self.order_id,
+            "client_order_id": self.client_order_id,
+        }
+
 @runtime_checkable
 class OrderReconciliationProvider(Protocol):
     def list_open_orders(self) -> list[AccountOrder]: ...
     def fetch_order(self, order_id: str, instrument_id: str) -> AccountOrder | None: ...
-    def fetch_fills(self, order_id: str, instrument_id: str) -> list[dict]: ...
+    def fetch_fills(self, order_id: str, instrument_id: str) -> AccountFillHistory: ...
 
 
 class AccountProviderRegistry:
@@ -309,14 +617,21 @@ class AccountProviderRegistry:
         self._locks: dict[tuple[str, str], RLock] = {}
         self._lock = RLock()
 
-    def register(self, provider: AccountBalanceProvider) -> AccountCapabilities:
-        if not callable(getattr(provider, "describe", None)) or not callable(
-            getattr(provider, "fetch_balances", None)
-        ):
-            raise AccountProviderError("Account provider must expose describe and fetch_balances")
+    def register(self, provider: Any) -> AccountCapabilities:
+        if not callable(getattr(provider, "describe", None)):
+            raise AccountProviderError("Account provider must expose describe")
         capabilities = AccountCapabilities.from_description(provider.describe())
-        if not capabilities.balances:
-            raise UnsupportedAccountCapability("Provider does not declare balance support")
+        has_balance_reader = callable(getattr(provider, "fetch_balances", None))
+        has_position_reader = (
+            callable(getattr(provider, "fetch_positions", None))
+            or callable(getattr(provider, "fetch_positions_snapshot", None))
+        )
+        if capabilities.balances and not has_balance_reader:
+            raise AccountProviderError("Provider declares balances but has no balance reader")
+        if capabilities.positions and not has_position_reader:
+            raise AccountProviderError("Provider declares positions but has no position reader")
+        if not capabilities.balances and not capabilities.positions:
+            raise UnsupportedAccountCapability("Provider must declare balance or position support")
         key = (capabilities.provider_id, capabilities.account_alias)
         with self._lock:
             if key in self._providers:
@@ -349,9 +664,14 @@ class AccountProviderRegistry:
 
     def fetch_balances(self, provider_id: str, account_alias: str | None = None) -> dict:
         provider, capabilities, lock = self._resolve(provider_id, account_alias)
+        if not capabilities.balances:
+            raise UnsupportedAccountCapability("Account provider does not declare balance support")
+        fetcher = getattr(provider, "fetch_balances", None)
+        if not callable(fetcher):
+            raise UnsupportedAccountCapability("Account provider declares balances but has no balance reader")
         try:
             with lock:
-                raw = provider.fetch_balances()
+                raw = fetcher()
         except AccountProviderError:
             raise
         except Exception as exc:
@@ -426,10 +746,22 @@ class AccountProviderRegistry:
                 snapshot[optional] = bool(raw[optional])
         return snapshot
 
-    def fetch_positions(self, provider_id: str, account_alias: str | None = None) -> dict:
+    def fetch_positions(
+        self, provider_id: str, account_alias: str | None = None, *, market_type: str | None = None,
+    ) -> dict:
         provider, capabilities, lock = self._resolve(provider_id, account_alias)
         if not capabilities.positions:
             raise UnsupportedAccountCapability("Account provider does not declare position support")
+        if market_type is None:
+            if len(capabilities.market_types) != 1:
+                raise InvalidAccountRequest("market_type is required for a multi-market account")
+            selected_market = capabilities.market_types[0]
+        else:
+            selected_market = str(market_type).strip().lower()
+            if not selected_market:
+                raise InvalidAccountRequest("market_type cannot be blank")
+            if selected_market not in capabilities.market_types:
+                raise UnsupportedAccountCapability("Requested market_type is not declared by the account")
         fetcher = getattr(provider, "fetch_positions", None)
         if not callable(fetcher):
             raise UnsupportedAccountCapability("Account provider declares positions but has no position reader")
@@ -452,17 +784,21 @@ class AccountProviderRegistry:
             if identity in seen:
                 raise AccountProviderError("Account provider returned duplicate positions")
             seen.add(identity)
-            positions.append(position)
+            if position.market_type == selected_market:
+                positions.append(position)
         return AccountPositionSnapshot(
             provider_id=capabilities.provider_id,
             account_alias=capabilities.account_alias,
-            market_type=capabilities.market_types[0] if len(capabilities.market_types) == 1 else "mixed",
+            market_type=selected_market,
             environment=capabilities.environment,
             fetched_at=datetime.now(timezone.utc).isoformat(),
             positions=tuple(sorted(positions, key=lambda item: (item.instrument_id, item.side))),
+            coverage_status="unknown",
         ).to_dict()
 
-    def fetch_positions_snapshot(self, provider_id: str, account_alias: str | None = None) -> dict:
+    def fetch_positions_snapshot(
+        self, provider_id: str, account_alias: str | None = None, *, market_type: str | None = None,
+    ) -> dict:
         provider, capabilities, lock = self._resolve(provider_id, account_alias)
         if not capabilities.positions:
             raise UnsupportedAccountCapability("Account provider does not declare position support")
@@ -472,6 +808,16 @@ class AccountProviderRegistry:
             capabilities.withdrawals, capabilities.wallet_signing,
         )):
             raise UnsupportedAccountCapability("Position snapshots require an explicitly read-only account")
+        if market_type is None:
+            if len(capabilities.market_types) != 1:
+                raise InvalidAccountRequest("market_type is required for a multi-market position snapshot")
+            selected_market = capabilities.market_types[0]
+        else:
+            selected_market = str(market_type).strip().lower()
+            if not selected_market:
+                raise InvalidAccountRequest("market_type cannot be blank")
+            if selected_market not in capabilities.market_types:
+                raise UnsupportedAccountCapability("Requested market_type is not declared by the account")
         fetcher = getattr(provider, "fetch_positions_snapshot", None)
         if not callable(fetcher):
             raise UnsupportedAccountCapability(
@@ -479,7 +825,7 @@ class AccountProviderRegistry:
             )
         try:
             with lock:
-                raw = fetcher()
+                raw = fetcher(market_type=selected_market)
         except AccountProviderError:
             raise
         except Exception as exc:
@@ -492,9 +838,9 @@ class AccountProviderRegistry:
             raise AccountProviderError("Account alias changed in position response")
         if str(raw.get("environment", "")).strip().lower() != capabilities.environment:
             raise AccountProviderError("Account environment conflicts with declared provider capabilities")
-        market_type = raw.get("market_type")
-        if not isinstance(market_type, str) or market_type not in capabilities.market_types:
-            raise AccountProviderError("Position market type is not declared by the provider")
+        response_market_type = raw.get("market_type")
+        if not isinstance(response_market_type, str) or response_market_type.strip().lower() != selected_market:
+            raise AccountProviderError("Position snapshot market_type conflicts with the requested market")
         if raw.get("read_only") is not True or raw.get("execution_enabled") is not False:
             raise AccountProviderError("Position snapshot permission flags conflict with read-only capability")
         if raw.get("withdrawals_enabled") is not False:
@@ -521,7 +867,7 @@ class AccountProviderRegistry:
         seen = set()
         for item in raw_positions:
             position = AccountPosition.normalize(item)
-            if position.market_type != market_type:
+            if position.market_type != selected_market:
                 raise AccountProviderError("Position market type conflicts with snapshot")
             if position.instrument_id in seen:
                 raise AccountProviderError("Position provider returned duplicate instrument positions")
@@ -531,7 +877,7 @@ class AccountProviderRegistry:
             "provider_id": capabilities.provider_id,
             "account_alias": capabilities.account_alias,
             "environment": capabilities.environment,
-            "market_type": market_type,
+            "market_type": selected_market,
             "fetched_at": timestamp.astimezone(timezone.utc).isoformat(),
             "read_only": True,
             "execution_enabled": False,

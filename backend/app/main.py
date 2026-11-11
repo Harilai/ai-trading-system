@@ -17,6 +17,7 @@ from .providers.twelve_data import TwelveDataProvider
 from .providers.base import AssetClass
 from .instrument_catalog import InstrumentCatalog, InstrumentCatalogError
 from .equity_research import EquityEtfResearchAgent
+from .equity_exits import EquityExitMonitor
 from .providers.registry import ProviderRegistry
 from .scout import ScoutAgent
 from .strategy_research import StrategyResearchAgent
@@ -32,7 +33,7 @@ from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
 from .accounts.position_snapshot_store import PositionSnapshotError, PositionSnapshotStore
 from .accounts.contracts import (
     AccountProviderError, AccountProviderNotFound, AccountProviderRegistry, AmbiguousAccountProvider,
-    UnsupportedAccountCapability,
+    InvalidAccountRequest, UnsupportedAccountCapability,
 )
 from .accounts.binance_demo import BinanceDemoError, BinanceSpotDemoExecution
 from .accounts.demo_order_store import (
@@ -200,7 +201,7 @@ def account_provider_balances(
         return account_provider_registry.fetch_balances(provider_id, account_alias)
     except AccountProviderNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
-    except AmbiguousAccountProvider as exc:
+    except (UnsupportedAccountCapability, AmbiguousAccountProvider) as exc:
         raise HTTPException(409, str(exc)) from exc
     except AccountProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
@@ -210,15 +211,20 @@ def account_provider_balances(
 def account_provider_positions(
     provider_id: str,
     account_alias: str | None = None,
+    market_type: str | None = Query(default=None),
     x_agent_token: str | None = Header(default=None),
 ):
     require_order_control_token(x_agent_token)
     try:
-        return account_provider_registry.fetch_positions(provider_id, account_alias)
+        return account_provider_registry.fetch_positions(
+            provider_id, account_alias, market_type=market_type,
+        )
     except AccountProviderNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
     except (UnsupportedAccountCapability, AmbiguousAccountProvider) as exc:
         raise HTTPException(409, str(exc)) from exc
+    except InvalidAccountRequest as exc:
+        raise HTTPException(422, str(exc)) from exc
     except AccountProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
 
@@ -635,16 +641,21 @@ def account_snapshot_detail(
 def create_account_position_snapshot(
     provider_id: str,
     account_alias: str | None = None,
+    market_type: str | None = Query(default=None),
     x_agent_token: str | None = Header(default=None),
 ):
     require_order_control_token(x_agent_token)
     try:
-        observed = account_provider_registry.fetch_positions_snapshot(provider_id, account_alias)
+        observed = account_provider_registry.fetch_positions_snapshot(
+            provider_id, account_alias, market_type=market_type,
+        )
         return position_snapshot_store.record_snapshot(observed)
     except AccountProviderNotFound as exc:
         raise HTTPException(404, str(exc)) from exc
     except (AmbiguousAccountProvider, UnsupportedAccountCapability) as exc:
         raise HTTPException(409, str(exc)) from exc
+    except InvalidAccountRequest as exc:
+        raise HTTPException(422, str(exc)) from exc
     except AccountProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
     except PositionSnapshotError as exc:
@@ -1377,12 +1388,17 @@ equity_research_agent = (
     )
     if settings.twelve_data_api_key else None
 )
+equity_exit_monitor = (
+    EquityExitMonitor(market.get("twelve_data"), portfolio)
+    if settings.twelve_data_api_key else None
+)
 agent_worker = AutonomousAgent(
     agent_store,
     scout=scout,
     chief=chief,
     portfolio=portfolio,
     equity_research=equity_research_agent,
+    equity_exit_monitor=equity_exit_monitor,
     demo_reconciler=demo_order_reconciler,
 )
 

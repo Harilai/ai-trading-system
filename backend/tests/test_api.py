@@ -1670,6 +1670,85 @@ def test_generic_account_snapshot_route_rejects_trading_enabled_accounts(monkeyp
     assert "read-only" in response.json()["detail"]
 
 
+def test_generic_account_positions_route_requires_market_scope_and_returns_unknown_coverage(monkeypatch):
+    from app.accounts.contracts import AccountProviderRegistry
+
+    headers = configure_order_auth(monkeypatch)
+
+    class MultiMarketPositionProvider:
+        def describe(self):
+            return {
+                "provider_id": "test:multi-market",
+                "account_alias": "portfolio",
+                "venue_type": "broker",
+                "market_types": ["spot", "cash"],
+                "environment": "production",
+                "configured": True,
+                "balances": False,
+                "positions": True,
+                "order_management": False,
+                "order_submission": False,
+                "order_cancellation": False,
+                "reconciliation": False,
+                "read_only_connector": True,
+                "transfers": False,
+                "withdrawals": False,
+                "wallet_signing": False,
+                "account_key_permissions_verified": False,
+            }
+
+        def fetch_positions(self):
+            return [
+                {
+                    "instrument_id": "venue:spot:BTC", "symbol": "BTC",
+                    "asset_class": "crypto", "market_type": "spot",
+                    "quantity": "0.25", "side": "long", "quote_currency": "USD",
+                },
+                {
+                    "instrument_id": "venue:cash_equity:AAPL", "symbol": "AAPL",
+                    "asset_class": "equity", "market_type": "cash",
+                    "quantity": "2", "side": "long", "quote_currency": "USD",
+                },
+            ]
+
+    registry = AccountProviderRegistry()
+    registry.register(MultiMarketPositionProvider())
+    monkeypatch.setattr("app.main.account_provider_registry", registry)
+
+    unauthorized = client.get("/api/accounts/test:multi-market/positions?market_type=spot")
+    assert unauthorized.status_code == 401
+
+    ambiguous = client.get(
+        "/api/accounts/test:multi-market/positions",
+        headers=headers,
+    )
+    assert ambiguous.status_code == 422
+
+    balances = client.get(
+        "/api/accounts/test:multi-market/balances",
+        headers=headers,
+    )
+    assert balances.status_code == 409
+
+    spot = client.get(
+        "/api/accounts/test:multi-market/positions?market_type=spot",
+        headers=headers,
+    )
+    assert spot.status_code == 200
+    assert spot.json()["market_type"] == "spot"
+    assert spot.json()["coverage_status"] == "unknown"
+    assert spot.json()["timestamp_source"] == "retrieved_at"
+    assert spot.json()["retrieved_at"] == spot.json()["fetched_at"]
+    assert [item["symbol"] for item in spot.json()["positions"]] == ["BTC"]
+
+    cash = client.get(
+        "/api/accounts/test:multi-market/positions?market_type=cash",
+        headers=headers,
+    )
+    assert cash.status_code == 200
+    assert cash.json()["market_type"] == "cash"
+    assert [item["symbol"] for item in cash.json()["positions"]] == ["AAPL"]
+
 def test_position_snapshot_api_requires_owner_token(monkeypatch):
     monkeypatch.setattr("app.main.settings.agent_control_token", "test-control-token")
     response = client.get("/api/accounts/positions/snapshots")
@@ -1705,7 +1784,7 @@ def test_position_snapshot_api_persists_only_capability_checked_snapshot(monkeyp
                 "account_alias": "account-1",
                 "venue_type": "exchange",
                 "environment": "demo",
-                "market_types": ["spot"],
+                "market_types": ["spot", "cash"],
                 "configured": True,
                 "balances": True,
                 "positions": True,
@@ -1733,12 +1812,12 @@ def test_position_snapshot_api_persists_only_capability_checked_snapshot(monkeyp
                 "balances": [],
             }
 
-        def fetch_positions_snapshot(self):
+        def fetch_positions_snapshot(self, *, market_type="spot"):
             return {
                 "provider_id": "test:positions",
                 "account_alias": "account-1",
                 "environment": "demo",
-                "market_type": "spot",
+                "market_type": market_type,
                 "fetched_at": datetime.now(timezone.utc).isoformat(),
                 "read_only": True,
                 "execution_enabled": False,
@@ -1748,7 +1827,7 @@ def test_position_snapshot_api_persists_only_capability_checked_snapshot(monkeyp
                     "instrument_id": "test:spot:BTC/EUR",
                     "symbol": "BTC/EUR",
                     "asset_class": "crypto",
-                    "market_type": "spot",
+                    "market_type": market_type,
                     "quantity": "0.1",
                     "side": "long",
                     "quote_currency": "EUR",
@@ -1765,8 +1844,14 @@ def test_position_snapshot_api_persists_only_capability_checked_snapshot(monkeyp
     store = PositionSnapshotStore(str(tmp_path / "position-api.db"))
     monkeypatch.setattr("app.main.position_snapshot_store", store)
 
-    response = client.post(
+    ambiguous = client.post(
         "/api/accounts/test:positions/positions/snapshots?account_alias=account-1",
+        headers=headers,
+    )
+    assert ambiguous.status_code == 422
+
+    response = client.post(
+        "/api/accounts/test:positions/positions/snapshots?account_alias=account-1&market_type=spot",
         headers=headers,
     )
     assert response.status_code == 201

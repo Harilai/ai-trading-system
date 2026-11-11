@@ -7,14 +7,18 @@ Provide a venue-independent account boundary without merging accounts, environme
 ## Contract layers
 
 - `AccountCapabilities`: venue, environment, supported market types, balances, positions, order management/submission/cancellation, reconciliation, read-only connector mode, transfers, withdrawals, wallet signing and whether key permissions have actually been verified.
-- `AccountBalance` / `AccountBalanceSnapshot`: canonical asset codes and decimal-string free/used/total amounts, account identity, market type, environment, timestamp and explicit permission flags.
+- `AccountBalance` / `AccountBalanceSnapshot`: canonical asset codes and decimal-string free/used/total amounts, account identity, market type, environment, timestamp and explicit permission flags. A connector may be position-only; unsupported balance reads return a capability conflict rather than blocking registration.
 - `AccountPosition`: normalized instrument identity, quantity/side, quote currency, entry/mark price, market value and unrealized P&L.
-- `AccountOrder`: normalized client/exchange IDs, instrument, side/type/status, requested/filled/remaining quantities, average fill and quote currency.
-- `AccountBalanceProvider`, `PositionProvider` and `OrderReconciliationProvider`: capability-specific protocols. A provider must not imply support for methods it does not implement.
+- `AccountOrder`: normalized order observation keyed by provider/account/environment/market, with exchange/client IDs, instrument, side/type/status, requested/filled/remaining quantities, average fill, quote currency and observation timestamp.
+- `AccountOrderFill`: immutable per-trade execution with stable trade/order IDs, exact decimal amount/price/cost, quote currency, timestamp and explicit fee amount/currency.
+- `AccountFillHistory`: timestamped provider response containing the explicit `history_complete` flag and fills scoped to one account/order. An empty or partial list is never treated as complete unless the provider says so.
+- `AccountOrderLedger`: SQLite evidence store for normalized order observations and individual fills. It is idempotent, scope-isolated and append-only for event/fill history; it does not submit or cancel orders.
+- `AccountOrderReconciliationService`: refreshes one known order through a read-only provider, verifies identity and stores normalized evidence. A missing order or mismatched identity never changes the stored order status; there is no scheduler or execution path.
+- `AccountBalanceProvider`, legacy `PositionProvider`, `PositionSnapshotProvider` and `OrderReconciliationProvider`: capability-specific protocols. `PositionSnapshotProvider.fetch_positions_snapshot(market_type=...)` returns one market-scoped snapshot with timezone-aware `fetched_at` and explicit `coverage_status=complete|partial`; multi-market providers must receive the requested market type. Order reconciliation returns typed `AccountOrder` and `AccountFillHistory` values; a provider must not imply support for methods it does not implement.
 
 ## Registry invariants
 
-1. Only configured providers with an explicit balance capability can be registered.
+1. A configured provider must declare at least one supported data capability (balances or positions) and implement the corresponding reader. Position-only providers may register without a fabricated balance reader.
 2. Accounts are keyed by provider ID and account alias; ambiguous IDs require the alias.
 3. A balance response must match the registered identity, market type and environment.
 4. Timestamps must be timezone-aware, no more than five minutes old and no more than one minute in the future.
@@ -28,13 +32,17 @@ Provide a venue-independent account boundary without merging accounts, environme
 - `ccxt:binance` / `binance-spot-readonly`: production Spot balance observation only; no order submission, transfers, withdrawals or wallet signing. The account key's actual permissions are not verified by the adapter.
 - Optional generic `ccxt:{exchange_id}` read-only adapter (Kraken by default): configured with `CCXT_READONLY_EXCHANGE_ID`, `CCXT_READONLY_API_KEY` and `CCXT_READONLY_API_SECRET`; it calls only CCXT `fetch_balance()` for Spot. It does not implement order, transfer or withdrawal methods.
 - `ccxt:binance-demo` / `binance-spot-demo`: virtual Demo account; limit-order submission/management and reconciliation are separately declared. It cannot be stored as a read-only snapshot.
+- `OrderReconciliationProvider` is currently a contract only; no account adapter is registered through it. Binance Spot Demo continues to use its separate, provider-specific order store and reconciler.
 - No generic broker, margin, futures, options, DEX or wallet account adapter is added by this phase.
 
 ## API
 
 - `GET /api/accounts`: existing account summary plus `normalized_accounts`.
 - `GET /api/accounts/{provider_id}/balances?account_alias=...`: normalized balances; owner token required.
+- `GET /api/accounts/{provider_id}/positions?account_alias=...&market_type=...`: normalized positions for an explicitly declared capability; `market_type` is mandatory for multi-market accounts. Legacy list-based providers return `coverage_status=unknown` and `timestamp_source=retrieved_at`; the response timestamp records local retrieval, not an exchange event time. Absence from a current read is not evidence of a flat account or a closed position. Owner token required.
 - `POST /api/accounts/{provider_id}/snapshots?account_alias=...`: immutable balance snapshot for explicitly read-only Spot accounts only; owner token required.
+- `POST /api/accounts/{provider_id}/positions/snapshots?account_alias=...&market_type=...`: immutable external-position snapshot scoped to one market type (required for multi-market accounts), with explicit complete/partial coverage; owner token required.
+- `GET /api/accounts/positions/snapshots` and `GET /api/accounts/positions/snapshots/{snapshot_id}`: authenticated history and detail for external position snapshots.
 - Existing Binance-specific endpoints remain available for compatibility.
 
-The snapshot store remains Spot-balance-only. Position and order contracts are foundations for later adapters; they do not imply that positions or orders are available from every current account provider.
+The balance snapshot store remains Spot-balance-only. Persistent external position history uses a separate append-only ledger with account/environment/market isolation, exact decimals, content hashes, previous-snapshot links and explicit complete/partial coverage. A partial observation never marks an omitted position absent. Position snapshot capture requires a read-only provider with no order, transfer, withdrawal or wallet-signing capabilities; no current production adapter declares position support.
