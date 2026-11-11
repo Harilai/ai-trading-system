@@ -308,6 +308,11 @@ class HistoricalQuoteStore:
                             "UPDATE historical_quotes SET retrieved_at_ms=? WHERE id=?",
                             (retrieved_ms, legacy["id"]),
                         )
+                db.execute(
+                    "UPDATE historical_quotes SET retrieved_at_ms=0 "
+                    "WHERE retrieved_at_ms IS NULL OR retrieved_at_ms<timestamp_ms "
+                    "OR typeof(retrieved_at_ms)!='integer'"
+                )
             else:
                 db.execute(
                     "CREATE TABLE historical_quotes ("
