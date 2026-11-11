@@ -80,10 +80,11 @@ class ProviderRegistry:
                     })
                     continue
                 if requested_classes and not requested_classes.intersection(caps.asset_classes):
-                    failures.append({
-                        "provider_id": provider.provider_id,
-                        "reason": "Requested asset classes are not supported by this provider",
-                    })
+                    if requested_providers:
+                        failures.append({
+                            "provider_id": provider.provider_id,
+                            "reason": "Requested asset classes are not supported by this provider",
+                        })
                     continue
                 provider_instruments = provider.discover_markets(asset_classes)
                 if not isinstance(provider_instruments, (list, tuple)):
