@@ -253,3 +253,27 @@ def test_quote_store_rejects_event_timestamp_after_receipt_timestamp(tmp_path):
             1_700_000_000_001, "100", "101",
             timestamp_source="exchange", retrieved_at_ms=1_700_000_000_000,
         )
+
+
+def test_quote_store_migration_rejects_timezone_naive_receipt_timestamps(tmp_path):
+    path = str(tmp_path / "legacy-naive.sqlite")
+    with sqlite3.connect(path) as db:
+        db.execute(
+            "CREATE TABLE historical_quotes ("
+            "provider_id TEXT NOT NULL, instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, "
+            "timestamp_ms INTEGER NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL, "
+            "timestamp_source TEXT NOT NULL, source TEXT NOT NULL, retrieved_at TEXT NOT NULL, "
+            "PRIMARY KEY(provider_id,instrument_id,timestamp_ms))"
+        )
+        db.execute(
+            "INSERT INTO historical_quotes VALUES(?,?,?,?,?,?,?,?,?)",
+            (
+                "ccxt:kraken", "ccxt:kraken:spot:BTC/EUR", "BTC/EUR",
+                1_700_000_000_000, "100", "101", "exchange", "public_ticker",
+                "2023-11-14T22:14:20",
+            ),
+        )
+
+    store = HistoricalQuoteStore(path)
+    assert store.get("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR") == []
+    assert store.coverage("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR")["invalid_observations"] == 1
