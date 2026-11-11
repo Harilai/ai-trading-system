@@ -318,6 +318,7 @@ class AccountSnapshotStore:
         *,
         provider_id: str | None = None,
         account_alias: str | None = None,
+        environment: str | None = None,
         limit: int = 50,
     ) -> list[dict]:
         if not isinstance(limit, int) or not 1 <= limit <= 200:
@@ -330,11 +331,14 @@ class AccountSnapshotStore:
         if account_alias:
             clauses.append("account_alias=?")
             params.append(account_alias)
+        if environment:
+            clauses.append("environment=?")
+            params.append(environment.strip().lower())
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(limit)
         with self.connect() as db:
             rows = db.execute(
-                f"SELECT snapshot_id,provider_id,account_alias,market_type,fetched_at,recorded_at,"
+                f"SELECT snapshot_id,provider_id,account_alias,environment,market_type,fetched_at,recorded_at,"
                 f"previous_snapshot_id,reconciliation_status,change_count,balance_count,content_hash "
                 f"FROM account_snapshots {where} "
                 f"ORDER BY fetched_at DESC,recorded_at DESC,snapshot_id DESC LIMIT ?",
