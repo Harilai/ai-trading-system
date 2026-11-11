@@ -29,7 +29,7 @@ SIGNED_METRICS = {"equity", "last_equity"}
 ALL_METRICS = REQUIRED_METRICS + OPTIONAL_METRICS
 _IDENTIFIER = re.compile(r"[A-Za-z0-9._:/-]{1,128}")
 _CURRENCY = re.compile(r"[A-Z]{3,8}")
-_DECIMAL = re.compile(r"-?\\d+(?:\\.\\d+)?")
+_DECIMAL = re.compile(r"-?\d+(?:\.\d+)?")
 
 
 def _decimal(value: Any, field: str, *, signed: bool) -> str:
