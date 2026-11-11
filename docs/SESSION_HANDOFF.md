@@ -188,7 +188,7 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 5. Añadir tests de cuenta equivocada, entorno equivocado, capabilities parciales, estado desconocido, desconexión, snapshots incompletos y mismatch de reconciliación.
 6. Mantener registry vacío y fail-closed hasta que exista adaptador validado. No LIVE.
 
-## Estado de ramas — actualizar tras documentación
+## Estado de ramas — verificado tras documentación
 
 - PR #132 fusionada en main.
-- La sincronización de demo debe apuntar al SHA final de main posterior a los commits documentales de esta sesión.
+- `main` y `demo` sincronizadas y compare verificado como `identical` tras los commits documentales de esta sesión; actualizar el SHA exacto al inicio de la próxima conversación.
