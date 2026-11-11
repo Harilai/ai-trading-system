@@ -14,6 +14,7 @@ class InstrumentEligibility:
     asset_class: str
     market_type: str
     market_data_available: bool
+    market_data_authentication_required: bool
     execution_capability: str
     execution_adapter_configured: bool
     missing_requirements: tuple[str, ...]
@@ -58,6 +59,7 @@ def evaluate_instrument_eligibility(
             asset_class=asset_class,
             market_type=market_type,
             market_data_available=False,
+            market_data_authentication_required=False,
             execution_capability="unknown",
             execution_adapter_configured=False,
             missing_requirements=("provider_configuration",),
@@ -85,15 +87,31 @@ def evaluate_instrument_eligibility(
     if parsed_market_type is not None and parsed_market_type not in capabilities.market_types:
         blockers.append("Provider does not declare support for this market type")
 
-    if not capabilities.public_market_data and not capabilities.requires_authentication_for_market_data:
+    market_data_available = capabilities.public_market_data
+    if not market_data_available:
         missing.append("market_data_access")
-    market_data_available = capabilities.public_market_data or capabilities.requires_authentication_for_market_data
 
     if not capabilities.order_management:
         blockers.append("Provider is data-only or does not declare order management")
         execution_capability = "unsupported"
     else:
         execution_capability = "supported"
+        if not any((
+            capabilities.supports_market_orders,
+            capabilities.supports_limit_orders,
+            capabilities.supports_stop_orders,
+        )):
+            blockers.append("Provider declares no supported order type")
+        for flag, label in (
+            ("supports_client_order_id", "client order idempotency"),
+            ("supports_partial_fills", "partial-fill handling"),
+            ("supports_cancel", "order cancellation"),
+            ("supports_reconciliation", "execution reconciliation"),
+            ("balances", "account balances"),
+            ("positions", "account positions"),
+        ):
+            if not getattr(capabilities, flag):
+                blockers.append(f"Provider does not declare {label}")
         if not execution_adapter_configured:
             blockers.append("No execution adapter is registered for this provider")
             execution_capability = "not_configured"
@@ -145,8 +163,11 @@ def evaluate_instrument_eligibility(
     if asset_class in {AssetClass.EQUITY.value, AssetClass.ETF.value, AssetClass.INDEX.value}:
         if not isinstance(instrument.get("session_timezone"), str) or not instrument["session_timezone"].strip():
             missing.append("session_timezone")
-    if asset_class == AssetClass.FUTURE.value and not instrument.get("expiry"):
-        missing.append("expiry")
+    if asset_class == AssetClass.FUTURE.value:
+        if not instrument.get("expiry"):
+            missing.append("expiry")
+        if not isinstance(instrument.get("contract_type"), str) or not instrument["contract_type"].strip():
+            missing.append("contract_type")
 
     if blockers:
         hard_unsupported = any(
@@ -176,6 +197,7 @@ def evaluate_instrument_eligibility(
         asset_class=asset_class,
         market_type=market_type,
         market_data_available=market_data_available,
+        market_data_authentication_required=capabilities.requires_authentication_for_market_data,
         execution_capability=execution_capability,
         execution_adapter_configured=execution_adapter_configured,
         missing_requirements=tuple(sorted(set(missing))),
