@@ -658,7 +658,7 @@ def test_walk_forward_liquidation_cannot_borrow_quotes_from_later_windows():
         0,
         3,
         quote_snapshots=quotes,
-        max_quote_age_ms=10_000_000,
+        max_quote_age_ms=3_600_000,
         candle_interval_ms=3_600_000,
     )
 
