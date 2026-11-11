@@ -2,7 +2,7 @@
 
 > Continuity between ChatGPT sessions: read [`docs/SESSION_HANDOFF.md`](SESSION_HANDOFF.md) for project state and [`docs/AGENT_WORKFLOW.md`](AGENT_WORKFLOW.md) for the mandatory multi-agent development method.
 
-Actualizado: 2026-11-11 (bloque de sincronización incremental y consumo de histórico persistido en desarrollo; base verificada main=demo en 80cc8ff1f502a254821ef9f7691074ad0643e7c9). Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
+Actualizado: 2026-11-11 (PR #150 integrada; scheduler incremental de histórico e integración con Strategy Research). Este documento distingue lo implementado y validado de lo que sigue pendiente. Una tarea no se considera terminada solo por existir código o pruebas: debe superar CI y revisión funcional.
 
 ## Completado — promoción de snapshots y reconciliación de ramas (#99–#106)
 
@@ -372,13 +372,13 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - La ingesta es idempotente. Las velas provisionales pueden actualizarse; las velas finalizadas no se sobrescriben ni se degradan a provisionales. Una discrepancia final genera conflicto y rollback transaccional.
 - `PaginatedCandleCollector` pagina por `since`/timestamp, valida orden y progreso, limita páginas y devuelve cursor de reanudación si el rango queda incompleto.
 - API autenticada `POST /api/market-data/history/sync` y `GET /api/market-data/history`; sync exige instrumento activo del catálogo del proveedor y reutiliza el rate limiter de CCXT.
-- CI del head exacto del PR #146 (`47dcb8f6a8b1f47cc4a21875363b48b7b3fff1f2`): 741 tests Python passed, 1 warning; Docker build/runtime hardening passed. PR #148: 744 tests Python passed, 1 warning; Docker build/runtime hardening passed. CI post-merge de #148 pendiente de comprobación final.
-- No se activa sincronización automática ni se habilitan nuevas estrategias/gates. La implementación actual de sync está conectada al adaptador CCXT; otros proveedores requieren un contrato de paginación explícito.
+- CI PR #146: 741 tests Python passed, 1 warning; Docker build/runtime hardening passed. PR #148: 744 tests Python passed, 1 warning; Docker build/runtime hardening passed. CI post-merge #148 success.
+- PR #150 añade sincronización incremental opt-in con worker CCXT público, cursor persistente, reanudación y refresco de vela provisional. Otros proveedores requieren un contrato de paginación explícito. No se habilita por defecto ni se cambian gates de estrategia.
 - LIVE permanece deshabilitado y no se han ejecutado operaciones financieras.
 
-## Bloque en desarrollo — sincronización incremental e integración de histórico
+## Completado — sincronización incremental e integración de histórico (PR #150)
 
-- Rama: feat/incremental-historical-data-scheduler.
+- PR #150 integrada por squash; head validado 9e5d139b97ce7c0cc102fd5912b9412d57185389; merge SHA 89bb3e76e3bab21ae2b98496f0fc54b801ec0f93. main y demo sincronizadas al mismo SHA.
 - Nuevo worker independiente app.historical_data_scheduler, ejecutable como servicio Compose opt-in con perfil history-sync; el servicio no arranca con el Compose por defecto.
 - Doble opt-in: HISTORICAL_DATA_SYNC_ENABLED=false por defecto y allowlist HISTORICAL_DATA_SYNC_TARGETS explícita. Formato por destino: provider_id,symbol,timeframe; solo ccxt:<exchange> en esta iteración.
 - El worker usa únicamente CCXT público, catálogo de instrumentos activos EUR Spot, rate limiter del exchange y ejecución secuencial con máximo de páginas por destino/ciclo. No recibe claves de cuenta ni conecta al ExecutionRouter.
@@ -387,5 +387,14 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - Scout mantiene la muestra reciente del proveedor para Charts y usa el histórico persistido más profundo, solo finalizado, para Strategy Research. Si no hay muestra persistida más profunda o el store falla, usa el fallback reciente y registra la procedencia.
 - Nuevo endpoint autenticado GET /api/market-data/history/scheduler; nuevo runbook docs/HISTORICAL_DATA_SYNC.md; configuración añadida a .env.example.
 - La sincronización sigue restringida a CCXT y a los instrumentos que exponga CcxtSpotProvider (EUR Spot). No se ha activado por defecto ni se ha ejecutado contra proveedores reales.
-- Validación CI pendiente para el head final de esta rama. No declarar integrado hasta pasar tests Python y Docker build/runtime hardening.
+- CI del head exacto: 760 tests Python passed, 1 warning; Docker build/runtime hardening passed. CI post-merge main run 43073260919: ambos jobs success. No se ejecutaron tests locales ni sincronización real contra un exchange.
 - LIVE continúa deshabilitado; este worker solo descarga datos públicos.
+
+
+### Siguiente prioridad de Strategy Research
+
+1. Validar paginación, límites máximos y cadencia de cada exchange CCXT antes de ampliar la lista de targets.
+2. Diagnosticar huecos y cobertura con calendarios/sesiones por venue; no aplicar heurísticas crypto 24/7 a equities/FX.
+3. Medir suficiencia OOS y walk-forward con los históricos persistidos y separar falta de muestra de rentabilidad negativa.
+4. Incorporar spread y costes observables; añadir después estrategias estructuralmente distintas con control de selección múltiple.
+5. Validar en ventanas holdout independientes antes de cambiar gates o habilitar más riesgo.
