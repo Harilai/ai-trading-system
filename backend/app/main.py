@@ -1738,6 +1738,7 @@ def get_historical_market_data_scheduler_status(
         "enabled": settings.historical_data_sync_enabled,
         "targets_configured": bool(settings.historical_data_sync_targets.strip()),
         "interval_seconds": settings.historical_data_sync_interval_seconds,
+        "retry_seconds": settings.historical_data_sync_retry_seconds,
         "lookback_days": settings.historical_data_sync_lookback_days,
         "targets": historical_sync_state_store.list_targets(),
         "storage": historical_candle_store.storage_stats(),
