@@ -396,15 +396,6 @@
               "Fee "+metricPercent(costModel.fee_rate_per_side)+" por lado · slippage "+metricPercent(costModel.slippage_rate_per_side)+" por lado",
               "Fee/slippage configurados · spread "+String(costModel.spread_method||"no modelado")
             ));
-            if(oos.spread_execution_count!==undefined){
-              const spreadCoverage=oos.spread_coverage_complete===true;
-              node.appendChild(dataItem(
-                "Cobertura spread observado",
-                String(oos.spread_observed_execution_count??0)+"/"+String(oos.spread_execution_count??0)+" ejecuciones con bid/ask",
-                "Media "+metricPercent(oos.average_observed_spread_fraction)+" · sin dato "+String(oos.spread_missing_execution_count??0)+" · "+(spreadCoverage?"cobertura completa":"cobertura incompleta; promoción bloqueada"),
-                spreadCoverage?"state-good":"state-warn"
-              ));
-            }
           }
           const quality=result.data_quality||{};
           if(quality.bars!==undefined){
