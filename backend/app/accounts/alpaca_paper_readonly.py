@@ -39,15 +39,13 @@ class AlpacaPaperReadOnlyAccount:
             raise AlpacaPaperAccountError("Alpaca Paper API secret is required")
         if not isinstance(account_alias, str) or not _IDENTIFIER.fullmatch(account_alias.strip()):
             raise AlpacaPaperAccountError("Alpaca Paper account alias is invalid")
-        if expected_account_id is not None and (
-            not isinstance(expected_account_id, str) or not _IDENTIFIER.fullmatch(expected_account_id.strip())
-        ):
-            raise AlpacaPaperAccountError("Expected Alpaca account ID is invalid")
+        if not isinstance(expected_account_id, str) or not _IDENTIFIER.fullmatch(expected_account_id.strip()):
+            raise AlpacaPaperAccountError("Expected Alpaca Paper account ID is required and must be valid")
         if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)) or not 0 < timeout_seconds <= 60:
             raise AlpacaPaperAccountError("Alpaca request timeout is invalid")
 
         self.account_alias = account_alias.strip()
-        self.expected_account_id = expected_account_id.strip() if expected_account_id else None
+        self.expected_account_id = expected_account_id.strip()
         self._client = client or httpx.Client(
             base_url=PAPER_API_BASE_URL,
             headers={
@@ -133,7 +131,7 @@ class AlpacaPaperReadOnlyAccount:
         account_id = account.get("id")
         if not isinstance(account_id, str) or not _IDENTIFIER.fullmatch(account_id):
             raise AlpacaPaperAccountError("Alpaca Paper account identity is missing or invalid")
-        if self.expected_account_id and account_id != self.expected_account_id:
+        if account_id != self.expected_account_id:
             raise AlpacaPaperAccountError("Alpaca Paper account identity does not match configuration")
         return account_id
 
