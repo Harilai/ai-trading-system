@@ -37,6 +37,8 @@ class RiskManager:
                 or snapshot.get("remote_identity_verified") is not False
             ):
                 return RiskDecision(accepted=False, reason="Account snapshot identity evidence is invalid")
+            if account_readiness.get("blockers") != []:
+                return RiskDecision(accepted=False, reason="Account preflight contains unresolved blockers")
             if not isinstance(reconciliation, dict) or (
                 reconciliation.get("status") != "clear"
                 or reconciliation.get("reconciliation_required") != 0
