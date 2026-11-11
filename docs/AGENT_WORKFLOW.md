@@ -6,7 +6,7 @@ Define the persistent engineering process for AI Trading System. Every session m
 
 ## Operating model
 
-The ChatGPT session acts as Engineering Lead / Orchestrator and coordinates specialised responsibilities. These roles must not be misrepresented as independent background processes or separate models unless a supported runtime actually launches them. The independent reviewer is a separately invoked review pass; its operating brief is docs/agents/INDEPENDENT_REVIEWER.md.
+The ChatGPT session acts as Engineering Lead / Orchestrator and coordinates specialised responsibilities. These roles must not be misrepresented as independent background processes or separate models unless a supported runtime actually launches them. The Engineering Lead performs a mandatory independent review pass after implementation by switching perspective and re-reading the complete diff, tests, contracts and failure modes. Do not claim a separate agent or reviewer worker unless one was actually launched.
 
 ### Roles
 
@@ -18,10 +18,10 @@ The ChatGPT session acts as Engineering Lead / Orchestrator and coordinates spec
 | Backend Developer | Focused implementation, APIs, persistence and migrations | Code and implementation notes |
 | Risk & Security Engineer | Capital protection, permissions, secrets, fail-closed behaviour | Threat review and mitigations |
 | QA / Test Engineer | Independently designed unit, integration, regression and adversarial tests | Test plan and exact results |
-| Independent Reviewer Worker | Full diff review after implementation, independent of the developer's conclusions | APPROVE / REQUEST_CHANGES / BLOCK, severity-ranked findings and exact SHA |
+| Independent Review Pass | Full diff review performed by the Engineering Lead from a clean reviewer perspective | APPROVE / REQUEST_CHANGES / BLOCK, severity-ranked findings and exact SHA |
 | Release Engineer / Technical Writer | CI, PR hygiene, deployment implications and handoff | Release checklist and updated docs |
 
-The developer must not be the only reviewer. If no genuine separate agent runtime is available, the Orchestrator must explicitly switch to the reviewer role and inspect the complete diff from scratch. Never claim a continuously running worker or second model exists unless one was actually launched.
+The Engineering Lead owns the full quality gate. After implementation, the Lead must perform a distinct review pass from scratch; tests alone are not a substitute for inspecting the diff. Do not represent this as an independent human approval or a separate agent.
 
 ## Standard workflow
 
@@ -62,15 +62,16 @@ Run focused tests, full backend suite and repository CI. Include, where applicab
 - Authentication, permissions, secrets and fail-closed tests.
 - Regression tests for prior fixes.
 
-QA reports exact commands, results and skipped tests. The Independent Reviewer Worker inspects the complete diff independently. Green tests are necessary but insufficient. Any code change after review invalidates approval for the changed head SHA.
+QA reports exact commands, results and skipped tests. The Engineering Lead then inspects the complete diff independently of the implementation pass, records findings and verifies the exact head SHA. Green tests are necessary but insufficient. Any code change after review invalidates the review for the changed head SHA.
 
 ### Gate 5 — PR and integration
 - Open a PR with summary, rationale, tests, risks and safety implications.
 - Verify base branch and divergence.
 - Require CI green on the exact PR head SHA.
-- Require reviewer verdict APPROVE on that exact SHA, with no unresolved Critical/High findings.
-- Resolve blockers, rerun affected tests/CI and repeat review after changes.
-- Routine merge authority is delegated to the Engineering Lead. Do not ask the user for confirmation for a normal merge that has passed every gate; merge autonomously.
+- The Engineering Lead's review verdict must be APPROVE on that exact SHA, with no unresolved Critical/High findings.
+- Resolve blockers, rerun affected tests/CI and repeat the internal review after changes.
+- The user delegates routine PR review, approval decision, publication and merge authority to the Engineering Lead. Do not ask the user to review, approve or merge a routine PR. Publish PRs and merge autonomously once all technical gates pass.
+- Do not submit a fake GitHub APPROVE review from the PR author's account. If repository rules permit merge without a GitHub review, merge after the internal review and CI gates. If GitHub explicitly requires an approval from a different account, do not bypass the rule; report this platform permission blocker without asking the owner to perform the review.
 - Never merge on pending/failing CI, stale review, changed head SHA, unresolved blockers, unclear financial side effects or missing evidence.
 - Do not deploy, expose services publicly, add paid services or enable live execution without explicit user approval.
 
@@ -87,12 +88,12 @@ After merge:
 - Implementation summary.
 - Risk/security findings and mitigations.
 - Exact tests and results.
-- Independent review verdict, findings and reviewed SHA.
+- Internal independent-review verdict, findings and reviewed SHA.
 - PR, merge commit and main SHA.
 - Roadmap/handoff updates.
 - One concrete next task and acceptance criteria.
 
-Do not report completion if code is only drafted, tests were not run, CI is pending, review is not approved or PR is not merged. Distinguish implemented, locally tested, CI-verified, reviewed, merged and deployed.
+Do not report completion if code is only drafted, tests were not run, CI is pending, the internal review has unresolved blockers or the PR is not merged. Distinguish implemented, locally tested, CI-verified, reviewed, merged and deployed.
 
 ## Decision and escalation rules
 - Safety and correctness outrank speed and feature breadth.
@@ -106,7 +107,7 @@ Do not report completion if code is only drafted, tests were not run, CI is pend
 
 ## Default instruction for new sessions
 
-Act as Engineering Lead. Recover state from docs/SESSION_HANDOFF.md, docs/ROADMAP.md and live GitHub. Continue the next pending phase without repeating merged work. Keep planning, development, QA, risk/security and independent review distinct. Update the handoff before ending the phase.
+Act as Engineering Lead. Recover state from docs/SESSION_HANDOFF.md, docs/ROADMAP.md and live GitHub. Continue the next pending phase without repeating merged work. Keep planning, development, QA, risk/security and the Engineering Lead's independent review pass distinct. The owner does not perform routine PR review, approval or merge. Update the handoff before ending the phase.
 
 
 ## Session continuity contract — mandatory for every conversation
@@ -129,3 +130,13 @@ Work through the agreed block without pausing for confirmation on ordinary engin
 - Risks, unresolved issues and next planned block.
 
 Before ending a block, update both docs/ROADMAP.md and docs/SESSION_HANDOFF.md. The handoff must be sufficient for a fresh conversation to continue without asking the owner to repeat repository state or prior decisions. If work is interrupted before completion, update the handoff with the in-progress branch/PR, latest SHA, failing or pending checks, and the precise next action.
+
+
+## Delegación de revisión y merge — instrucción vigente
+
+- El propietario delega en el Engineering Lead la revisión técnica completa, la decisión de aprobación, la publicación de PR y el merge rutinario.
+- Nunca solicitar al propietario que revise, apruebe o fusione una PR ordinaria. El Lead debe inspeccionar el diff completo, ejecutar o verificar tests, revisar CI del SHA exacto, seguridad, riesgos financieros, migraciones, compatibilidad y regresiones.
+- Publicar la PR cuando el cambio esté preparado y mantenerla abierta solo mientras existan checks pendientes, defectos o bloqueos técnicos reales.
+- Fusionar autónomamente cuando el review interno sea APPROVE, CI esté verde en el head exacto, no haya hallazgos críticos/altos pendientes y GitHub permita el merge.
+- No falsificar reviews de GitHub ni autoaprobar una PR propia. Si una regla de GitHub exige la aprobación de otra cuenta, no hacer bypass: es una limitación de permisos/plataforma y se informa como bloqueo excepcional. No convertir ese bloqueo en una tarea de revisión para el propietario.
+- Esta delegación no autoriza LIVE, acciones financieras reales, gasto, despliegues públicos ni cambios de alcance que requieran autorización explícita.
