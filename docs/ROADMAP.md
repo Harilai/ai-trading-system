@@ -283,3 +283,16 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - CI sobre head exacto `a204cdd410c64364ab3a45744a4bbdee2462187b`: Python **661 passed, 1 warning**; Docker build/runtime hardening y Compose correctos.
 - Limitación deliberada: el registro de ejecución de la aplicación sigue vacío; Binance Demo especializado y Alpaca read-only no se registran como adaptadores genéricos. Por tanto, ningún instrumento queda habilitado por este cambio. LIVE continúa deshabilitado.
 - Siguiente: definir registro de adaptadores con scope de cuenta/entorno/venue y capabilities de ejecución independientes de market data; adaptar Binance Demo y PAPER mediante wrappers explícitos solo tras revisar sus contratos, sin fingir capacidades de balances/posiciones que no existan.
+
+## Execution adapter registry v2 — PR #133 (en curso)
+
+- Rama: `feat/scoped-execution-registry-v2`; PR: https://github.com/Harilai/ai-trading-system/pull/133.
+- Se añade `ExecutionAdapterRegistry` separado del `ExecutionRouter` legado, con scope completo `provider_id / venue_id / account_id / environment / market_type`.
+- Entornos explícitos y no heredables: MOCK, BACKTEST, PAPER, DEMO, TESTNET y LIVE.
+- Capacidades independientes con estados supported/unsupported/unknown/not_configured y evidencia con procedencia y timestamp. La elegibilidad de nuevas entradas requiere siempre idempotencia, fills parciales, cancelación, conciliación, balances y posiciones; evidencia ausente/futura/caducada (24 h por defecto) bloquea.
+- Añadido endpoint autenticado GET `/api/execution/registrations`; el inventario nunca serializa el objeto adaptador. El registro se mantiene vacío por defecto.
+- La API de elegibilidad no infiere una cuenta desde el catálogo ni mezcla capacidades de market data con ejecución: mantiene `execution_adapter_configured=false` hasta que se integre una identidad completa y verificada.
+- Binance Spot Demo permanece en su flujo dedicado; Alpaca continúa read-only; PAPER sigue siendo `PaperPortfolio`. Esta PR no crea wrappers ni cambia envío de órdenes.
+- CI del head anterior `348768e8943a373282b3966c4d49e3d3d11c5880`: Python y Docker/Compose/hardening pasaron. El head actual y su CI se deben consultar en PR #133 antes de aprobar/mergear.
+- Fallos previos de CI documentados y corregidos: primero faltaba hacer obligatorios balances/positions; después un test determinista usaba una ventana temporal incorrecta. No se ignoraron.
+- Siguiente: terminar revisión/CI de #133; después implementar wrappers explícitos para Binance Spot Demo y PAPER (sin falsificar interfaces), scope de cuenta verificado, preflight freshness/reconciliation gates y conexión del resultado al RiskManager. Preservar reducción de riesgo/emergencia. LIVE queda deshabilitado.
