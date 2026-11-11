@@ -44,6 +44,8 @@ def cash_positions(**overrides):
         "read_only": True,
         "execution_enabled": False,
         "withdrawals_enabled": False,
+        "transfers_enabled": False,
+        "wallet_signing_enabled": False,
         "coverage_status": "complete",
         "positions": [{
             "instrument_id": "alpaca:asset:abc",
@@ -138,3 +140,11 @@ def test_cash_capture_is_idempotent_and_append_only(stores):
                 "UPDATE coordinated_cash_account_snapshots SET capture_status='partial' WHERE capture_id=?",
                 (first["capture_id"],),
             )
+
+
+def test_cash_capture_rejects_missing_transfer_capability_flags(stores):
+    _, _, _, coordinated = stores
+    payload = cash_positions()
+    payload.pop("transfers_enabled")
+    with pytest.raises(CoordinatedCashSnapshotError, match="transfers and wallet signing"):
+        coordinated.record_snapshot("missing-capability", financial(), payload)
