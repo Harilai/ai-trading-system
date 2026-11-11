@@ -2,11 +2,11 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-> **Último cambio integrado:** PR #118 (adaptador Alpaca Paper read-only de posiciones) en `main`; PR #120 sincronizada a `demo`. ADR de semántica financiera Alpaca en preparación.
-> **`main`:** `f11c7f35ab0d2e8c0c937e5277aaeeb42d418ad8` (antes de esta rama documental)
-> **`demo`:** `23fa997a878da7fe7ba7735b2baa80f035f7a8d7`
+> **Último cambio integrado:** PR #123 (ADR de semántica financiera Alpaca) en `main`; PR #124 sincronizada a `demo`.
+> **`main`:** `05870aa8c3f10b75a8d1bf46dd4856df1a3575ae`
+> **`demo`:** `6445726293db4fd408bfa046b1b4d746bbeabc3e`
 > **Árboles:** divergencia histórica de commits; los ocho archivos del adaptador Alpaca y su documentación tienen blobs idénticos en `main` y `demo`.
-> **PR abiertas:** verificar estado en GitHub antes de iniciar un nuevo bloque.
+> **PR abiertas:** ninguna tras la integración de #123 y #124 (verificado 2026-11-11).
 > **Operación:** paper trading y Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
 ## Integraciones recientes verificadas
@@ -20,7 +20,7 @@
 - PR #118: adaptador Alpaca Paper read-only fusionado en `main` (SHA `d42b9fada02d60d7073bbc76171bd69c31a9e8a3`); CI exacta: 609 tests Python passed y Docker build/runtime hardening passed.
 - PR #120: sincronización del adaptador a `demo` (SHA `23fa997a878da7fe7ba7735b2baa80f035f7a8d7`); CI Python y Docker pasó. PR #119 se cerró como intento directo `main`→`demo` marcado dirty; #120 preservó commits exclusivos de demo y sincronizó solo ocho archivos.
 - CI de PR #113: 581 tests passed, 1 warning; Docker/Compose/non-root correctos en el head exacto `800f8fd63d87fb8f1c6e2ed5c5bc12adb926b0b0`. CI de sincronización #114 y #115 también pasó en sus respectivos heads.
-- No hay PR abiertas en la última consulta del 2026-11-11. No se ejecutaron pruebas locales en este entorno.
+- PR #123 y #124 integradas con CI Python y Docker exitosa; no hay PR abiertas tras su integración. No se ejecutaron pruebas locales en este entorno.
 - Las funcionalidades #78–#80 (contratos de órdenes/fills, ledger y completitud/reconciliación read-only), #99 (ledger de posiciones) y #100 (diagnósticos experimentales y salidas seguras) están integradas en `main` y `demo`.
 - No se ha ejecutado un preflight posterior a #109 contra el contenedor Binance Demo local. El problema original de asset key sigue pendiente de confirmar con evidencia del contenedor del propietario.
 
@@ -70,9 +70,9 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - No conecta snapshots a cartera, Chief, Risk Manager ni ejecución. El snapshot coordinado sigue limitado a `spot`; balances/cash y extensión a `cash` quedan como fase separada.
 
 
-## Semántica financiera Alpaca — ADR en preparación
+## Semántica financiera Alpaca — ADR integrado
 
-- Documento: `docs/ALPACA_ACCOUNT_FINANCIAL_SEMANTICS_ADR.md`.
+- Documento: `docs/ALPACA_ACCOUNT_FINANCIAL_SEMANTICS_ADR.md` (PR #123 en `main`, PR #124 en `demo`).
 - `cash` se modela como saldo de efectivo; `equity` como valor neto de la cuenta; `buying_power` como capacidad de compra dependiente de reglas/multiplicador. Nunca son intercambiables.
 - `portfolio_value` es equivalente/deprecado respecto a equity; no se suma dos veces.
 - `cash_withdrawable/transferable`, transferencias pendientes, valores de mercado, margen y fees son métricas independientes, no saldos fungibles.
