@@ -70,6 +70,14 @@ When the requested lookback exceeds a declared provider history cap, the worker 
 
 Kraken's 720-point limit is documented by [Kraken Support's Advanced API FAQ](https://support.kraken.com/en/articles/advanced-api-faq) and its [Spot OHLC endpoint reference](https://docs.kraken.com/api/docs/rest-api/get-ohlc-data). Do not apply this limit to other venues.
 
+## Bid/ask observations for spread-aware research
+
+During each Scout market scan, the system may persist a public best-bid/ask observation for a discovered instrument. Observations are append-only, provider/instrument scoped, decimal-normalized and retain both the quote timestamp and its provenance (`exchange` or `retrieved_at`). A missing or invalid bid/ask is not replaced with the last trade price and is never recorded as a zero spread.
+
+Research aligns each simulated fill with the latest quote whose timestamp is at or before that fill's execution timestamp. Quotes older than the configured freshness window are treated as missing. Walk-forward windows calculate their own liquidation timestamp; later-window quotes cannot be borrowed to price an earlier window. The full observed spread is split across both sides, charging half the spread on entry and half on exit. This is an explicit mid-reference approximation because OHLCV trade candles are not historical mid-price candles; fees and slippage remain separate cost components.
+
+Quote history is collected from the time the feature is enabled; this is not a historical quote backfill. Coverage therefore grows over time. Missing quote coverage is visible in research diagnostics and blocks strategy promotion. Experimental candidates remain paper-only and are not evidence of production profitability.
+
 ## Retention and storage
 
 Raw OHLCV is retained **indefinitely** in this phase. Automatic candle pruning is deliberately disabled because Strategy Research and future audit/reproducibility workflows depend on historical samples. Storage diagnostics report bar count, provisional count, series count and SQLite database/WAL/SHM size. A future retention change must first introduce an archive/export and recovery policy; it must not silently delete research history.
