@@ -36,6 +36,8 @@ def test_quote_store_persists_ordered_decimal_observations_and_provenance(tmp_pa
     assert rows[1]["timestamp_source"] == "exchange"
     assert store.coverage("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR") == {
         "observations": 2,
+        "invalid_observations": 0,
+        "total_observations": 2,
         "first_timestamp_ms": 1_700_000_000_000,
         "last_timestamp_ms": 1_700_000_060_000,
         "status": "available",
@@ -133,8 +135,20 @@ def test_quote_store_migration_does_not_backdate_unknown_retrieval_time(tmp_path
         )
 
     store = HistoricalQuoteStore(path)
-    row = store.get("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR")[0]
-    assert row["retrieved_at_ms"] == 0
+    assert store.get("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR") == []
+    assert store.coverage("ccxt:kraken", "ccxt:kraken:spot:BTC/EUR") == {
+        "observations": 0,
+        "invalid_observations": 1,
+        "total_observations": 1,
+        "first_timestamp_ms": None,
+        "last_timestamp_ms": None,
+        "status": "empty",
+    }
+    with sqlite3.connect(path) as db:
+        retrieved_at_ms = db.execute(
+            "SELECT retrieved_at_ms FROM historical_quotes"
+        ).fetchone()[0]
+    assert retrieved_at_ms == 0
 
 
 def test_quote_store_migrates_legacy_rows_with_receipt_timestamp(tmp_path):
