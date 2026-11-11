@@ -1167,3 +1167,56 @@ def test_research_validates_short_samples_before_reporting_insufficient_history(
         StrategyResearchAgent().research(rows)
 
 
+
+
+def test_research_uses_provider_taker_fee_schedule_and_reports_provenance():
+    closes = [100 + index * 0.03 + 2 * math.sin(index / 6) for index in range(300)]
+    schedule = {
+        "provider_id": "ccxt:kraken",
+        "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "market_type": "spot",
+        "maker_rate": "0.0016",
+        "taker_rate": "0.001",
+        "fee_currency": "EUR",
+        "source": "provider_fee_metadata",
+        "observed_at_ms": 1_699_999_000_000,
+        "effective_from_ms": 1_699_999_000_000,
+        "effective_until_ms": 1_800_000_000_000,
+    }
+    result = StrategyResearchAgent(minimum_oos_trades=1).research(
+        candles_from_closes(closes),
+        fee_schedule=schedule,
+        provider_id="ccxt:kraken",
+        instrument_id="ccxt:kraken:spot:BTC/EUR",
+        market_type="spot",
+        quote_currency="EUR",
+    )
+    assert result["cost_model"]["fee_rate_per_side"] == pytest.approx(0.001)
+    assert result["cost_model"]["fee_rate_source"] == "provider_schedule_taker"
+    assert result["cost_model"]["fee_schedule"]["execution_liquidity_role"] == "taker"
+    assert result["candidates"][0]["cost_model"]["fee_rate_source"] == "provider_schedule_taker"
+
+
+def test_research_rejects_provider_fee_schedule_without_exact_scope():
+    closes = [100 + index * 0.03 + 2 * math.sin(index / 6) for index in range(300)]
+    schedule = {
+        "provider_id": "ccxt:binance",
+        "instrument_id": "ccxt:kraken:spot:BTC/EUR",
+        "market_type": "spot",
+        "maker_rate": "0.001",
+        "taker_rate": "0.001",
+        "fee_currency": "EUR",
+        "source": "provider_fee_metadata",
+        "observed_at_ms": 1_699_999_000_000,
+        "effective_from_ms": 1_699_999_000_000,
+        "effective_until_ms": 1_800_000_000_000,
+    }
+    with pytest.raises(ValueError, match="provider_id"):
+        StrategyResearchAgent().research(
+            candles_from_closes(closes),
+            fee_schedule=schedule,
+            provider_id="ccxt:kraken",
+            instrument_id="ccxt:kraken:spot:BTC/EUR",
+            market_type="spot",
+            quote_currency="EUR",
+        )
