@@ -2139,7 +2139,17 @@ def test_execution_registry_endpoint_is_empty_and_authenticated(monkeypatch):
     headers = configure_order_auth(monkeypatch)
     response = client.get("/api/execution/registrations", headers=headers)
     assert response.status_code == 200
-    assert response.json() == {"items": []}
+    items = response.json()["items"]
+    assert len(items) == 1
+    assert items[0]["scope"] == {
+        "provider_id": "internal:paper-portfolio",
+        "venue_id": "internal-ledger",
+        "account_id": "paper-primary",
+        "environment": "paper",
+        "market_type": "spot",
+    }
+    assert items[0]["capabilities"]["partial_fills"]["state"] == "unsupported"
+    assert items[0]["capabilities"]["cancellation"]["state"] == "unsupported"
 
 
 
