@@ -203,36 +203,40 @@ def run_sync_cycle(
             if exchange is None or not callable(getattr(exchange, "fetch_ohlcv", None)):
                 raise ValueError("Provider does not expose CCXT OHLCV pagination")
             capabilities_method = getattr(provider, "capabilities", None)
-            capabilities = capabilities_method() if callable(capabilities_method) else None
-            if capabilities is not None:
-                if not capabilities.supports_historical_ohlcv:
-                    raise ValueError("Provider does not declare historical OHLCV support")
-                supported_timeframes = capabilities.supported_ohlcv_timeframes
-                if not isinstance(supported_timeframes, (tuple, list)) or not supported_timeframes:
-                    raise ValueError("Provider does not declare supported OHLCV timeframes")
-                if target.timeframe not in supported_timeframes:
-                    raise ValueError("Timeframe is not supported by the selected provider")
-                if getattr(capabilities, "ohlcv_pagination_mode", "unsupported") != "since":
-                    raise ValueError("Provider pagination mode is not supported by this collector")
-                max_request_limit = capabilities.max_ohlcv_request_limit
-                max_history_bars = capabilities.max_historical_ohlcv_bars
-                if max_request_limit is not None and (
-                    isinstance(max_request_limit, bool)
-                    or not isinstance(max_request_limit, int)
-                    or max_request_limit < 1
-                ):
-                    raise ValueError("Provider max OHLCV request limit is invalid")
-                if max_history_bars is not None and (
-                    isinstance(max_history_bars, bool)
-                    or not isinstance(max_history_bars, int)
-                    or max_history_bars < 1
-                ):
-                    raise ValueError("Provider max historical bars capability is invalid")
-            else:
-                # Test doubles and legacy adapters without a capability contract
-                # remain usable, but their historical retention limit is unknown.
-                max_request_limit = None
-                max_history_bars = None
+            if not callable(capabilities_method):
+                raise ValueError("Provider does not declare historical OHLCV capabilities")
+            capabilities = capabilities_method()
+            if capabilities is None:
+                raise ValueError("Provider historical OHLCV capabilities are unavailable")
+            if getattr(capabilities, "provider_id", None) != target.provider_id:
+                raise ValueError("Provider capability identity does not match the selected provider")
+            if getattr(capabilities, "supports_historical_ohlcv", None) is not True:
+                raise ValueError("Provider does not declare historical OHLCV support")
+            supported_timeframes = getattr(capabilities, "supported_ohlcv_timeframes", None)
+            if (
+                not isinstance(supported_timeframes, (tuple, list))
+                or not supported_timeframes
+                or any(not isinstance(value, str) or not value for value in supported_timeframes)
+            ):
+                raise ValueError("Provider does not declare supported OHLCV timeframes")
+            if target.timeframe not in supported_timeframes:
+                raise ValueError("Timeframe is not supported by the selected provider")
+            if getattr(capabilities, "ohlcv_pagination_mode", None) != "since":
+                raise ValueError("Provider pagination mode is not supported by this collector")
+            max_request_limit = getattr(capabilities, "max_ohlcv_request_limit", None)
+            max_history_bars = getattr(capabilities, "max_historical_ohlcv_bars", None)
+            if max_request_limit is not None and (
+                isinstance(max_request_limit, bool)
+                or not isinstance(max_request_limit, int)
+                or max_request_limit < 1
+            ):
+                raise ValueError("Provider max OHLCV request limit is invalid")
+            if max_history_bars is not None and (
+                isinstance(max_history_bars, bool)
+                or not isinstance(max_history_bars, int)
+                or max_history_bars < 1
+            ):
+                raise ValueError("Provider max historical bars capability is invalid")
             instrument = next(
                 (item for item in provider.discover_markets()
                  if item.symbol == target.symbol and item.active),
