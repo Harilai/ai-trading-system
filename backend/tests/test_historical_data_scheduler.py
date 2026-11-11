@@ -115,6 +115,11 @@ def test_sync_cycle_refreshes_latest_provisional_candle(tmp_path):
     state.ensure_target(
         "ccxt:kraken", instrument_id, "BTC/EUR", "1m", 60_000,
     )
+    state.record_result(
+        "ccxt:kraken", instrument_id, "1m",
+        {"next_since_ms": None, "pages": 1, "received": 1, "inserted": 1, "updated": 0},
+        status="caught_up",
+    )
     calls = []
 
     class Exchange:
