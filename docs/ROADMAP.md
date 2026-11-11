@@ -296,3 +296,14 @@ No se fusionará código con CI fallida o con una protección financiera no prob
 - CI del head anterior `348768e8943a373282b3966c4d49e3d3d11c5880`: Python y Docker/Compose/hardening pasaron. El head actual y su CI se deben consultar en PR #133 antes de aprobar/mergear.
 - Fallos previos de CI documentados y corregidos: primero faltaba hacer obligatorios balances/positions; después un test determinista usaba una ventana temporal incorrecta. No se ignoraron.
 - Siguiente: terminar revisión/CI de #133; después implementar wrappers explícitos para Binance Spot Demo y PAPER (sin falsificar interfaces), scope de cuenta verificado, preflight freshness/reconciliation gates y conexión del resultado al RiskManager. Preservar reducción de riesgo/emergencia. LIVE queda deshabilitado.
+
+## Scoped account adapters — PR dependiente #134 (en curso)
+
+- Rama: `feat/scoped-account-adapters`; base temporal: `feat/scoped-execution-registry-v2` (PR #133). No integrar #134 en `main` hasta que #133 esté aprobada y fusionada.
+- Añadidos wrappers de snapshots para Binance Spot Demo y el ledger interno PAPER.
+- Binance: scope DEMO/Spot y balance snapshot verificados contra la respuesta; las tenencias Spot no se etiquetan falsamente como posiciones. La identidad de cuenta suministrada es un alias de configuración, no un ID remoto verificado (`account_identity_verified=false`). La capacidad positions queda UNKNOWN y bloquea readiness.
+- PAPER: scope explícito `internal:paper-portfolio / internal-ledger / PAPER / spot`; adapta balances y posiciones del ledger interno. La identidad del ledger es local y declarada, no una cuenta de broker.
+- El motor PAPER sigue siendo atómico: partial fills y cancelación de órdenes de exchange quedan UNSUPPORTED; por ello el readiness genérico sigue bloqueado. No se simulan capacidades inexistentes.
+- Los wrappers no se registran automáticamente, no se conectan a API/endpoint y no envían órdenes. LIVE continúa deshabilitado.
+- Tests añadidos para scope obligatorio, separación DEMO/LIVE, timestamp con zona, balances/posiciones y gates fail-closed. Resultado CI pendiente en PR #134.
+- Próximo: definir posición Spot por activo/instrumento con valoración fresca; implementar semántica PAPER de fills/cancelación simulados o excluir explícitamente esos requisitos solo para entorno PAPER con un perfil de capacidades distinto; después enlazar snapshot y readiness al RiskManager/preflight.
