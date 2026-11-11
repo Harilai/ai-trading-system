@@ -33,6 +33,7 @@ from .accounts.alpaca_paper_readonly import AlpacaPaperReadOnlyAccount, AlpacaPa
 from .accounts.snapshot_store import AccountSnapshotError, AccountSnapshotStore
 from .accounts.position_snapshot_store import PositionSnapshotError, PositionSnapshotStore
 from .accounts.coordinated_snapshot_store import CoordinatedAccountSnapshotStore, CoordinatedSnapshotError
+from .accounts.financial_metrics_store import AccountFinancialMetricsStore, FinancialMetricsError
 from .accounts.contracts import (
     AccountProviderError, AccountProviderNotFound, AccountProviderRegistry, AmbiguousAccountProvider,
     InvalidAccountRequest, UnsupportedAccountCapability,
@@ -62,6 +63,7 @@ portfolio = PaperPortfolio(settings.database_path, settings.initial_cash_eur)
 instrument_catalog = InstrumentCatalog(settings.database_path)
 account_snapshot_store = AccountSnapshotStore(settings.database_path)
 position_snapshot_store = PositionSnapshotStore(settings.database_path)
+financial_metrics_store = AccountFinancialMetricsStore(settings.database_path)
 coordinated_account_snapshot_store = CoordinatedAccountSnapshotStore(
     settings.database_path, account_snapshot_store, position_snapshot_store,
 )
@@ -261,6 +263,40 @@ def account_provider_positions(
         raise HTTPException(422, str(exc)) from exc
     except AccountProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
+
+
+@app.post("/api/accounts/alpaca/financial-metrics/snapshots", status_code=201)
+def create_alpaca_financial_metrics_snapshot(
+    request_id: str = Query(..., min_length=1, max_length=128),
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    if alpaca_paper_account_provider is None:
+        raise HTTPException(503, "Alpaca Paper read-only account connector is not configured")
+    try:
+        snapshot = alpaca_paper_account_provider.fetch_financial_metrics_snapshot()
+        return financial_metrics_store.record_snapshot(request_id, snapshot)
+    except AlpacaPaperAccountError as exc:
+        raise HTTPException(502, str(exc)) from exc
+    except FinancialMetricsError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except sqlite3.Error as exc:
+        raise HTTPException(503, "Unable to persist Alpaca financial metrics snapshot") from exc
+
+
+@app.get("/api/accounts/alpaca/financial-metrics/snapshots")
+def list_alpaca_financial_metrics_snapshots(
+    limit: int = Query(50, ge=1, le=200),
+    x_agent_token: str | None = Header(default=None),
+):
+    require_order_control_token(x_agent_token)
+    try:
+        return {"items": financial_metrics_store.list_snapshots(
+            provider_id="alpaca:paper", account_alias=settings.alpaca_paper_account_alias,
+            environment="paper", limit=limit,
+        )}
+    except (FinancialMetricsError, sqlite3.Error) as exc:
+        raise HTTPException(503, "Unable to read Alpaca financial metrics snapshots") from exc
 
 
 @app.post("/api/accounts/{provider_id}/snapshots", status_code=201)
