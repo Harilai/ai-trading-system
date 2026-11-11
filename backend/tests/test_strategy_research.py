@@ -610,3 +610,19 @@ def test_research_requires_quote_retrieval_timestamp_for_lookahead_safety():
                 "source": "test",
             }],
         )
+
+
+def test_research_without_observed_spread_blocks_strategy_promotion():
+    rows = candles_from_closes([
+        100 + index * 0.03 + 2 * math.sin(index / 6)
+        for index in range(300)
+    ])
+    result = StrategyResearchAgent(minimum_oos_trades=1).research(rows)
+
+    assert result["spread_coverage"]["status"] == "unavailable"
+    assert result["eligible_count"] == 0
+    assert result["recommended_strategy"] is None
+    assert all(
+        "insufficient_spread_coverage" in candidate["validation_failure_categories"]["cost"]
+        for candidate in result["candidates"]
+    )
