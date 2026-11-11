@@ -224,7 +224,6 @@ class PaginatedCandleCollector:
             if not rows:
                 break
             page = [normalize_candle(row) for row in rows]
-            page.sort(key=lambda item: item["timestamp"])
             if any(b["timestamp"] <= a["timestamp"] for a, b in zip(page, page[1:])):
                 raise HistoricalDataError("Provider returned duplicate or non-increasing candle timestamps")
             page = [row for row in page if cursor <= row["timestamp"] < until_ms]
