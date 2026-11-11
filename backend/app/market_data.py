@@ -60,6 +60,7 @@ def _normalize_discovered_spot_ticker(
         "quote_volume_24h": quote_volume,
         "ticker_timestamp_ms": timestamp,
         "ticker_timestamp_source": timestamp_source,
+        "quote_observed": True,
     }
     if provider_id:
         result.update({
