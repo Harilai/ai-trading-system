@@ -2135,7 +2135,7 @@ def test_execution_registry_endpoint_requires_control_token(monkeypatch):
     assert response.status_code == 401
 
 
-def test_execution_registry_endpoint_is_empty_and_authenticated(monkeypatch):
+def test_execution_registry_endpoint_lists_scoped_paper_adapter_and_is_authenticated(monkeypatch):
     headers = configure_order_auth(monkeypatch)
     response = client.get("/api/execution/registrations", headers=headers)
     assert response.status_code == 200
