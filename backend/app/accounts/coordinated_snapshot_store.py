@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import json
+import math
 from pathlib import Path
 import sqlite3
 from typing import Any
@@ -148,7 +149,7 @@ class CoordinatedAccountSnapshotStore:
         positions_coverage = self._coverage(position_snapshot, "Position")
         balance_time = self._timestamp(balance_snapshot.get("fetched_at"), "Balance")
         position_time = self._timestamp(position_snapshot.get("fetched_at"), "Position")
-        skew_ms = int(abs((balance_time - position_time).total_seconds()) * 1000)
+        skew_ms = math.ceil(abs((balance_time - position_time).total_seconds()) * 1000)
         if skew_ms > max_skew_seconds * 1000:
             raise CoordinatedSnapshotError("Balance and position observations exceed the allowed timestamp skew")
 
@@ -220,6 +221,16 @@ class CoordinatedAccountSnapshotStore:
                     ),
                 )
         return self.get_snapshot(capture_id)
+
+    def get_by_request_id(self, request_id: str) -> dict | None:
+        if not isinstance(request_id, str) or not request_id.strip():
+            return None
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT capture_id FROM coordinated_account_snapshots WHERE request_id=?",
+                (request_id.strip(),),
+            ).fetchone()
+        return self.get_snapshot(row["capture_id"]) if row else None
 
     def get_snapshot(self, capture_id: str) -> dict | None:
         if not isinstance(capture_id, str) or not capture_id.strip():
