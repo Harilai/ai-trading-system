@@ -219,7 +219,7 @@ class PositionSnapshotStore:
             })
         return changes
 
-    def record_snapshot(self, snapshot: dict) -> dict:
+    def _record_snapshot_in_transaction(self, snapshot: dict, db) -> str:
         normalized, positions = self._normalize(snapshot)
         canonical = json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         content_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
@@ -229,71 +229,75 @@ class PositionSnapshotStore:
             normalized["provider_id"], normalized["account_alias"],
             normalized["environment"], normalized["market_type"],
         )
+        previous_row = db.execute(
+            """
+            SELECT snapshot_id,fetched_at,coverage_status
+            FROM account_position_snapshots
+            WHERE provider_id=? AND account_alias=? AND environment=? AND market_type=?
+            ORDER BY fetched_at DESC,recorded_at DESC,snapshot_id DESC LIMIT 1
+            """,
+            account_key,
+        ).fetchone()
+        previous_id = previous_row["snapshot_id"] if previous_row else None
+        if previous_row and normalized["fetched_at"] < previous_row["fetched_at"]:
+            raise PositionSnapshotError("Position snapshot is older than the latest stored observation")
+        previous = {}
+        if previous_id:
+            rows = db.execute(
+                "SELECT * FROM account_position_snapshot_items WHERE snapshot_id=?",
+                (previous_id,),
+            ).fetchall()
+            previous = {row["instrument_id"]: dict(row) for row in rows}
+        current = {item["instrument_id"]: item for item in positions}
+        # A partial observation may report changes to observed positions,
+        # but cannot establish that omitted instruments have disappeared.
+        changes = self._diff(
+            previous, current,
+            complete=normalized["coverage_status"] == "complete",
+        ) if previous_id else []
+        change_count = sum(item["state"] not in ("unchanged", "not_observed") for item in changes)
+        status = "initial" if previous_id is None else (
+            "partial" if normalized["coverage_status"] == "partial"
+            else ("changed" if change_count else "unchanged")
+        )
+        db.execute(
+            """
+            INSERT INTO account_position_snapshots(
+                snapshot_id,provider_id,account_alias,environment,market_type,
+                fetched_at,recorded_at,coverage_status,previous_snapshot_id,
+                reconciliation_status,change_count,position_count,content_hash
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                snapshot_id, *account_key, normalized["fetched_at"], recorded_at,
+                normalized["coverage_status"], previous_id, status,
+                change_count, len(positions), content_hash,
+            ),
+        )
+        db.executemany(
+            """
+            INSERT INTO account_position_snapshot_items(
+                snapshot_id,instrument_id,symbol,asset_class,market_type,quantity,
+                side,quote_currency,average_entry_price,mark_price,market_value,unrealized_pnl
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            [
+                (
+                    snapshot_id, item["instrument_id"], item["symbol"], item["asset_class"],
+                    item["market_type"], item["quantity"], item["side"], item["quote_currency"],
+                    item["average_entry_price"], item["mark_price"], item["market_value"],
+                    item["unrealized_pnl"],
+                )
+                for item in positions
+            ],
+        )
+    return self.get_snapshot(snapshot_id)
+        return snapshot_id
+
+    def record_snapshot(self, snapshot: dict) -> dict:
         with self.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            previous_row = db.execute(
-                """
-                SELECT snapshot_id,fetched_at,coverage_status
-                FROM account_position_snapshots
-                WHERE provider_id=? AND account_alias=? AND environment=? AND market_type=?
-                ORDER BY fetched_at DESC,recorded_at DESC,snapshot_id DESC LIMIT 1
-                """,
-                account_key,
-            ).fetchone()
-            previous_id = previous_row["snapshot_id"] if previous_row else None
-            if previous_row and normalized["fetched_at"] < previous_row["fetched_at"]:
-                raise PositionSnapshotError("Position snapshot is older than the latest stored observation")
-
-            previous = {}
-            if previous_id:
-                rows = db.execute(
-                    "SELECT * FROM account_position_snapshot_items WHERE snapshot_id=?",
-                    (previous_id,),
-                ).fetchall()
-                previous = {row["instrument_id"]: dict(row) for row in rows}
-            current = {item["instrument_id"]: item for item in positions}
-            # A partial observation may report changes to observed positions,
-            # but cannot establish that omitted instruments have disappeared.
-            changes = self._diff(
-                previous, current,
-                complete=normalized["coverage_status"] == "complete",
-            ) if previous_id else []
-            change_count = sum(item["state"] not in ("unchanged", "not_observed") for item in changes)
-            status = "initial" if previous_id is None else (
-                "partial" if normalized["coverage_status"] == "partial"
-                else ("changed" if change_count else "unchanged")
-            )
-            db.execute(
-                """
-                INSERT INTO account_position_snapshots(
-                    snapshot_id,provider_id,account_alias,environment,market_type,
-                    fetched_at,recorded_at,coverage_status,previous_snapshot_id,
-                    reconciliation_status,change_count,position_count,content_hash
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    snapshot_id, *account_key, normalized["fetched_at"], recorded_at,
-                    normalized["coverage_status"], previous_id, status,
-                    change_count, len(positions), content_hash,
-                ),
-            )
-            db.executemany(
-                """
-                INSERT INTO account_position_snapshot_items(
-                    snapshot_id,instrument_id,symbol,asset_class,market_type,quantity,
-                    side,quote_currency,average_entry_price,mark_price,market_value,unrealized_pnl
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                [
-                    (
-                        snapshot_id, item["instrument_id"], item["symbol"], item["asset_class"],
-                        item["market_type"], item["quantity"], item["side"], item["quote_currency"],
-                        item["average_entry_price"], item["mark_price"], item["market_value"],
-                        item["unrealized_pnl"],
-                    )
-                    for item in positions
-                ],
-            )
+            snapshot_id = self._record_snapshot_in_transaction(snapshot, db)
         return self.get_snapshot(snapshot_id)
 
     def list_snapshots(
