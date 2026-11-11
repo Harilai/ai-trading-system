@@ -31,20 +31,22 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 15. **Completado — contratos normalizados de cuenta (PR #71):** registry multi-account, permisos y balances normalizados.
 16. **Completado — adaptador genérico CCXT read-only (PR #72):** CEX Spot configurable por exchange ID, Kraken por defecto; consulta balances sin métodos de escritura.
 17. **Completado — contrato y endpoint de posiciones normalizadas (PR #73):** snapshot tipado por proveedor/cuenta/entorno, validación decimal e identidad de instrumento y capability gate. Los adaptadores actuales siguen declarando `positions=false`; endpoint preparado para proveedores que implementen lectura de posiciones.
-18. **En curso — ledger persistente de posiciones multi-venue (PR #92):** implementada la capa SQLite append-only de snapshots por proveedor/cuenta/entorno/mercado e instrumento, con decimales exactos, hash, frescura, orden temporal y cobertura `complete/partial`. Una posición omitida en una observación parcial queda como `not_observed`, nunca como cerrada. La PR #93 añade integración de registry y endpoints autenticados, pero ningún adaptador actual declara `positions=true`; por tanto no hay captura real habilitada.
+18. **Completado — ledger append-only de posiciones multi-venue (PR #99):** snapshots separados de la cartera paper, con identidad por proveedor/cuenta/entorno/mercado, decimales exactos, hash, orden temporal y cobertura complete/partial. Las ausencias de snapshots parciales quedan como `not_observed`; solo una captura completa puede marcar `absent`.
 19. **Completado en PR #75 — demo local paper:** Compose aislado con 10.000 EUR virtuales, datos públicos Kraken, clave Twelve Data opcional solo para cotizaciones, sin credenciales de cuenta ni ruta de ejecución. CI: 460 tests Python y validación/build Docker correctos en el SHA `7abd5f527612d0c593e93d8a94852cc29d0a72d8`.
-20. **Completado en PR #83 — demo paper experimental aislada:** worker puede probar señales no promocionadas solo en Compose local de 10.000 EUR virtuales, con prefijo `experimental:`, riesgo por operación del 0,25%, orden máxima del 5% del equity y stop máximo del 3%. No equivale a rentabilidad ni habilita ejecución externa.
-21. **Planificado — investigación de copy trading:** ingestión de señales/performance de traders verificables, reconstrucción con timestamps, comisiones, spread, slippage y latencia, shadow portfolio y evaluación OOS. No copiar automáticamente ni habilitar ejecución real por popularidad o rentabilidad anunciada.
-22. Supervisión paper equity y operación 24/7: stops/take-profit equity monitorizados, VPS real, proveedor de backups externo configurado y drills de restauración.
-23. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario. Sigue fuera del alcance de esta fase.
+20. Supervisión paper equity y operación 24/7: monitor stop/take equity integrado en paper; VPS real, proveedor de backups externo y drills de restauración siguen pendientes.
+21. Live controlado por venue/clase: solo tras smoke tests, sandbox, conciliación, pruebas adversas, revisión de seguridad y habilitación explícita del propietario. Sigue fuera del alcance de esta fase.
 
 
-## En curso — trazabilidad experimental paper
+22. **En curso — ledger común de órdenes y fills (PR #79 listo para revisión, apilado sobre PR #78):** SQLite con observaciones append-only, deduplicación de fills, aislamiento por cuenta/entorno/mercado, cobertura explícita y transacciones fail-closed. No conecta proveedores ni envía órdenes.
 
-- Corregir persistencia y presentación de aptitud experimental, con compatibilidad explícita para registros legacy.
-- Añadir evidencia estructurada de las causas de decisiones `hold` en Chief y pruebas de regresión.
-- No relajar gates cuantitativos ni límites de riesgo para forzar operaciones.
-- Estado: implementación en rama `fix/experimental-research-diagnostics`; CI Python y Docker pasó en el head `a299b8732890c80999ff53fa9b5520aa23d3b4cf`; revisión y merge a `demo` pendientes.
+23. **En curso — cobertura explícita e ingestión read-only de órdenes (PR #80, apilado sobre #79):** `AccountFillHistory` declara ámbito, timestamp y completitud; el servicio actualiza una orden conocida y persiste fills verificados. No añade adaptadores, scheduler ni envío de órdenes.
+
+## Completado — trazabilidad experimental paper y salidas seguras de Chief (#100)
+
+- Persiste aptitud experimental, motivos de validación, puntuación y señales actuales de entrada/mantenimiento dentro de la evidencia de investigación.
+- Los registros antiguos se exponen como `experimental_status=legacy` y `experimental_eligible=null`; no se convierten silenciosamente en no aptos.
+- Chief expone diagnósticos de candidatos, señales, exclusiones y rechazos. Las salidas por estrategia requieren `current_hold_signal is False` explícito; señal ausente o malformada equivale a mantener.
+- Stops/take-profits persistidos siguen siendo salidas válidas, pero todas las ventas pasan por Risk Manager. Paper-only; no se relajan gates ni límites.
 
 ## Estado integrado
 
@@ -66,8 +68,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 
 
 | Contrato normalizado de instrumentos v2 | Implementado y fusionado en PR #52 (`1d6ad47`); 312 tests y Docker hardening correctos; no habilita trading de derivados |
-| Dashboard de supervisión y operaciones paper | Implementado y fusionado en PR #50 (`848d1d3`); 305 tests y Docker hardening correctos 
-| Demo paper experimental aislada | Implementado y fusionado en PR #83 (`a937826`); 470 tests Python y Docker hardening correctos; default-off fuera del Compose demo, 10.000 EUR virtuales y límites de riesgo estrictos |
+| Dashboard de supervisión y operaciones paper | Implementado y fusionado en PR #50 (`848d1d3`); 305 tests y Docker hardening correctos |
 | Backups externos S3-compatible y restore candidate verificado | Implementado y fusionado en PR #48 (`ed08cec`); off-host desactivado por defecto hasta configurar `.env.backup`; 304 tests y Docker hardening correctos |
 | Ciclo de vida y conciliación de órdenes paper | Implementado y fusionado en PR #44 (`df76011`); 292 tests y Docker hardening correctos |
 | Cartera paper multidivisa EUR/USD, conversiones FX y manual equity/ETF paper | Implementado y fusionado en PR #41 (`23cfcb5`); 270 tests y Docker hardening correctos |
@@ -97,7 +98,7 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 | Chief Agent y coordinación de decisiones | Implementado; ciclo ejecuta paper bajo gate de riesgo |
 | Risk Manager conectado obligatoriamente a órdenes paper | Implementado; crypto spot EUR autónomo y cash equities/ETF USD manual-only paper con límites propios |
 | Sniper y generación de propuestas | Implementado; propuestas deterministas bajo Risk Manager obligatorio |
-| Ejecución paper desde `decision_cycle` y monitorización de stop/take | Implementada para crypto spot EUR; monitor equity stop/take pendiente |
+| Ejecución paper desde `decision_cycle` y monitorización de stop/take | Crypto spot EUR por ciclo; monitor equity paper USD cada minuto, independiente de la pausa de estrategias; sin ejecución live |
 | Datos de acciones/ETF estadounidenses | Adaptador Twelve Data Basic y pipeline autónomo read-only; órdenes manuales paper USD integradas, sin broker ni ejecución real |
 | Ejecución real multi-venue (CEX/broker/DEX/wallet) | No implementada; requiere adaptadores autenticados, elegibilidad, sandbox y gates de seguridad |
 | DEX, wallets, blockchain y DeFi | Pendiente; sin conexión, firma ni ejecución |
@@ -133,10 +134,9 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [x] Añadir idempotencia de órdenes paper mediante `client_order_id` vinculado a la tarea.
 - [x] Completar estados legales de órdenes paper (PR #44) y lifecycle limit-order Binance Spot Demo (PR #63), con idempotencia, reconciliación y fail-closed.
 - [x] Añadir reconciliación periódica automática de órdenes Demo abiertas/unknown tras restart, con lease, rate limit y sin reenvío ciego.
-- [ ] Añadir monitorización paper de stop-loss/take-profit equity con cotizaciones USD y FX frescas, cierres idempotentes y recuperación tras reinicio.
+- [x] Añadir monitorización paper de stop-loss/take-profit equity con cotizaciones USD y FX frescas, cierres idempotentes, recuperación tras reinicio y ejecución independiente de la pausa de estrategias (PR #77; CI exacto: 524 tests passed, 1 warning; Docker hardening passed).
 - [x] Implementar paper execution y monitorización de posiciones con pruebas de extremo a extremo.
-- [x] Mantener el sistema en hold/cash si no existe una oportunidad validada; el Chief devuelve `hold` sin propuesta cuando no hay señal elegible.
-- [ ] Conservar cotizaciones Kraken sin timestamp de exchange mediante hora local de recepción marcada `retrieved_at` y guardar su procedencia en el ledger paper (PR pendiente de CI/revisión).
+- [ ] Mantener el sistema en hold/cash si no existe una oportunidad validada.
 
 ## Prioridad 3 — contabilidad y control del capital
 
@@ -155,10 +155,9 @@ La arquitectura objetivo y los controles obligatorios están en [MARKET_EXPANSIO
 - [ ] Integrar acciones/ETF en decisiones del Chief y Risk Manager solo después de validar estrategia, capital, moneda y reglas de cartera específicas; sin ejecución por ahora.
 - [ ] Implementar y validar un adaptador de broker de acciones/ETF, horarios, permisos, datos, mínimos y comisiones.
 - [x] Generalizar el portfolio a claves `provider_id + instrument_id`, con migración de datos legacy y aislamiento de símbolos duplicados.
-- [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución.
+- [ ] Completar conciliación multi-proveedor de órdenes, fills parciales y estados de ejecución (PR #78 normaliza órdenes/fills; PR #79 añade el ledger; PR #80 explicita la completitud de historial; aún faltan adaptadores y worker de conciliación).
 - [x] Añadir contrato y endpoint autenticado para posiciones normalizadas, exigiendo capacidad explícita y sin sintetizarlas desde balances.
-- [x] Implementar almacenamiento append-only de snapshots externos de posiciones, con identidad por cuenta/entorno, coste/mark/P&L/divisa declarados, decimales exactos, hash y cobertura explícita (PR #92; capa de almacenamiento).
-- [x] Añadir capability gate, validación de cobertura explícita y endpoints autenticados de captura/historial/detalle para snapshots de posiciones (PR #93).\n- [ ] Implementar y probar un adaptador real read-only con `positions=true`; conciliar snapshots solo cuando la cobertura sea completa.
+- [ ] Diseñar snapshot coordinado de cuenta que vincule balances y posiciones con identidad/grupo común y timestamps compatibles, sin duplicar la persistencia de posiciones ni inferir completitud.
 - [ ] Implementar adaptadores FX, índices y commodities solo tras validar APIs y elegibilidad.
 - [ ] Diseñar wallet read-only y blockchain monitoring antes de añadir firma aislada; no usar seeds en agentes.
 - [ ] Implementar DEX swaps con simulación, gas, slippage, MEV y reconciliación antes de habilitar ejecución.

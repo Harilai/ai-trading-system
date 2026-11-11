@@ -1,91 +1,26 @@
 # Session handoff — AI Trading System
 
-## En curso — integración API del ledger de posiciones (PR #93)
-
-- Rama: `feat/position-snapshot-provider-api`, apilada sobre PR #92 → #91 → #89.
-- `AccountProviderRegistry.fetch_positions_snapshot()` exige `positions=true`, proveedor/cuenta read-only sin capacidades de escritura, identidad y entorno coincidentes, mercado declarado, timestamp fresco y un método provider que entregue `coverage_status=complete|partial` explícito.
-- Endpoints owner-authenticated:
-  - `POST /api/accounts/{provider_id}/positions/snapshots?account_alias=...`
-  - `GET /api/accounts/positions/snapshots`
-  - `GET /api/accounts/positions/snapshots/{snapshot_id}`
-- Los adaptadores actuales siguen con `positions=false`; el endpoint de captura devolverá conflicto/no capability hasta implementar un adaptador real. No se acepta una lista de posiciones sin cobertura explícita.
-- CI verde en el head exacto `064d5df0969a6aae6be6cd7d5c3e7da4cf0c807b`: Python tests y Docker build/runtime hardening.
-- Siguiente: implementar un adaptador read-only de posiciones con cobertura verificable; mantener aisladas las cuentas y no convertir snapshots externos en posiciones paper.
-
-## En curso — ledger append-only de posiciones externas (PR #92)
-
-- Rama: `feat/external-position-snapshot-ledger`, apilada sobre PR #91, que depende de PR #89.
-- Añadida `PositionSnapshotStore` en `backend/app/accounts/position_snapshot_store.py`; almacena snapshots SQLite separados de la cartera paper.
-- Identidad aislada por `provider_id + account_alias + environment + market_type`; posiciones por `instrument_id`.
-- Conserva cantidad, lado, asset class, quote currency, entry, mark, market value y P&L no realizado como decimales exactos; hash SHA-256 y referencia al snapshot anterior.
-- `coverage_status=partial` no interpreta posiciones omitidas como cierres: se registran como `not_observed`. Solo una observación explícitamente `complete` puede producir estado `absent`; nunca se convierte ausencia en cantidad cero.
-- Añadidas pruebas de persistencia exacta, snapshots completos/parciales, aislamiento por cuenta/entorno, frescura, orden temporal, duplicados y triggers append-only.
-- Alcance actual: capa de almacenamiento y pruebas. No se añade endpoint de captura porque los adaptadores actuales declaran `positions=false`; no se debe aceptar un snapshot desde un proveedor sin capability demostrada.
-- Dependencias: PR #89 (investigación/diagnóstico) y PR #91 (salidas paper seguras). La PR #92 debe integrarse después de ambas. Ninguna integración ni despliegue se presupone.
-- Siguiente paso: extender registry para resolver `PositionProvider` con capability explícita, capturar snapshots con identidad/entorno/frescura de la cuenta, y exponer endpoints autenticados solo cuando exista un adaptador compatible.
-
-> **Última revisión del repositorio:** 2026-11-10
+> **Última revisión del repositorio:** 2026-11-11 Europe/Madrid
 > **Rama base revisada:** `main`
-> **Último feature merge:** `a9378266626aca81be46f854f8d11011ee4804ca` — PR #83, experimental paper demo.
-> **Estado de ejecución:** paper trading únicamente; demo local aislada con 10.000 EUR virtuales; Binance Spot Demo no se usa en esta demo; live trading no implementado ni habilitado.
+> **Último commit integrado en `main`:** `e37b9ee2ddc462db00e5ba6145eb0a92cca6fd6c` — PR #96.
+> **Rama `demo`:** `bd34ff5114dd952b5d58fb8c93c470387f4eeaba`, con PR #91–#93 integradas.
+> **Estado de ejecución:** paper trading únicamente; Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
-## En curso — trazabilidad de investigación experimental y decisiones Chief
+## Estado actual — 11 de noviembre de 2026
 
-- Rama: `fix/experimental-research-diagnostics`; PR #89 abierta contra `demo` (https://github.com/Harilai/ai-trading-system/pull/89).
-- Se está corrigiendo la persistencia de aptitud experimental y señales actuales en `strategy_research_history.result`, sin añadir columnas ni migración.
-- Los registros anteriores deben exponer `experimental_eligible=null` y `experimental_status=legacy`; nunca convertir un campo ausente en `false`.
-- Dashboard: distinguir validación de promoción y elegibilidad paper experimental, mostrando los motivos de cada una y advirtiendo que aptitud experimental no equivale a rentabilidad.
-- Chief: registrar contadores concretos de candidatos, señales, exclusiones por símbolo/posición/precio y propuestas rechazadas por Sniper/Risk Manager.
-- Se añadieron pruebas para persistencia, compatibilidad legacy y decisiones hold sin señal de entrada.
-- CI completo (Python tests y Docker build/runtime hardening) pasó en el head `a299b8732890c80999ff53fa9b5520aa23d3b4cf`; si cambia el código o este handoff, repetir CI sobre el nuevo head. Revisión independiente pendiente antes del merge.
-- Seguridad: paper-only; no se amplían permisos, límites ni rutas de ejecución real.
+- PR #78 fusionada: contratos normalizados de órdenes y fills.
+- PR #79 fusionada: ledger SQLite append-only de órdenes y ejecuciones individuales, idempotencia, aislamiento por cuenta/entorno/mercado y cobertura explícita.
+- PR #80 fusionada: historial de fills con completitud explícita y reconciliación read-only de órdenes conocidas; no envía, cancela ni reintenta órdenes.
+- PR #77 en revisión: monitor paper de stop-loss/take-profit para acciones/ETF USD de Twelve Data. Fusionada en `0c5c9b402557af49746e8f0d37f23eab4a4a2681`; CI exacto: 524 tests passed y Docker hardening passed. El monitor exige instrumento, cotización, FX y sesión válidos; mantiene los datos de procedencia y el dashboard de estrategias.
+- En `demo`, PR #91 endurece salidas paper y PR #92–#93 incorporan snapshots externos append-only e integración API. Los adaptadores existentes aún declaran `positions=false`; no hay captura real habilitada en esos conectores.
+- PR #96 fusionada: lectura de posiciones con scope market_type, soporte position-only y coverage_status=unknown para el contrato legacy. PR #74 cerrada como implementación sustituida; el requisito de snapshot combinado balances/posiciones queda diferido en roadmap. PR #97 de sync masiva main→demo cerrada sin merge por conflictos de interfaces; ambas ramas permanecen intactas.
 
-## Fase completada — timestamps Kraken (PR #81)
+- PR #100 fusiona en `main` las mejoras de trazabilidad experimental y diagnósticos de Chief procedentes de #89/#91: estado legacy explícito, evidencia de decisiones hold y salida por estrategia solo ante señal booleana False explícita; Risk Manager sigue obligatorio.
+- No se ha levantado ni reiniciado una demo local en esta sesión; no se han usado credenciales ni fondos reales.
 
-- Merge commit `5bbb8800dfab86405bb798f51e749609923ca852`.
-- Las cotizaciones Kraken sin timestamp del exchange usan hora local de recepción `retrieved_at`, nunca etiquetada como hora de evento.
-- La procedencia se conserva hasta el ledger paper; se rechazan observaciones stale/future o sin evidencia de recepción.
-- CI y revisión independiente pasaron sobre el head exacto `4862851717ad414777f5b160b48417aaf3e75a5d`.
-- Se añadieron pruebas para persistencia de procedencia, replay idempotente y migración legacy.
+## Siguiente acción
 
-## Fase completada — Independent Reviewer Worker (PR #82)
-
-- Merge commit `ede62ebfd64dc9364b2465cc70d932226d912e17`.
-- Añadido `docs/agents/INDEPENDENT_REVIEWER.md` y actualizado `docs/AGENT_WORKFLOW.md`.
-- Cada PR requiere una pasada independiente del diff, veredicto, severidad de hallazgos y CI verde sobre el SHA exacto.
-- Los merges rutinarios están delegados al Engineering Lead y no requieren confirmación del usuario si todos los gates pasan.
-- No existe un segundo modelo persistente en este runtime: si no hay runtime de subagentes, el Orchestrator debe invocar explícitamente el rol de reviewer y no afirmar que un proceso en background está activo.
-
-## Fase completada — demo paper experimental (PR #83)
-
-- Merge commit `a9378266626aca81be46f854f8d11011ee4804ca`.
-- El Compose local mantiene 10.000 EUR virtuales, base SQLite/volumen separado y datos públicos Kraken.
-- Añadido modo experimental paper-only, activado solo por `PAPER_DEMO_MODE=true` y `PAPER_EXPERIMENTAL_STRATEGIES_ENABLED=true`; ambos default-off fuera del Compose demo.
-- Las estrategias experimentales deben tener tres ventanas walk-forward completas, historia suficiente y drawdown OOS/walk-forward no superior al 25%, pero **no se consideran rentables ni promocionadas**.
-- Cada entrada experimental se etiqueta con `experimental:`; el dashboard muestra el modo y la columna de estrategia.
-- Límites demo: 0,25% de equity como presupuesto de riesgo por operación, 5% de notional máximo por orden y 3% de stop máximo. Risk Manager, frescura, idempotencia y ledger paper siguen obligatorios.
-- CI en el head exacto `ea9dfa7982cfec49871d3f2815adeedcb74a6b44`: **470 tests passed, 1 warning**; Docker Compose validation, build y non-root runtime correctos.
-- No se activa Binance Demo, broker, wallet, transferencias, retiradas ni live execution.
-
-## Acción operativa pendiente
-
-La instancia que el usuario ya tiene arrancada fue creada antes de PR #83; necesita reconstruirse para cargar las variables y el código nuevos. Desde la raíz del repositorio:
-
-```bash
-docker compose -f docker-compose.demo.yml up --build -d
-```
-
-No usar `down -v`: el volumen `paper_demo_data` contiene la cartera ficticia y debe conservarse. Después:
-1. Consultar `GET /api/health/ready` y confirmar `status=ready`, `mode=paper`, `experimental_paper_enabled=true` y `live_trading_enabled=false`.
-2. Abrir `/dashboard`; debe mostrar `EXPERIMENTAL PAPER`.
-3. Conectar controles con el token local de demo y pulsar Reanudar.
-4. Observar ciclos y operaciones etiquetadas `experimental:`. Si no hay señal, datos frescos o aprobación de riesgo, el resultado correcto sigue siendo `hold`.
-
-## Siguiente fase
-
-- Verificar el comportamiento de la demo reconstruida durante varios ciclos; revisar fills paper, stops, comisiones, slippage y drawdown.
-- Diseñar investigación de copy trading como fuente de señales: solo track records verificables, timestamps, P&L neto, drawdown, leverage, costes y latencia; primero shadow/paper, nunca copia ciega.
-- Mantener como backlog el ledger append-only de posiciones multi-venue y sus adaptadores, sin mezclar snapshots externos con la cartera paper.
+PR #77 y #96 completadas. Siguiente: portar #92–#93 de demo a main mediante PRs específicos, preservando los contratos #78–#80 y el endpoint #96; después reconciliar #89/#91 con el worker/dashboard de main. Mantener paper-only y no habilitar live trading.
 
 ## Fase completada — Demo local paper (PR #75)
 
@@ -96,11 +31,9 @@ No usar `down -v`: el volumen `paper_demo_data` contiene la cartera ficticia y d
 - Entorno de trabajo actual no tiene Docker ni intérprete Python disponibles, así que no es posible ejecutar localmente `docker compose config` ni `pytest -q`; ejecutar ambos gates en GitHub Actions.
 - Sin credenciales reales, fondos, despliegue ni conexión de ejecución a producción.
 
-## Continuidad histórica cerrada
+## Siguiente acción
 
-El bloque de trabajo original de la demo paper se cerró con PR #81 (timestamps), PR #82 (reviewer workflow) y PR #83 (experimental paper mode). Las instrucciones operativas vigentes y el siguiente trabajo están en las secciones superiores de este handoff. No reabrir ni repetir esos cambios.
-
-Las PR #77–80 y el ledger de posiciones multi-venue deben comprobarse en GitHub antes de retomar esa línea: respetar las dependencias entre ramas apiladas y no fusionar una rama base sin revisar sus descendientes.
+Obtener CI verde y revisión independiente para PR #78–#80 sobre los heads exactos. Después, diseñar un adaptador read-only de reconciliación basado en historial explícitamente completo, sin alterar Binance Demo ni habilitar producción.
 
 ## 1. Cómo retomar en una conversación nueva
 
@@ -157,10 +90,10 @@ Después del ledger, implementar adaptadores específicos de posiciones para exc
 
 - PR #71: https://github.com/Harilai/ai-trading-system/pull/71
 - PR #72: https://github.com/Harilai/ai-trading-system/pull/72
-- PR #73: https://github.com/Harilai/ai-trading-system/pull/73\n- PR #81: https://github.com/Harilai/ai-trading-system/pull/81\n- PR #82: https://github.com/Harilai/ai-trading-system/pull/82\n- PR #83: https://github.com/Harilai/ai-trading-system/pull/83
+- PR #73: https://github.com/Harilai/ai-trading-system/pull/73
 - Arquitectura multiactivo: `docs/MARKET_EXPANSION_ARCHITECTURE.md`
 - Contratos de cuenta: `docs/ACCOUNT_PROVIDER_CONTRACTS.md`
 - Contrato de instrumentos: `docs/INSTRUMENT_CONTRACT_V2.md`
 - Workflow de agentes: `docs/AGENT_WORKFLOW.md`
 
-**Regla de continuidad:** la siguiente conversación debe comprobar el estado vivo de GitHub y el resultado operativo de la demo reconstruida. No reimplementar PR #81–#83. Después continuar el diseño de copy-trading research y el backlog del ledger de posiciones multi-venue.
+**Regla de continuidad:** la siguiente conversación debe comenzar comprobando el estado vivo de GitHub y continuar el ledger persistente de snapshots de posiciones, no reimplementar PR #71–#73.
