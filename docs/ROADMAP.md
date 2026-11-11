@@ -232,12 +232,12 @@ Cada fase debe incluir:
 No se fusionará código con CI fallida o con una protección financiera no probada.
 
 
-## Snapshot coordinado Alpaca cash — implementación en revisión
+## Snapshot coordinado Alpaca cash — integrado en main (PR #128)
 
 - Rama `feat/coordinated-cash-account-snapshots`: añade un ledger coordinado separado para enlazar, en una única transacción SQLite, el snapshot financiero tipado de Alpaca Paper y el snapshot de posiciones `cash`. No reutiliza el ledger genérico Spot ni convierte `cash`, `equity` o `buying_power` en balances fungibles.
 - Incluye identidad proveedor/cuenta/entorno/mercado, cobertura, timestamps y skew máximo, idempotencia por request ID, referencias a los dos ledgers, hashes de contenido, append-only y rollback completo.
 - Endpoint autenticado: `POST /api/accounts/alpaca/financial-metrics/snapshots/coordinated?request_id=...`. Sigue siendo read-only y no importa datos a PaperPortfolio, Chief o Risk Manager.
-- Estado: implementación y tests añadidos; pendiente CI, revisión de diff y merge. No afirmar pruebas superadas hasta completar CI.
+- Estado: integrado mediante squash en `7ab1e0056c3f1fd749d26cdfc52eca0ac6abad6a`. CI de PR #128 (Python tests y Docker build/runtime hardening) pasó en el SHA de head `ef753ceb6d4f60d5d3aea03e0bfbdd8d39bd0484`. No se ha validado todavía contra una cuenta Alpaca Paper real.
 
 ## Política de ramas
 
