@@ -205,7 +205,7 @@ class PaperPortfolioScopedAdapter:
         if not isinstance(account_id, str) or not account_id.strip():
             raise ScopedAccountAdapterError("An explicit PAPER account scope is required")
         self.portfolio = portfolio
-        self.account_identity_verified = True
+        self.account_identity_verified = False
         self.scope = ExecutionScope(
             provider_id="internal:paper-portfolio",
             venue_id="internal-ledger",
@@ -251,8 +251,8 @@ class PaperPortfolioScopedAdapter:
         supported = lambda name: _evidence(CapabilityState.SUPPORTED, "paper-portfolio-contract", name)
         unsupported = lambda name: _evidence(CapabilityState.UNSUPPORTED, "paper-portfolio-contract", name)
         return ExecutionCapabilities(
-            asset_classes=("crypto", "equity", "etf"),
-            order_types=("market", "limit"),
+            asset_classes=("crypto",),
+            order_types=("market",),
             idempotent_client_order_id=supported("durable unique order intent"),
             partial_fills=unsupported("internal PAPER fills are atomic; no partial fill simulator"),
             cancellation=unsupported("PAPER intents are not exchange orders"),
