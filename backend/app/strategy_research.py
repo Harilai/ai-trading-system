@@ -839,7 +839,6 @@ class StrategyResearchAgent:
                         "spread_unavailable_policy": "promotion_blocked",
                         "fee_rate_source": "configured_assumption",
                         "slippage_rate_source": "configured_assumption",
-                "slippage_component": "residual adverse price impact beyond the modeled spread",
                         "slippage_component": "residual adverse price impact beyond the modeled spread",
                         "max_quote_age_seconds": max_quote_age_seconds,
                         "max_position_fraction": self.max_position_fraction,
