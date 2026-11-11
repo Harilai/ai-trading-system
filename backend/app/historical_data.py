@@ -324,6 +324,7 @@ class HistoricalQuoteStore:
     def get(
         self, provider_id: str, instrument_id: str, *,
         since_ms: int | None = None, until_ms: int | None = None,
+        received_since_ms: int | None = None, received_until_ms: int | None = None,
         limit: int = 100_000,
     ) -> list[dict]:
         HistoricalCandleStore._identity(provider_id, instrument_id, "quote", "quote")
@@ -343,6 +344,21 @@ class HistoricalQuoteStore:
             params.append(until_ms)
         if since_ms is not None and until_ms is not None and until_ms <= since_ms:
             raise HistoricalDataError("until_ms must be later than since_ms")
+        if received_since_ms is not None:
+            if isinstance(received_since_ms, bool) or not isinstance(received_since_ms, int) or received_since_ms <= 0:
+                raise HistoricalDataError("received_since_ms must be a positive integer")
+            clauses.append("retrieved_at_ms>=?")
+            params.append(received_since_ms)
+        if received_until_ms is not None:
+            if isinstance(received_until_ms, bool) or not isinstance(received_until_ms, int) or received_until_ms <= 0:
+                raise HistoricalDataError("received_until_ms must be a positive integer")
+            clauses.append("retrieved_at_ms<?")
+            params.append(received_until_ms)
+        if (
+            received_since_ms is not None and received_until_ms is not None
+            and received_until_ms <= received_since_ms
+        ):
+            raise HistoricalDataError("received_until_ms must be later than received_since_ms")
         params.append(limit)
         with self.connect() as db:
             rows = db.execute(
