@@ -54,12 +54,22 @@ class ProviderRegistry:
     def discover_markets(
         self,
         asset_classes: tuple[AssetClass, ...] | None = None,
+        provider_ids: tuple[str, ...] | None = None,
     ) -> tuple[list[MarketInstrument], list[dict[str, str]]]:
         discovered: list[MarketInstrument] = []
         failures: list[dict[str, str]] = []
         with self._lock:
             providers = list(self._providers.values())
         requested_classes = set(asset_classes or ())
+        requested_providers = set(provider_ids or ())
+        if requested_providers:
+            known_providers = {provider.provider_id for provider in providers}
+            for unknown in sorted(requested_providers - known_providers):
+                failures.append({
+                    "provider_id": unknown,
+                    "reason": "Provider is not configured",
+                })
+            providers = [provider for provider in providers if provider.provider_id in requested_providers]
         for provider in providers:
             try:
                 caps = provider.capabilities()
@@ -70,6 +80,10 @@ class ProviderRegistry:
                     })
                     continue
                 if requested_classes and not requested_classes.intersection(caps.asset_classes):
+                    failures.append({
+                        "provider_id": provider.provider_id,
+                        "reason": "Requested asset classes are not supported by this provider",
+                    })
                     continue
                 provider_instruments = provider.discover_markets(asset_classes)
                 if not isinstance(provider_instruments, (list, tuple)):
