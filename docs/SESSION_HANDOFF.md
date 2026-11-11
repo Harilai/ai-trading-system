@@ -5,7 +5,7 @@
  > **Último cambio de código integrado:** PR #155, merge SHA `23dcac3b65c46a59d3e24edf487cefe88ffc88fd`.
 > **main y demo:** deben permanecer idénticas por SHA; tras actualizar este handoff, sincronizar `demo` por fast-forward y verificar el compare.
 > **PR abiertas:** ninguna tras integrar PR #155.
-> **CI:** PR #155 head `4c4d30b781012c477f9f2c14fb35455bea00df8f`: 778 Python tests passed, 1 warning; Docker build/runtime hardening passed (run `43080178575`). Post-merge main CI run `43080343137`: success. Los checks de los commits documentales de esta sesión deben verificarse en sus SHA exactos.
+> **CI:** PR #155 head `4c4d30b781012c477f9f2c14fb35455bea00df8f`: 778 Python tests passed, 1 warning; Docker build/runtime hardening passed (run `43080178575`). Post-merge main run `43080343137`: success. Documentación de roadmap/handoff en SHA `a2e82317a350964a7202b0c078cc2f8e01c78fae`: 778 Python tests passed, 1 warning; Docker build/runtime hardening passed (run `43080509437`).
 
 > **Validación local:** no se pudo clonar el repositorio desde el shell por falta de resolución de GitHub; no afirmar tests locales. La validación ejecutada fue GitHub Actions.
 > **Operación:** investigación y PAPER; LIVE sigue deshabilitado. No ejecutar operaciones reales ni usar credenciales productivas.
