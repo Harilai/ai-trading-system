@@ -203,8 +203,21 @@ def test_stale_or_future_capability_evidence_fails_closed():
 
 def test_capability_evidence_freshness_can_be_evaluated_deterministically():
     registry = ExecutionAdapterRegistry()
-    registry.register(scope(), capabilities(), object())
     now = datetime(2026, 11, 11, 10, 0, tzinfo=timezone.utc)
+    fresh = CapabilityEvidence(
+        CapabilityState.SUPPORTED,
+        "manual-check",
+        "2026-11-11T09:45:00+00:00",
+    )
+    verified_capabilities = capabilities(
+        idempotent_client_order_id=fresh,
+        partial_fills=fresh,
+        cancellation=fresh,
+        order_reconciliation=fresh,
+        balances=fresh,
+        positions=fresh,
+    )
+    registry.register(scope(), verified_capabilities, object())
     assert registry.supports_instrument(
         scope(), asset_class="crypto", order_type="limit", now=now,
     )
@@ -213,7 +226,7 @@ def test_capability_evidence_freshness_can_be_evaluated_deterministically():
         asset_class="crypto",
         order_type="limit",
         now=now,
-        evidence_max_age=timedelta(minutes=30),
+        evidence_max_age=timedelta(minutes=10),
     )
 
 
