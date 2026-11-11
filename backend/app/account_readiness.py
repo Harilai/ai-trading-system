@@ -21,6 +21,7 @@ class PaperAccountReadiness:
     """
 
     TERMINAL_INTENT_STATES = {"filled", "rejected", "expired"}
+    EXPECTED_ACCOUNT_ID = "paper-primary"
 
     def __init__(
         self,
@@ -91,7 +92,7 @@ class PaperAccountReadiness:
         expected_scope = {
             "provider_id": "internal:paper-portfolio",
             "venue_id": "internal-ledger",
-            "account_id": scope.account_id,
+            "account_id": self.EXPECTED_ACCOUNT_ID,
             "environment": ExecutionEnvironment.PAPER.value,
             "market_type": "spot",
         }
@@ -188,7 +189,8 @@ class PaperAccountReadiness:
                 "unresolved_intents": len(unresolved),
                 "excluded_current_intent": bool(exclude_client_order_id),
             }
-        except (PortfolioError, TypeError, ValueError):
+        except Exception:
+            # A database/ledger failure must never be interpreted as a clean reconciliation.
             blockers.append("paper_ledger_reconciliation_failed")
             reconciliation_summary = {"status": "unknown"}
 
