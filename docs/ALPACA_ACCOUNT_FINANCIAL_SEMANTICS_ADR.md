@@ -1,6 +1,6 @@
 # ADR — semántica financiera de Alpaca Paper account
 
-- Estado: decisión de dominio aprobada para una futura implementación read-only; no añade todavía un lector de balances ni habilita snapshots coordinados.
+- Estado: modelo y primer ledger financiero read-only implementados en la rama `feat/alpaca-financial-metrics-ledger`; pendientes CI, revisión e integración. No habilita snapshots coordinados ni ejecución.
 - Fecha: 2026-11-11.
 - Ámbito: interpretación de `GET /v2/account` para cuentas Alpaca Paper de acciones/ETF.
 - Referencias oficiales: [Get Account](https://docs.alpaca.markets/us/reference/getaccount-1), [Working with /account](https://docs.alpaca.markets/us/docs/working-with-account).
@@ -81,6 +81,15 @@ No sumar equity + market value, no sumar portfolio_value + cash, no usar buying_
 10. Persistencia append-only, idempotencia, skew, rollback y aislamiento Paper/production.
 11. Verificar que ningún dato externo modifica el portfolio paper ni crea órdenes.
 
+## Implementación inicial en curso
+
+- `AlpacaPaperReadOnlyAccount.fetch_financial_metrics_snapshot()` consulta una sola vez `GET /v2/account`, verifica el account ID esperado, divisa y estado `ACTIVE`, y conserva cash/equity/buying power como métricas distintas.
+- `AccountFinancialMetricsStore` usa tabla separada append-only, hash de contenido, `request_id` idempotente, scope provider/account/environment, timestamp y versión de esquema. No reutiliza `AccountSnapshotStore`.
+- API autenticada: `POST /api/accounts/alpaca/financial-metrics/snapshots?request_id=...` y `GET /api/accounts/alpaca/financial-metrics/snapshots`.
+- La captura solo se permite para Paper y no cambia `balances=false`, ni importa datos a la cartera paper, Risk Manager, Chief o ejecución.
+- Métricas opcionales ausentes se conservan como `null`; los campos requeridos son `cash`, `equity` y `buying_power`. Solo `equity` y `last_equity` admiten negativos.
+- Pruebas añadidas para lectura GET única, identidad/estado/divisa, normalización decimal, métricas ausentes, idempotencia y triggers append-only. La validación de CI está pendiente.
+
 ## Resultado
 
-La lectura de `/v2/account` es útil como evidencia financiera read-only, pero no es una lista de balances fungibles. La implementación queda separada hasta disponer de un modelo tipado y un ledger compatible con snapshots coordinados `cash`.
+La lectura de `/v2/account` es evidencia financiera read-only tipada, no una lista de balances fungibles. La captura coordinada con posiciones `cash` sigue pendiente; no se habilita integración financiera con la cartera ni ejecución.
