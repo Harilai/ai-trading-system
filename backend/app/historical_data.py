@@ -239,8 +239,29 @@ class HistoricalQuoteStore:
                 "provider_id TEXT NOT NULL, instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, "
                 "timestamp_ms INTEGER NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL, "
                 "timestamp_source TEXT NOT NULL, source TEXT NOT NULL, retrieved_at TEXT NOT NULL, "
+                "retrieved_at_ms INTEGER NOT NULL, "
                 "PRIMARY KEY(provider_id,instrument_id,timestamp_ms))"
             )
+            existing_columns = {
+                row["name"] for row in db.execute("PRAGMA table_info(historical_quotes)")
+            }
+            if "retrieved_at_ms" not in existing_columns:
+                db.execute("ALTER TABLE historical_quotes ADD COLUMN retrieved_at_ms INTEGER")
+                legacy_rows = db.execute(
+                    "SELECT provider_id,instrument_id,timestamp_ms,retrieved_at "
+                    "FROM historical_quotes WHERE retrieved_at_ms IS NULL"
+                ).fetchall()
+                for legacy in legacy_rows:
+                    try:
+                        retrieved = datetime.fromisoformat(legacy["retrieved_at"])
+                        retrieved_ms = int(retrieved.timestamp() * 1000)
+                    except (TypeError, ValueError, OverflowError):
+                        retrieved_ms = int(legacy["timestamp_ms"])
+                    db.execute(
+                        "UPDATE historical_quotes SET retrieved_at_ms=? "
+                        "WHERE provider_id=? AND instrument_id=? AND timestamp_ms=?",
+                        (retrieved_ms, legacy["provider_id"], legacy["instrument_id"], legacy["timestamp_ms"]),
+                    )
             db.execute(
                 "CREATE INDEX IF NOT EXISTS idx_historical_quotes_range "
                 "ON historical_quotes(provider_id,instrument_id,timestamp_ms)"
@@ -269,7 +290,9 @@ class HistoricalQuoteStore:
         ask_value = _decimal(ask, "ask", positive=True)
         if Decimal(ask_value) < Decimal(bid_value):
             raise HistoricalDataError("Quote ask cannot be below bid")
-        now = datetime.now(timezone.utc).isoformat()
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
+        now_ms = int(now_dt.timestamp() * 1000)
         key = (provider_id, instrument_id, timestamp_ms)
         with self.lock, self.connect() as db:
             existing = db.execute(
@@ -289,9 +312,9 @@ class HistoricalQuoteStore:
                 return {"status": "unchanged", "timestamp_ms": timestamp_ms}
             db.execute(
                 "INSERT INTO historical_quotes "
-                "(provider_id,instrument_id,symbol,timestamp_ms,bid,ask,timestamp_source,source,retrieved_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?)",
-                (provider_id, instrument_id, symbol, timestamp_ms, *values, now),
+                "(provider_id,instrument_id,symbol,timestamp_ms,bid,ask,timestamp_source,source,retrieved_at,retrieved_at_ms) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (provider_id, instrument_id, symbol, timestamp_ms, *values, now, now_ms),
             )
         return {"status": "inserted", "timestamp_ms": timestamp_ms}
 
@@ -335,6 +358,7 @@ class HistoricalQuoteStore:
                 "timestamp_source": row["timestamp_source"],
                 "source": row["source"],
                 "retrieved_at": row["retrieved_at"],
+                "retrieved_at_ms": row["retrieved_at_ms"],
             }
             for row in reversed(rows)
         ]
