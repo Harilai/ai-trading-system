@@ -107,3 +107,25 @@ Do not report completion if code is only drafted, tests were not run, CI is pend
 ## Default instruction for new sessions
 
 Act as Engineering Lead. Recover state from docs/SESSION_HANDOFF.md, docs/ROADMAP.md and live GitHub. Continue the next pending phase without repeating merged work. Keep planning, development, QA, risk/security and independent review distinct. Update the handoff before ending the phase.
+
+
+## Session continuity contract — mandatory for every conversation
+
+Every new conversation or resumed work block must begin by reconstructing the current repository state, not by relying on chat history alone. Read the handoff, roadmap and this workflow, then verify live GitHub refs, recent commits, open PRs, CI and the main/demo comparison before making changes.
+
+The first user-facing project update must be a concise status report containing:
+- Current main/demo SHAs and whether they are identical.
+- Open PRs and their merge/CI state.
+- Current phase and overall project readiness.
+- Already integrated capabilities relevant to the next task.
+- Known blockers, operational validation gaps and safety boundaries.
+- The next coherent implementation block and its acceptance criteria.
+
+Work through the agreed block without pausing for confirmation on ordinary engineering decisions. Report meaningful milestones during longer work, but do not stop after every small commit or PR. At the end of each block, provide one consolidated report with:
+- Implementations and files changed.
+- PRs reviewed, corrected, merged or left open, with reasons.
+- Exact CI/local test results and the SHA they cover.
+- What is implemented versus operationally validated/deployed.
+- Risks, unresolved issues and next planned block.
+
+Before ending a block, update both docs/ROADMAP.md and docs/SESSION_HANDOFF.md. The handoff must be sufficient for a fresh conversation to continue without asking the owner to repeat repository state or prior decisions. If work is interrupted before completion, update the handoff with the in-progress branch/PR, latest SHA, failing or pending checks, and the precise next action.
