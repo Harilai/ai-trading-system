@@ -300,6 +300,7 @@ class HistoricalQuoteStore:
         since_ms: int | None = None, until_ms: int | None = None,
         limit: int = 100_000,
     ) -> list[dict]:
+        HistoricalCandleStore._identity(provider_id, instrument_id, "quote", "quote")
         if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100_000:
             raise HistoricalDataError("quote limit must be between 1 and 100000")
         clauses = ["provider_id=?", "instrument_id=?"]
@@ -339,6 +340,7 @@ class HistoricalQuoteStore:
         ]
 
     def coverage(self, provider_id: str, instrument_id: str) -> dict:
+        HistoricalCandleStore._identity(provider_id, instrument_id, "quote", "quote")
         with self.connect() as db:
             row = db.execute(
                 "SELECT COUNT(*) AS observations,MIN(timestamp_ms) AS first_ms,"
