@@ -276,8 +276,7 @@ class StrategyResearchAgent:
     def _backtest(
         self, candles, signal, warmup, start, end, *,
         fee_rate=None, slippage_rate=None, quote_snapshots=None,
-        max_quote_age_ms=0, spread_multiplier=1.0,
-        final_execution_timestamp_ms=None,
+        max_quote_age_ms=0, spread_multiplier=1.0, candle_interval_ms=None,
     ):
         if (
             isinstance(spread_multiplier, bool)
@@ -292,6 +291,12 @@ class StrategyResearchAgent:
             or max_quote_age_ms < 0
         ):
             raise ValueError("max_quote_age_ms must be a non-negative integer")
+        if candle_interval_ms is not None and (
+            isinstance(candle_interval_ms, bool)
+            or not isinstance(candle_interval_ms, int)
+            or candle_interval_ms <= 0
+        ):
+            raise ValueError("candle_interval_ms must be a positive integer")
         quote_snapshots = list(quote_snapshots or [])
         quote_timestamps = [quote["timestamp_ms"] for quote in quote_snapshots]
         cash = 1.0
@@ -361,11 +366,9 @@ class StrategyResearchAgent:
 
         if units > 0:
             final_price = float(candles[end - 1]["close"])
-            final_timestamp = (
-                int(final_execution_timestamp_ms)
-                if final_execution_timestamp_ms is not None
-                else int(candles[end - 1]["timestamp"])
-            )
+            final_timestamp = int(candles[end - 1]["timestamp"])
+            if candle_interval_ms is not None:
+                final_timestamp += candle_interval_ms
             sell_multiplier = execution_multiplier(final_timestamp)
             proceeds = units * final_price * sell_multiplier
             closed_returns.append(proceeds / entry_equity - 1.0)
@@ -559,7 +562,7 @@ class StrategyResearchAgent:
         backtest_quote_args = {
             "quote_snapshots": normalized_quotes,
             "max_quote_age_ms": max_quote_age_ms,
-            "final_execution_timestamp_ms": final_execution_timestamp_ms,
+            "candle_interval_ms": interval_ms,
         }
         quote_timestamp_sources = {}
         for quote in normalized_quotes:
