@@ -238,3 +238,43 @@ def test_registry_inventory_never_serializes_adapter_or_secrets():
     rendered = repr(inventory)
     assert "must-not-leak" not in rendered
     assert "adapter" not in inventory[0]
+
+
+
+@pytest.mark.parametrize("timestamp", [123, object(), "not-a-time"])
+def test_malformed_capability_timestamps_raise_registry_error(timestamp):
+    with pytest.raises(ExecutionRegistryError):
+        CapabilityEvidence(CapabilityState.SUPPORTED, "manual", timestamp)
+
+
+@pytest.mark.parametrize("registered_at", [123, object(), "not-a-time"])
+def test_malformed_registration_timestamps_raise_registry_error(registered_at):
+    from app.execution_registry import ExecutionRegistration
+
+    with pytest.raises(ExecutionRegistryError):
+        ExecutionRegistration(scope(), capabilities(), object(), registered_at)
+
+
+def test_registry_now_argument_must_be_timezone_aware():
+    registry = ExecutionAdapterRegistry()
+    with pytest.raises(ExecutionRegistryError, match="timezone"):
+        registry.register(
+            scope(),
+            capabilities(),
+            object(),
+            now=datetime(2026, 11, 11, 10, 0),
+        )
+
+
+def test_callers_cannot_remove_mandatory_readiness_capabilities():
+    registry = ExecutionAdapterRegistry()
+    incomplete = capabilities(
+        balances=evidence(CapabilityState.UNKNOWN),
+    )
+    registry.register(scope(), incomplete, object())
+    assert not registry.supports_instrument(
+        scope(),
+        asset_class="crypto",
+        order_type="limit",
+        additional_required_capabilities=(),
+    )
