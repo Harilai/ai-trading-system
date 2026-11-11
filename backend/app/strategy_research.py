@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Callable, Sequence
 from bisect import bisect_right
+from datetime import datetime
 from statistics import median
 from math import isfinite
 import math
@@ -260,19 +261,25 @@ class StrategyResearchAgent:
         max_quote_age_ms: int,
     ) -> float | None:
         index = bisect_right(quote_timestamps, execution_timestamp_ms) - 1
-        if index < 0:
-            return None
-        quote = quote_snapshots[index]
-        age_ms = execution_timestamp_ms - quote["timestamp_ms"]
-        if age_ms < 0 or age_ms > max_quote_age_ms:
-            return None
-        bid = float(quote["bid"])
-        ask = float(quote["ask"])
-        midpoint = (bid + ask) / 2
-        if midpoint <= 0 or ask < bid:
-            return None
-        spread = (ask - bid) / midpoint
-        return spread if math.isfinite(spread) and 0 <= spread < 1 else None
+        while index >= 0:
+            quote = quote_snapshots[index]
+            event_timestamp = quote["timestamp_ms"]
+            retrieved_at = quote["retrieved_at_ms"]
+            age_ms = execution_timestamp_ms - event_timestamp
+            if (
+                event_timestamp <= execution_timestamp_ms
+                and retrieved_at <= execution_timestamp_ms
+                and 0 <= age_ms <= max_quote_age_ms
+            ):
+                bid = float(quote["bid"])
+                ask = float(quote["ask"])
+                midpoint = (bid + ask) / 2
+                if midpoint > 0 and ask >= bid:
+                    spread = (ask - bid) / midpoint
+                    if math.isfinite(spread) and 0 <= spread < 1:
+                        return spread
+            index -= 1
+        return None
 
     def _backtest(
         self, candles, signal, warmup, start, end, *,
@@ -299,7 +306,7 @@ class StrategyResearchAgent:
         ):
             raise ValueError("candle_interval_ms must be a positive integer")
         quote_snapshots = list(quote_snapshots or [])
-        quote_timestamps = [quote["timestamp_ms"] for quote in quote_snapshots]
+        quote_timestamps = [quote["available_at_ms"] for quote in quote_snapshots]
         cash = 1.0
         units = 0.0
         entry_equity = 0.0
@@ -529,20 +536,39 @@ class StrategyResearchAgent:
                 raise ValueError("Quote bid/ask values are invalid")
             timestamp_source = quote.get("timestamp_source")
             source = quote.get("source")
-            if not isinstance(timestamp_source, str) or not timestamp_source.strip():
-                raise ValueError("Quote timestamp source is required")
+            if timestamp_source not in {"exchange", "retrieved_at"}:
+                raise ValueError("Quote timestamp source is unsupported")
             if not isinstance(source, str) or not source.strip():
                 raise ValueError("Quote source is required")
-            if normalized_quotes and timestamp <= normalized_quotes[-1]["timestamp_ms"]:
-                raise ValueError("Quote timestamps must be strictly increasing")
+            retrieved_at_ms = quote.get("retrieved_at_ms")
+            if retrieved_at_ms is None:
+                retrieved_at = quote.get("retrieved_at")
+                if not isinstance(retrieved_at, str) or not retrieved_at.strip():
+                    raise ValueError("Quote retrieval timestamp is required")
+                try:
+                    parsed_retrieval = datetime.fromisoformat(retrieved_at)
+                    if parsed_retrieval.tzinfo is None:
+                        raise ValueError("Quote retrieval timestamp must include a timezone")
+                    retrieved_at_ms = int(parsed_retrieval.timestamp() * 1000)
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise ValueError("Quote retrieval timestamp is invalid") from exc
+            if (
+                isinstance(retrieved_at_ms, bool)
+                or not isinstance(retrieved_at_ms, int)
+                or retrieved_at_ms <= 0
+            ):
+                raise ValueError("Quote retrieval timestamp must be a positive integer")
             normalized_quotes.append({
                 "timestamp_ms": timestamp,
+                "retrieved_at_ms": retrieved_at_ms,
+                "available_at_ms": max(timestamp, retrieved_at_ms),
                 "bid": bid,
                 "ask": ask,
                 "timestamp_source": timestamp_source,
                 "source": source,
             })
 
+        normalized_quotes.sort(key=lambda quote: (quote["available_at_ms"], quote["timestamp_ms"]))
         data_quality = _candle_data_quality(
             normalized, expected_interval_seconds=expected_interval_seconds,
             calendar_model=calendar_model,
@@ -572,8 +598,8 @@ class StrategyResearchAgent:
         spread_coverage = {
             "status": "available" if normalized_quotes else "unavailable",
             "observations": len(normalized_quotes),
-            "first_timestamp_ms": normalized_quotes[0]["timestamp_ms"] if normalized_quotes else None,
-            "last_timestamp_ms": normalized_quotes[-1]["timestamp_ms"] if normalized_quotes else None,
+            "first_timestamp_ms": min((quote["timestamp_ms"] for quote in normalized_quotes), default=None),
+            "last_timestamp_ms": max((quote["timestamp_ms"] for quote in normalized_quotes), default=None),
             "timestamp_sources": quote_timestamp_sources,
             "max_quote_age_seconds": max_quote_age_seconds,
             "method": "latest_bid_ask_at_or_before_execution_time",
