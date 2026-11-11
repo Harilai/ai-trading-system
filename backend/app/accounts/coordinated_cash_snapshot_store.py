@@ -109,7 +109,7 @@ class CoordinatedCashSnapshotStore:
             raise CoordinatedCashSnapshotError("Cash positions must be strictly read-only")
         if positions.get("withdrawals_enabled") is not False:
             raise CoordinatedCashSnapshotError("Cash positions must disable withdrawals")
-        if positions.get("transfers_enabled", False) is not False or positions.get("wallet_signing_enabled", False) is not False:
+        if positions.get("transfers_enabled") is not False or positions.get("wallet_signing_enabled") is not False:
             raise CoordinatedCashSnapshotError("Cash positions must disable transfers and wallet signing")
         financial_coverage = normalized_metrics["coverage_status"]
         positions_coverage = normalized_positions["coverage_status"]
@@ -126,6 +126,8 @@ class CoordinatedCashSnapshotStore:
             "metrics": normalized_metrics["metrics"],
             "flags": normalized_metrics["flags"],
             "positions": normalized_positions["positions"],
+            "financial_observed_at": financial_time.isoformat(),
+            "positions_observed_at": positions_time.isoformat(),
             "financial_coverage": financial_coverage,
             "positions_coverage": positions_coverage,
             "max_skew_ms": skew_ms,
