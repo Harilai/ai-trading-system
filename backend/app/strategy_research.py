@@ -279,6 +279,8 @@ class StrategyResearchAgent:
             "average_win_return": average_win,
             "average_loss_return": average_loss,
             "payoff_ratio": payoff_ratio,
+            "return_observations": len(period_returns),
+            "mean_return_per_bar": mean_period_return,
             "return_volatility_per_bar": return_volatility,
             "sharpe_per_bar": (
                 mean_period_return / return_volatility if return_volatility > 0 else None
