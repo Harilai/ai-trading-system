@@ -25,7 +25,7 @@ El diseño está documentado en [`COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md`](COORD
 - Solo acepta `us_equity`, normalizado como `equity`; no adivina si un activo es ETF. Usa `asset_id` como identidad primaria y retrieval timestamp local. Una lista vacía es completa únicamente tras validar cuenta y endpoint.
 - Activación opt-in: `ALPACA_PAPER_ENABLED=false`; requiere key, secret y `ALPACA_PAPER_EXPECTED_ACCOUNT_ID`. Sin ID esperado no se registra.
 - CI del head exacto de PR #118: 609 tests Python passed; Docker build/runtime hardening passed. CI de sincronización #120 también pasó. No se ha validado contra una cuenta Alpaca real ni se han usado credenciales.
-- Siguiente trabajo separado: diseñar lectura de cuenta/balance con semántica contable explícita; no mapear buying power/equity a cash. Solo después considerar extender el snapshot coordinado de `spot` a `cash`/equity mediante migración y pruebas.
+- PR de documentación en curso: ADR `docs/ALPACA_ACCOUNT_FINANCIAL_SEMANTICS_ADR.md` define el modelo tipado para cash, equity, buying power, margen, valoración, transferencias pendientes y fees. La lectura de `/v2/account` no se declara como `AccountBalance`; no se activa `balances=true` ni se extiende aún el snapshot coordinado.
 
 ## Objetivo de producto
 

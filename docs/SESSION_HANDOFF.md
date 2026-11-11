@@ -2,11 +2,11 @@
 
 > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
-> **Último cambio integrado:** PR #118 (adaptador Alpaca Paper read-only de posiciones) en `main`; PR #120 sincronizada a `demo`.
-> **`main`:** `df648f5ec482938a59c0e5a16c269be1a16d7642`
+> **Último cambio integrado:** PR #118 (adaptador Alpaca Paper read-only de posiciones) en `main`; PR #120 sincronizada a `demo`. ADR de semántica financiera Alpaca en preparación.
+> **`main`:** `f11c7f35ab0d2e8c0c937e5277aaeeb42d418ad8` (antes de esta rama documental)
 > **`demo`:** `23fa997a878da7fe7ba7735b2baa80f035f7a8d7`
 > **Árboles:** divergencia histórica de commits; los ocho archivos del adaptador Alpaca y su documentación tienen blobs idénticos en `main` y `demo`.
-> **PR abiertas:** ninguna en la última consulta posterior a #120.
+> **PR abiertas:** verificar estado en GitHub antes de iniciar un nuevo bloque.
 > **Operación:** paper trading y Binance Spot Demo aislado; live trading no implementado ni habilitado.
 
 ## Integraciones recientes verificadas
@@ -68,6 +68,17 @@ La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas 
 - Opt-in apagado por defecto. Requiere `ALPACA_PAPER_ENABLED=true`, key/secret y `ALPACA_PAPER_EXPECTED_ACCOUNT_ID`. No introducir credenciales en Git.
 - Tests MockTransport cubren posiciones, lista vacía, identidad, duplicados, clases/decimales inválidos, host fijo y HTTP 401/403/429/5xx. CI: 609 tests passed y Docker hardening passed. No hay validación operativa contra Alpaca.
 - No conecta snapshots a cartera, Chief, Risk Manager ni ejecución. El snapshot coordinado sigue limitado a `spot`; balances/cash y extensión a `cash` quedan como fase separada.
+
+
+## Semántica financiera Alpaca — ADR en preparación
+
+- Documento: `docs/ALPACA_ACCOUNT_FINANCIAL_SEMANTICS_ADR.md`.
+- `cash` se modela como saldo de efectivo; `equity` como valor neto de la cuenta; `buying_power` como capacidad de compra dependiente de reglas/multiplicador. Nunca son intercambiables.
+- `portfolio_value` es equivalente/deprecado respecto a equity; no se suma dos veces.
+- `cash_withdrawable/transferable`, transferencias pendientes, valores de mercado, margen y fees son métricas independientes, no saldos fungibles.
+- No reutilizar `AccountBalance(free/used/total)` ni ampliar el store Spot-only para almacenar métricas Alpaca.
+- Próxima implementación separada: snapshot financiero tipado y ledger append-only; después coordinarlo con posiciones `cash` solo con cobertura, identidad, timestamp/skew y atomicidad verificables.
+- No se conecta a cartera paper, Chief, Risk Manager ni ejecución. No se habilitan transferencias, retiradas ni LIVE.
 
 ## Continuidad
 
