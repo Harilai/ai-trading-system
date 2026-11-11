@@ -227,3 +227,50 @@ def test_scout_does_not_record_synthetic_zero_spread_for_missing_bid_ask():
     assert market["quote_observed"] is False
     assert market["spread_fraction"] is None
     assert quote_store.records == []
+
+
+def test_scout_does_not_assign_missing_quote_identity_to_default_provider():
+    class MissingIdentityMarketData(FakeMarketData):
+        def discover_spot_symbols(self, quote="EUR", limit=5):
+            return [{
+                "symbol": "BTC/EUR",
+                "last": 100.0,
+                "bid": 99.9,
+                "ask": 100.1,
+                "spread_fraction": 0.002,
+                "quote_observed": True,
+                "ticker_timestamp_ms": 1_700_000_000_000,
+                "ticker_timestamp_source": "exchange",
+                "quote_volume_24h": 10000,
+            }]
+
+    class QuoteStore:
+        def __init__(self):
+            self.records = []
+
+        def record(self, *args, **kwargs):
+            self.records.append((args, kwargs))
+            return {"status": "inserted"}
+
+        def get(self, *args, **kwargs):
+            raise AssertionError("Quote history must not be queried without provider identity")
+
+        def coverage(self, *args, **kwargs):
+            raise AssertionError("Quote coverage must not be queried without provider identity")
+
+    class Research:
+        def research(self, candles, **kwargs):
+            assert kwargs["quote_snapshots"] == []
+            return {"status": "ok"}
+
+    quote_store = QuoteStore()
+    result = ScoutAgent(
+        MissingIdentityMarketData(),
+        quote_store=quote_store,
+        strategy_research=Research(),
+    ).scan()
+
+    research = result["analyses"][0]["strategy_research"]
+    assert quote_store.records == []
+    assert research["quote_capture_status"] == "identity_missing"
+    assert research["quote_history_status"] == "identity_missing"
