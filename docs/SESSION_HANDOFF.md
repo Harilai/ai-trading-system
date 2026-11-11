@@ -25,11 +25,13 @@
 - No ejecutar el drill de órdenes hasta que el preflight pase. El smoke test de órdenes Demo requiere autorización explícita del propietario y debe usar exclusivamente el host Demo; no se debe cambiar a producción.
 - Ningún test de CI sustituye la validación operativa contra la cuenta Demo real.
 
-## Siguiente fase técnica
+## Snapshot coordinado — implementado en PR #113, pendiente de merge
 
-La siguiente tarea arquitectónica es el snapshot coordinado de balances y posiciones, descrito en `docs/COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md`.
+La implementación está en `docs/COORDINATED_ACCOUNT_SNAPSHOT_DESIGN.md` y `backend/app/accounts/coordinated_snapshot_store.py`. Los stores de balances y posiciones ahora admiten inserts dentro de una transacción compartida. El coordinador crea referencias a ambos registros y el grupo en una sola transacción SQLite, sin duplicar los datos. También se añadió aislamiento de balance snapshots por entorno con migración legacy a `production`, idempotencia por request ID y API autenticada.
 
-Los stores append-only de balances y posiciones existen por separado, pero todavía no comparten un identificador de captura ni una transacción atómica. El diseño exige:
+CI sobre el SHA exacto `61f3240c3afc3fce3c1cf75597a850e45fd50a78`: 581 tests passed, 1 warning; Docker build/runtime hardening pasó, incluida validación Compose y ejecución non-root. No se ejecutó test local en el entorno del propietario.
+
+La implementación exige:
 - identidad común proveedor/cuenta/entorno/mercado y `capture_id`;
 - cobertura explícita de balances y posiciones;
 - timestamps de origen/retrieval con procedencia y skew máximo;
@@ -38,7 +40,7 @@ Los stores append-only de balances y posiciones existen por separado, pero todav
 - persistencia atómica y rollback total si falla cualquiera de las escrituras;
 - ningún efecto en la cartera paper ni en decisiones de trading.
 
-Antes de habilitar una captura real debe existir un proveedor que exponga ambas lecturas con cobertura verificable. Los conectores Binance Spot read-only y CCXT Spot actuales no declaran capacidad de posiciones; Binance Spot Demo es un conector de órdenes y no debe tratarse como proveedor de posiciones. No inferir posiciones desde balances ni fills. Si no hay proveedor apto, implementar el contrato y storage genéricos detrás de capability gates, sin afirmar validación operativa.
+La captura real sigue bloqueada hasta que exista un proveedor que exponga ambas lecturas con cobertura verificable. Los conectores Binance Spot read-only y CCXT Spot actuales no declaran capacidad de posiciones ni cobertura de balances explícita; Binance Spot Demo es un conector de órdenes y no debe tratarse como proveedor de posiciones. El endpoint responde fail-closed (409) si falta cualquiera de esas capacidades. No inferir posiciones desde balances ni fills.
 
 ## Arquitectura y seguridad
 
@@ -54,6 +56,7 @@ Antes de habilitar una captura real debe existir un proveedor que exponga ambas 
 ## Continuidad
 
 1. Verificar heads, PR abiertas, CI y árboles de `main`/`demo` antes de cada bloque.
+2. Tras cada merge, eliminar la rama de trabajo si no es permanente y no contiene trabajo pendiente. La conexión GitHub actual no expone una acción de borrar ramas; requiere habilitar auto-delete de ramas en el repositorio o conceder una integración con permiso `delete ref`.
 2. Revisar el diff y dependencias de PR; integrar automáticamente solo cuando mergeability, pruebas y CI del SHA exacto estén correctos.
 3. No cerrar PR por limpieza ni fusionar ramas divergentes sin comparar árboles y clasificar funcionalidades.
 4. Actualizar roadmap y handoff al completar fases.
