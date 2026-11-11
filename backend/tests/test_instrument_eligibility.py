@@ -16,6 +16,12 @@ def capabilities(**overrides):
         "public_market_data": True,
         "order_management": True,
         "supports_limit_orders": True,
+        "supports_client_order_id": True,
+        "supports_partial_fills": True,
+        "supports_cancel": True,
+        "supports_reconciliation": True,
+        "balances": True,
+        "positions": True,
     }
     values.update(overrides)
     return ProviderCapabilities(**values)
