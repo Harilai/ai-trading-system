@@ -279,6 +279,8 @@ def create_alpaca_financial_metrics_snapshot(
             account_alias=settings.alpaca_paper_account_alias,
         )
         if existing is not None:
+            if existing["account_id"] != settings.alpaca_paper_expected_account_id:
+                raise FinancialMetricsError("Financial metrics request_id belongs to a different configured account")
             return existing
         snapshot = alpaca_paper_account_provider.fetch_financial_metrics_snapshot()
         return financial_metrics_store.record_snapshot(request_id, snapshot)
