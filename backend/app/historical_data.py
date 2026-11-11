@@ -226,6 +226,134 @@ class HistoricalCandleStore:
         }
 
 
+class HistoricalQuoteStore:
+    """Append-only best-bid/ask observations with provider timestamp provenance."""
+
+    def __init__(self, database_path: str):
+        self.path = database_path
+        self.lock = RLock()
+        Path(database_path).parent.mkdir(parents=True, exist_ok=True)
+        with self.connect() as db:
+            db.execute(
+                "CREATE TABLE IF NOT EXISTS historical_quotes ("
+                "provider_id TEXT NOT NULL, instrument_id TEXT NOT NULL, symbol TEXT NOT NULL, "
+                "timestamp_ms INTEGER NOT NULL, bid TEXT NOT NULL, ask TEXT NOT NULL, "
+                "timestamp_source TEXT NOT NULL, source TEXT NOT NULL, retrieved_at TEXT NOT NULL, "
+                "PRIMARY KEY(provider_id,instrument_id,timestamp_ms))"
+            )
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_historical_quotes_range "
+                "ON historical_quotes(provider_id,instrument_id,timestamp_ms)"
+            )
+
+    def connect(self):
+        db = sqlite3.connect(self.path, timeout=10)
+        db.row_factory = sqlite3.Row
+        return db
+
+    def record(
+        self, provider_id: str, instrument_id: str, symbol: str, timestamp_ms: int,
+        bid, ask, *, timestamp_source: str, source: str = "public_ticker",
+    ) -> dict:
+        HistoricalCandleStore._identity(provider_id, instrument_id, symbol, "quote")
+        if (
+            isinstance(timestamp_ms, bool) or not isinstance(timestamp_ms, int)
+            or timestamp_ms <= 0
+        ):
+            raise HistoricalDataError("Quote timestamp_ms must be a positive integer")
+        if timestamp_source not in {"exchange", "retrieved_at"}:
+            raise HistoricalDataError("Quote timestamp_source is unsupported")
+        if not isinstance(source, str) or not source.strip():
+            raise HistoricalDataError("Quote source is required")
+        bid_value = _decimal(bid, "bid", positive=True)
+        ask_value = _decimal(ask, "ask", positive=True)
+        if Decimal(ask_value) < Decimal(bid_value):
+            raise HistoricalDataError("Quote ask cannot be below bid")
+        now = datetime.now(timezone.utc).isoformat()
+        key = (provider_id, instrument_id, timestamp_ms)
+        with self.lock, self.connect() as db:
+            existing = db.execute(
+                "SELECT bid,ask,timestamp_source,source FROM historical_quotes "
+                "WHERE provider_id=? AND instrument_id=? AND timestamp_ms=?",
+                key,
+            ).fetchone()
+            values = (bid_value, ask_value, timestamp_source, source)
+            if existing is not None:
+                old_values = tuple(existing[name] for name in (
+                    "bid", "ask", "timestamp_source", "source",
+                ))
+                if old_values != values:
+                    raise HistoricalDataConflict(
+                        f"Conflicting quote snapshot at {timestamp_ms}"
+                    )
+                return {"status": "unchanged", "timestamp_ms": timestamp_ms}
+            db.execute(
+                "INSERT INTO historical_quotes "
+                "(provider_id,instrument_id,symbol,timestamp_ms,bid,ask,timestamp_source,source,retrieved_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?)",
+                (provider_id, instrument_id, symbol, timestamp_ms, *values, now),
+            )
+        return {"status": "inserted", "timestamp_ms": timestamp_ms}
+
+    def get(
+        self, provider_id: str, instrument_id: str, *,
+        since_ms: int | None = None, until_ms: int | None = None,
+        limit: int = 100_000,
+    ) -> list[dict]:
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100_000:
+            raise HistoricalDataError("quote limit must be between 1 and 100000")
+        clauses = ["provider_id=?", "instrument_id=?"]
+        params: list = [provider_id, instrument_id]
+        if since_ms is not None:
+            if isinstance(since_ms, bool) or not isinstance(since_ms, int) or since_ms <= 0:
+                raise HistoricalDataError("since_ms must be a positive integer")
+            clauses.append("timestamp_ms>=?")
+            params.append(since_ms)
+        if until_ms is not None:
+            if isinstance(until_ms, bool) or not isinstance(until_ms, int) or until_ms <= 0:
+                raise HistoricalDataError("until_ms must be a positive integer")
+            clauses.append("timestamp_ms<?")
+            params.append(until_ms)
+        if since_ms is not None and until_ms is not None and until_ms <= since_ms:
+            raise HistoricalDataError("until_ms must be later than since_ms")
+        params.append(limit)
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM historical_quotes WHERE " + " AND ".join(clauses)
+                + " ORDER BY timestamp_ms DESC LIMIT ?",
+                params,
+            ).fetchall()
+        return [
+            {
+                "provider_id": row["provider_id"],
+                "instrument_id": row["instrument_id"],
+                "symbol": row["symbol"],
+                "timestamp_ms": row["timestamp_ms"],
+                "bid": row["bid"],
+                "ask": row["ask"],
+                "timestamp_source": row["timestamp_source"],
+                "source": row["source"],
+                "retrieved_at": row["retrieved_at"],
+            }
+            for row in reversed(rows)
+        ]
+
+    def coverage(self, provider_id: str, instrument_id: str) -> dict:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT COUNT(*) AS observations,MIN(timestamp_ms) AS first_ms,"
+                "MAX(timestamp_ms) AS last_ms FROM historical_quotes "
+                "WHERE provider_id=? AND instrument_id=?",
+                (provider_id, instrument_id),
+            ).fetchone()
+        return {
+            "observations": row["observations"],
+            "first_timestamp_ms": row["first_ms"],
+            "last_timestamp_ms": row["last_ms"],
+            "status": "available" if row["observations"] else "empty",
+        }
+
+
 class PaginatedCandleCollector:
     """Fetch historical OHLCV using provider-supported since/limit pagination."""
 
