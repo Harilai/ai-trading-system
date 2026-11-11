@@ -5,7 +5,7 @@ from datetime import date, datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from .providers.base import AssetClass, MarketInstrument, PrecisionMode, ProviderCapabilities
+from .providers.base import AssetClass, MarketType, PrecisionMode, ProviderCapabilities
 
 
 @dataclass(frozen=True)
@@ -78,7 +78,6 @@ def evaluate_instrument_eligibility(
         parsed_asset_class = None
         blockers.append("Instrument asset class is unknown")
     try:
-        from .providers.base import MarketType
         parsed_market_type = MarketType(market_type)
     except ValueError:
         parsed_market_type = None
@@ -181,7 +180,7 @@ def evaluate_instrument_eligibility(
                 try:
                     expiry_dt = datetime.fromisoformat(expiry.replace("Z", "+00:00"))
                 except ValueError:
-                    expiry_dt = datetime.combine(date.fromisoformat(expiry), datetime.min.time(), tzinfo=timezone.utc)
+                    expiry_dt = datetime.combine(date.fromisoformat(expiry), datetime.max.time(), tzinfo=timezone.utc)
                 if expiry_dt.tzinfo is None:
                     expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
                 if expiry_dt <= datetime.now(timezone.utc):
@@ -213,6 +212,7 @@ def evaluate_instrument_eligibility(
                 "Provider does not declare",
                 "Provider declares no supported order type",
                 "data-only",
+                "has expired",
                 "not explicitly active",
                 "trading status is not active",
             )
