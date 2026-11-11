@@ -2,10 +2,10 @@
 
  > **Última revisión:** 2026-11-11 Europe/Madrid
 > **Repositorio:** `Harilai/ai-trading-system`
- > **Último cambio de código integrado:** PR #155, merge SHA `23dcac3b65c46a59d3e24edf487cefe88ffc88fd`.
-> **main y demo:** deben permanecer idénticas por SHA; tras actualizar este handoff, sincronizar `demo` por fast-forward y verificar el compare.
-> **PR abiertas:** ninguna tras integrar PR #155.
-> **CI:** PR #155 head `4c4d30b781012c477f9f2c14fb35455bea00df8f`: 778 Python tests passed, 1 warning; Docker build/runtime hardening passed (run `43080178575`). Post-merge main run `43080343137`: success. Documentación de roadmap/handoff en SHA `a2e82317a350964a7202b0c078cc2f8e01c78fae`: 778 Python tests passed, 1 warning; Docker build/runtime hardening passed (run `43080509437`).
+> **Último cambio de código integrado:** PR #156, squash merge SHA `82b95f2b72bb1f191deb61490b160f469174ca99`.
+> **main y demo:** deben permanecer idénticas; verificar el compare después de cada merge y sincronizar `demo` por fast-forward.
+> **PRs:** PR #156 integrada; no hay trabajo funcional pendiente de revisión. Esta actualización es solo documental.
+> **CI PR #156:** head `6b400d4da500ffd74ce9106e0fcf8b34a7dda1e0`: 811 Python tests passed, 1 warning; Docker build/runtime hardening passed (run `43084727897`). Post-merge main run `43084918192`: ambos jobs success, 811 tests passed, 1 warning.
 
 > **Validación local:** no se pudo clonar el repositorio desde el shell por falta de resolución de GitHub; no afirmar tests locales. La validación ejecutada fue GitHub Actions.
 > **Operación:** investigación y PAPER; LIVE sigue deshabilitado. No ejecutar operaciones reales ni usar credenciales productivas.
@@ -330,15 +330,15 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 4. Después, ampliar candidatos de estrategia con control de selección múltiple; no relajar gates.
 
 
-## Bloque en desarrollo — cobertura de histórico consciente de la cadencia (2026-11-11)
+## Completado — cobertura de histórico consciente de la cadencia (2026-11-11)
 
 - Estado base verificado: main y demo identical en 41e069fd4f20f6a2ed70587df3c0665725857402; PR abiertas 0 tras PR #153.
 - PR #153 documenta la integración de #152 y su evidencia CI: 763 tests Python y Docker hardening correctos; run post-merge #153 (43075325981) finalizado correctamente.
 - En rama feat/venue-aware-research-coverage se añade expected_interval_seconds opcional a StrategyResearchAgent; el diagnóstico explicita cadence_source, expected interval, estimated_missing_intervals y calendar_model.
 - Scout transmite la cadencia derivada de timeframe para su universo crypto spot EUR y declara crypto_24x7 solo para ese universo. Timeframes calendario/mes no se convierten a duración fija.
 - Se mantiene calendar_adjustment=false: esto detecta desviaciones de cadencia, no aplica calendario bursátil ni prueba que el dato ausente sea negociable.
-- Tests añadidos para huecos con cadencia explícita, estimación de barras ausentes y rechazo de intervalos cero/NaN/Inf/bool. CI pendiente para el head final; no tests locales.
-- No se cambian estrategias ni gates. LIVE deshabilitado.
+- Tests añadidos para huecos con cadencia explícita, estimación de barras ausentes y rechazo de intervalos cero/NaN/Inf/bool. CI del commit `a29d5f24c1c7a0948584bb95283c2d5d2808bc86` success: run `43079170724`.
+- No se cambiaron estrategias ni gates en ese bloque. LIVE deshabilitado.
 
 
 ## Rama histórica supersedida
@@ -346,14 +346,14 @@ LIVE permanece deshabilitado. `main` es la fuente de verdad y `demo` debe perman
 - `fix/kraken-ohlcv-history-capabilities` sigue existiendo, pero no debe fusionarse: está divergida respecto a `main` y su versión del scheduler permite continuar con adaptadores sin contrato de capacidades históricas, debilitando el fail-closed.
 - PR #155 (`feat(history): enforce provider OHLCV pagination capabilities`) ya integró en `main` la implementación equivalente con validación estricta de identidad, soporte, timeframe, paginación y límites. La rama antigua no tiene PR abierto y queda supersedida; conservarla solo como referencia hasta decidir su limpieza.
 
-## Trabajo en curso — spread observado en Strategy Research
+## Bloque integrado — spread observado en Strategy Research (PR #156)
 
-- Rama: `feat/research-observed-spread-costs` (base `main` SHA `885fa5dc022882f8218ec95187c6b6c4930dd556`).
-- Store `HistoricalQuoteStore` para bid/ask públicos con identidad de proveedor/instrumento, provenance de timestamp y timestamp local de recepción; incluye migración para snapshots anteriores.
-- Scout captura solo quotes validados. Si falta bid/ask no crea spread sintético.
-- Strategy Research aplica spread observado como medio spread por lado en el siguiente fill de apertura/cierre, solo si el snapshot ya se había recibido antes del fill y está dentro del límite de edad. Se ha añadido prueba específica contra look-ahead por hora de recepción.
-- La cobertura se calcula por OOS y walk-forward y constituye un gate de promoción aditivo: la cobertura debe ser completa en ambos. Los umbrales de rendimiento, riesgo, número de operaciones y estrés existentes permanecen intactos.
-- Fee y slippage permanecen como supuestos configurados; no equivalen a tarifas personalizadas de cuenta.
-- CI del PR pendiente; no declarar integrado hasta pasar Python tests y Docker build/runtime hardening en el head exacto.
-- Siguiente: validar que la cobertura de quotes crece con los scans; implementar comisiones maker/taker por instrumento/proveedor y slippage/liquidez con procedencia; después, holdouts independientes y controles de selección múltiple antes de ampliar estrategias.
-- LIVE sigue deshabilitado. No se han realizado operaciones financieras.
+- PR #156 integrada por squash en `main`, merge SHA `82b95f2b72bb1f191deb61490b160f469174ca99`; `demo` sincronizada por fast-forward y verificada idéntica.
+- `HistoricalQuoteStore` conserva snapshots públicos bid/ask append-only por proveedor/instrumento, con valores decimales, timestamp del proveedor y timestamp local de recepción. Las migraciones fallidas o ambiguas quedan excluidas del histórico utilizable.
+- Scout captura solo quotes validados y exige identidad explícita de proveedor/instrumento. Bid/ask ausentes o inválidos no se sustituyen por last ni producen spread cero.
+- Backtesting aplica medio spread observado en entrada y salida, separado de fees/slippage. Solo usa snapshots recibidos antes del fill; mide frescura desde la recepción local. Cada ventana walk-forward liquida en su propio timestamp para evitar look-ahead.
+- La promoción exige cobertura completa de spread en OOS y en todas las ventanas walk-forward mediante un gate aditivo. Los umbrales de rentabilidad, drawdown, número de trades y estrés 1.5x permanecen intactos.
+- Dashboard presenta cobertura OOS/walk-forward, fills sin cotización y spread medio. Runbook documenta la captura progresiva, procedencia y aproximación OHLCV como proxy de mid.
+- Fees y slippage continúan como supuestos configurados; no equivalen a las tarifas reales de una cuenta. No hay backfill histórico de bid/ask: la cobertura se acumula desde la activación del escaneo.
+- CI head PR `6b400d4da500ffd74ce9106e0fcf8b34a7dda1e0`: 811 tests Python passed, 1 warning; Docker hardening passed. Post-merge main run `43084918192`: ambos jobs success, 811 tests passed, 1 warning.
+- No se ejecutaron tests locales ni validación operativa contra un exchange real. No se usaron credenciales privadas ni se ejecutaron órdenes. LIVE permanece deshabilitado.
